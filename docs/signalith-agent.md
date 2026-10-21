@@ -331,6 +331,22 @@ collects with osquery, which reads what the detections need through Apple's inte
   with `curl`, which macOS does not mark as downloaded from the internet, so Gatekeeper
   does not stop it; do not copy the program to Macs by other means.
 
+## Process creation auditing on Windows
+
+Most Windows detections read program starts with their command lines. Without Sysmon,
+these come from the Security log's event 4688, which Windows writes only when **Audit
+Process Creation** is on, and which names the command line only when **Include command
+line in process creation events** is on. Both are off in a new Windows and both are in
+the CIS benchmarks, so the install script turns them on (`auditpol` for the first, the
+`ProcessCreationIncludeCmdLine_Enabled` policy value for the second). Add
+`-NoProcessAuditing` to the line to leave them as they are. A domain group policy that
+sets either one wins over the script; set them there for every computer instead.
+
+Command lines can hold secrets that someone typed into one, such as a password given to
+a program as an argument. The Security log is readable only by administrators, and in
+Signalith by the roles that may search the Windows events. `-Uninstall` leaves the
+auditing on.
+
 ## Sysmon on Windows
 
 Sysmon records process starts with their command lines, network connections, DNS

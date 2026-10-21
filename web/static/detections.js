@@ -1388,16 +1388,29 @@ function detTitle(t) {
 const SOURCE_LABEL = { builtin: 'Built-in', custom: 'Custom', override: 'Edited', pack: 'Content pack' };
 const sourceLabel = (d) => (d.source === 'pack' && d.origin ? packShort(d.origin.pack) : SOURCE_LABEL[d.source] || d.source);
 const packShort = (name) => ({ sigmahq: 'SigmaHQ', splunk: 'Splunk' }[name] || name);
+// isStarter is a rule of the starter set: high or critical, and reading
+// only what hosts send as installed (no Sysmon, process auditing or
+// PowerShell logging needed).
+const isStarter = (d) => (d.tags || []).includes('starter');
+// NEEDS names the logging a rule reads that hosts do not send as
+// installed, from its needs-* tag.
+const NEEDS = {
+  'needs-sysmon': ['Needs Sysmon', 'Reads Sysmon events: tick Sysmon on the Windows install line, or install Sysmon yourself.'],
+  'needs-process-auditing': ['Needs process auditing', 'Reads program starts: Sysmon, or the Security log’s 4688 events with the command line (Audit Process Creation and Include command line in process creation events).'],
+  'needs-powershell-logging': ['Needs PowerShell logging', 'Reads PowerShell’s script block or module logging: tick PowerShell on the Windows install line, and turn the logging on by group policy.'],
+  'needs-auditd': ['Needs the audit log', 'Reads the Linux audit log: install auditd and have it record the programs that run.'],
+};
+const ruleNeeds = (d) => (d.tags || []).find((t) => NEEDS[t]);
 // PACK_INFO is how each pack's card reads: who wrote the rules, under
 // which licence, and which of its rules the one-click button turns on
 // (Splunk's TTP rules raise findings; its anomalies only add risk).
 const PACK_INFO = {
   sigmahq: { icon: 'sigma', by: 'By the SigmaHQ authors named on each rule, under the ', license: 'Detection Rule License 1.1', home: 'SigmaHQ on GitHub',
     desc: 'Windows rules for Sysmon and the Security, PowerShell, System, Application, Defender, Code Integrity, Windows Firewall, BITS, app package, WMI, Remote Desktop, exploit protection, DNS client, Task Scheduler, NTLM, OpenSSH, DNS Server and IIS logs, among others, Linux rules for Sysmon for Linux and the audit log, and rules for Apache and Nginx access logs, each tested before it ships. Off until you turn them on.',
-    strong: (d) => d.severity === 'high' || d.severity === 'critical', strongName: 'high and critical rule' },
+    strong: isStarter, strongName: 'starter rule' },
   splunk: { icon: 'layers', by: 'By Splunk’s Threat Research Team and the authors named on each rule, under the ', license: 'Apache License 2.0', home: 'security_content on GitHub',
     desc: 'Splunk’s Windows and Linux process, file, registry and PowerShell detections, and its web server detections, each tested before it ships. TTP rules raise findings; anomalies add risk. Off until you turn them on.',
-    strong: (d) => (d.tags || []).includes('ttp'), strongName: 'TTP rule' },
+    strong: isStarter, strongName: 'starter rule' },
 };
 const packInfo = (p) => PACK_INFO[p.name] || { icon: 'layers', by: 'Under the ', license: p.license, home: 'Source', desc: p.description, strong: () => false, strongName: 'rule' };
 const inSource = (d, src) => (src === 'all' ? true : src.startsWith('pack:') ? !!d.origin && d.origin.pack === src.slice(5) : !d.origin || d.enabled);
@@ -1569,6 +1582,8 @@ function detectionRow(d) {
   // repeat the card above.
   if (d.source !== 'builtin' && !(d.source === 'pack' && det.source.startsWith('pack:'))) sub.splice(1, 0, el('span', { class: 'badge' }, sourceLabel(d)));
   if (d.risk && d.risk.only) sub.push(el('span', { class: 'badge', title: 'Records risk without raising findings' }, 'Risk only'));
+  const needs = ruleNeeds(d);
+  if (needs) sub.push(el('span', { class: 'badge badge--outline', title: NEEDS[needs][1] }, NEEDS[needs][0]));
   const tr = el('tr', { 'data-id': d.id, 'aria-selected': String(det.open === d.id), class: d.enabled ? '' : 'dx-off' },
     el('td', { 'data-col': 'sev' }, sevBadge(d.severity)),
     el('td', { 'data-col': 'title' },
@@ -1598,6 +1613,7 @@ function renderPacks(list) {
     const on = rules.filter((d) => d.enabled).length;
     const info = packInfo(p);
     const strong = rules.filter((d) => !d.enabled && info.strong(d));
+    const dark = rules.filter((d) => ruleNeeds(d)).length;
     const credit = el('p', { class: 'dx-pack__credit' }, info.by,
       el('a', { href: p.license_url, target: '_blank', rel: 'noopener' }, info.license), ' · ',
       el('a', { href: p.source, target: '_blank', rel: 'noopener' }, info.home));
@@ -1611,7 +1627,7 @@ function renderPacks(list) {
       }
     } else {
       actions.push(dxBtn('secondary', 'Browse rules', () => { det.source = 'pack:' + p.name; det.show = ''; det.limit = DET_PAGE; renderDetections(); }, { sm: true, icon: 'list-filter' }));
-      if (admin && strong.length) actions.push(dxBtn('ghost', `Turn on ${dxPlural(strong.length, info.strongName)}`, (ev) => bulkEnable(strong, true, ev.currentTarget), { sm: true, icon: 'power' }));
+      if (admin && strong.length) actions.push(dxBtn('secondary', `Turn on ${dxPlural(strong.length, info.strongName)}`, (ev) => bulkEnable(strong, true, ev.currentTarget), { sm: true, icon: 'power' }));
     }
     return el('div', { class: 'card dx-pack' },
       el('div', { class: 'dx-pack__mark', 'aria-hidden': 'true' }, icon(info.icon)),
@@ -1620,6 +1636,7 @@ function renderPacks(list) {
           el('span', { class: 'dx-meta' }, `${p.rules.toLocaleString()} rules · ${on ? on.toLocaleString() + ' on' : 'all off'}`)),
         el('p', { class: 'dx-pack__desc' }, browsing ? 'Filter by name, ATT&CK ID or tag, then turn on what fits your systems.'
           : info.desc),
+        !browsing && dark ? el('p', { class: 'dx-pack__note' }, `Start with the starter rules: they read only what hosts send as installed. ${dark.toLocaleString()} rules need Sysmon, process auditing, PowerShell logging or the Linux audit log and stay quiet without it; Browse rules marks them.`) : null,
         credit),
       el('div', { class: 'dx-pack__actions' }, ...actions));
   });

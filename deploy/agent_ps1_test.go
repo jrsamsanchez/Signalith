@@ -159,7 +159,9 @@ func TestAgentPS1DryRun(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	for _, want := range []string{"its certificate authority is the one the line names", "the token is an agent token Signalith knows",
-		"would download https://packages.fluentbit.io/windows/fluent-bit-", "the agent program (", "New-Service -Name SignalithAgent", "Done."} {
+		"would download https://packages.fluentbit.io/windows/fluent-bit-", "the agent program (", "New-Service -Name SignalithAgent", "Done.",
+		// Process creation auditing with the command line (BUY-03).
+		"auditpol /set /subcategory:{0CCE922B-69AE-11D9-BED3-505054503030} /success:enable", "ProcessCreationIncludeCmdLine_Enabled 1"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}

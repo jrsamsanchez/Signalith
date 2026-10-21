@@ -32,6 +32,23 @@ import (
 //go:embed packs/*/pack.yaml packs/*/rules/*.yml packs/*/macros/*.yml packs/*/lookups/*
 var packFS embed.FS
 
+// StarterTag marks the pack rules of the starter set (starter.txt).
+const StarterTag = "starter"
+
+//go:embed starter.txt
+var starterList string
+
+// starterIDs are the detection IDs in starter.txt.
+var starterIDs = func() map[string]bool {
+	ids := map[string]bool{}
+	for _, l := range strings.Split(starterList, "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			ids[l] = true
+		}
+	}
+	return ids
+}()
+
 // Origin says where a detection from a content pack came from. It is
 // kept on overrides too, so the credit stays when an admin edits a rule.
 type Origin struct {
@@ -267,6 +284,9 @@ func loadPacks(fsys fs.FS, lenient bool) ([]*Pack, []*Detection, []error, error)
 				return nil, nil, nil, fmt.Errorf("%s: id %s is used by %s too", m, d.ID, prev)
 			}
 			ids[d.ID] = r.File
+			if starterIDs[d.ID] {
+				d.Tags = append(d.Tags, StarterTag)
+			}
 			ds = append(ds, d)
 		}
 		p.Rules = nil
@@ -436,6 +456,9 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	if meta.Logsource.Category != "" {
 		tags = append(tags, strings.ReplaceAll(strings.ToLower(meta.Logsource.Category), "_", "-"))
 	}
+	if n := sigmaNeeds(meta.Logsource.Product, meta.Logsource.Category, meta.Logsource.Service); n != "" {
+		tags = append(tags, n)
+	}
 	d.Tags = tags
 	d.Origin = &Origin{
 		Pack: p.Name, PackTitle: p.Title, Rule: r.RuleID, Author: strings.TrimSpace(meta.Author),
@@ -448,4 +471,51 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		return nil, err
 	}
 	return d, nil
+}
+
+// The needs tags name the logging a rule reads that a host does not send
+// as installed: Sysmon, process creation auditing (Sysmon's process
+// events, or Security 4688 with the command line), PowerShell logging, or
+// the Linux audit log. The pack card and Browse rules show them, and the
+// starter set leaves such rules out.
+const (
+	NeedsSysmon          = "needs-sysmon"
+	NeedsProcessAuditing = "needs-process-auditing"
+	NeedsPowerShell      = "needs-powershell-logging"
+	NeedsAuditd          = "needs-auditd"
+)
+
+// sysmonOnly are the Sigma categories only Sysmon logs on Windows.
+var sysmonOnly = map[string]bool{
+	"registry_set": true, "registry_event": true, "registry_add": true, "registry_delete": true, "registry_rename": true,
+	"file_event": true, "file_change": true, "file_delete": true, "file_rename": true, "file_access": true, "file_block": true,
+	"file_executable_detected": true, "image_load": true, "network_connection": true, "process_access": true,
+	"pipe_created": true, "create_remote_thread": true, "driver_load": true, "create_stream_hash": true, "dns_query": true,
+	"process_tampering": true, "wmi_event": true, "raw_access_thread": true, "sysmon_error": true, "sysmon_status": true,
+	"clipboard_capture": true,
+}
+
+// sigmaNeeds is the needs tag of a Sigma rule's log source, or "".
+func sigmaNeeds(product, category, service string) string {
+	product, category, service = strings.ToLower(product), strings.ToLower(category), strings.ToLower(service)
+	switch product {
+	case "windows":
+		switch {
+		case category == "process_creation":
+			return NeedsProcessAuditing
+		case sysmonOnly[category], service == "sysmon":
+			return NeedsSysmon
+		case strings.HasPrefix(category, "ps_"), service == "powershell", service == "powershell-classic":
+			return NeedsPowerShell
+		}
+	case "linux":
+		switch {
+		case category == "process_creation":
+			return NeedsProcessAuditing
+		case category != "", service == "auditd":
+			// Linux categories are Sysmon for Linux's or the audit log's.
+			return NeedsAuditd
+		}
+	}
+	return ""
 }

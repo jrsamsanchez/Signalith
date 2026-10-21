@@ -426,6 +426,22 @@ func splunkSeverity(r *splcheck.Rule) string {
 	return "medium"
 }
 
+// splunkNeeds is the needs tag of a Splunk rule (see NeedsSysmon), or "".
+func splunkNeeds(r *splcheck.Rule) string {
+	switch r.Node {
+	case "Processes":
+		return NeedsProcessAuditing
+	case "Filesystem", "Registry":
+		return NeedsSysmon
+	}
+	for _, src := range r.DataSource {
+		if strings.HasPrefix(src, "Powershell Script Block") {
+			return NeedsPowerShell
+		}
+	}
+	return ""
+}
+
 // splunkCritical are the ATT&CK techniques of a TTP that makes it
 // critical: data encrypted, recovery inhibited, data or disks destroyed.
 var splunkCritical = map[string]bool{"T1485": true, "T1486": true, "T1490": true, "T1561": true}
@@ -575,6 +591,9 @@ func SplunkDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		Throttle:    Throttle{Window: "24h", Fields: splunkThrottle(rule.Node, dm)},
 		Risk:        &Risk{Score: score, Objects: riskObjects(dm), Only: !strings.EqualFold(rule.Type, "TTP")},
 		Tags:        []string{"splunk", p.Name, strings.ToLower(rule.Type), strings.ToLower(rule.Node)},
+	}
+	if n := splunkNeeds(rule); n != "" {
+		d.Tags = append(d.Tags, n)
 	}
 	if fp := strings.TrimSpace(rule.FalsePositives); fp != "" {
 		d.Guidance = "Known false positives: " + fp
