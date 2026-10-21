@@ -29,12 +29,6 @@ func TestPin(t *testing.T) {
 		t.Fatalf("Version %q", Version)
 	}
 	for system, r := range Releases {
-		if r.SHA512 == "" && strings.HasPrefix(system, "linux/") {
-			// Pinned from what OpenSearch publishes, which CI checks
-			// (.github/scripts/test-deb.sh).
-			t.Logf("%s: not pinned yet", system)
-			continue
-		}
 		if !regexp.MustCompile(`^[0-9a-f]{128}$`).MatchString(r.SHA512) || r.SHA512 == strings.Repeat("0", 128) {
 			t.Errorf("%s: SHA512 must be 128 lower-case hex digits, got %q", system, r.SHA512)
 		}

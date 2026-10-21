@@ -69,12 +69,13 @@ var Releases = map[string]Release{
 	},
 	"linux/amd64": {
 		File: "opensearch-" + Version + "-linux-x64.tar.gz",
-		SHA512: "a1b761ed245445cc8f15ec0cba7340243aa76caf914092e22b16a04e5754967e" +
-			"9d62a728b20fa941735cb8b28db671293c7f9b3ea9283706e368a1a05bfdc672",
+		SHA512: "a70e52a93ad66d9497dd734f5cc48eb4a8a8c4a92c47491a7ad0f1a898383d11" +
+			"c2948d4ba4159b2361d961bf221efa0fd02084e6389532df960b1ebe0c0a2099",
 	},
 	"linux/arm64": {
-		File:   "opensearch-" + Version + "-linux-arm64.tar.gz",
-		SHA512: "",
+		File: "opensearch-" + Version + "-linux-arm64.tar.gz",
+		SHA512: "629b6a97104d6f925becd2372d902ea253a6209827435841c2cea9866c83567a" +
+			"f776942b488110807370f9f504451bb4512f3bb1afb3c956386914c9474423fc",
 	},
 }
 
