@@ -43,7 +43,7 @@ func TestSummaryPlan(t *testing.T) {
 		`index=signalith-authentication-* | stats count`:                        {},
 		`datamodel=Authentication _raw="*ssh*" | stats count`:                   {},
 		`datamodel=Authentication earliest=-4h latest=-2h | stats count by src`: {"Authentication"},
-		`datamodel=Authentication earliest=-30d@w | stats count`:                {},
+		`datamodel=Authentication earliest=-30d@w | stats count`:                {"Authentication"},
 		`datamodel=Network_Traffic | stats sum(bytes_in) by src`:                {"Network_Traffic"},
 		`datamodel=Authentication | stats sum(bytes) by src`:                    {},
 		`datamodel=Risk | stats sum(risk_score) by risk_object`:                 {"Risk"},
@@ -117,7 +117,10 @@ func TestResolveTime(t *testing.T) {
 	if got, ok := resolveTime("0", now); !ok || !got.IsZero() {
 		t.Errorf("resolveTime(0) = %v %v", got, ok)
 	}
-	for _, bad := range []string{"-7d@w", "yesterday", "-x"} {
+	if got, ok := resolveTime("-7d@w", now); !ok || got.Format(time.RFC3339) != "2026-10-04T00:00:00Z" {
+		t.Errorf("resolveTime(-7d@w) = %v %v, want Sunday 2026-10-04", got, ok)
+	}
+	for _, bad := range []string{"yesterday", "-x", "-1d@", "@w8"} {
 		if _, ok := resolveTime(bad, now); ok {
 			t.Errorf("resolveTime(%q) is ok", bad)
 		}

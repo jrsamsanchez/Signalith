@@ -6,7 +6,6 @@ package api
 import (
 	"context"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -203,7 +202,7 @@ func chatTokenError(w http.ResponseWriter, err error) {
 	case errors.Is(err, chatops.ErrNotFound), errors.Is(err, chatops.ErrTokenUsed):
 		writeJSON(w, http.StatusGone, map[string]any{"error": "This link was already used, or it expired. Click the button in the chat again to get a new one.", "code": "token_used"})
 	default:
-		writeError(w, http.StatusBadGateway, fmt.Errorf("could not read the link: %w", err))
+		writeError(w, http.StatusBadGateway, errHidden("could not read the link", err))
 	}
 }
 
@@ -267,7 +266,7 @@ func (s *Server) handleChatLink(w http.ResponseWriter, r *http.Request) {
 	}
 	prev, had, _ := s.Chat.Store.Link(r.Context(), t.System, t.Team, t.ChatUser)
 	if err := s.Chat.Store.SaveLink(r.Context(), l); err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("could not save the link: %w", err))
+		writeError(w, http.StatusBadGateway, errHidden("could not save the link", err))
 		return
 	}
 	attrs := []any{"audit", true, "user", p.Username, "chat", t.System, "chat_team", t.Team, "chat_user", t.ChatUser, "chat_name", t.ChatName}
@@ -299,7 +298,7 @@ func (s *Server) handleChatCode(w http.ResponseWriter, r *http.Request) {
 		t.UserEpoch = cur.epoch
 	}
 	if err := s.Chat.Store.SaveToken(r.Context(), t); err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("could not make a code: %w", err))
+		writeError(w, http.StatusBadGateway, errHidden("could not make a code", err))
 		return
 	}
 	s.Log.Info("chat link code made", "audit", true, "user", p.Username, "chat", chatops.Teams)
@@ -313,7 +312,7 @@ func (s *Server) handleChatAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.Chat.Store.Links(r.Context(), userOf(r))
 	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("could not read your chat accounts: %w", err))
+		writeError(w, http.StatusBadGateway, errHidden("could not read your chat accounts", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"accounts": chatViews(list)})
@@ -329,7 +328,7 @@ func (s *Server) handleChatLinks(w http.ResponseWriter, r *http.Request) {
 	}
 	list, err := s.Chat.Store.Links(r.Context(), "")
 	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("could not read the linked chat accounts: %w", err))
+		writeError(w, http.StatusBadGateway, errHidden("could not read the linked chat accounts", err))
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"links": chatViews(list)})
@@ -414,7 +413,7 @@ func (s *Server) handleTeamsMove(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	conv, found, err := s.Chat.Store.Conversation(r.Context(), id)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("could not read where the channel posts: %w", err))
+		writeError(w, http.StatusBadGateway, errHidden("could not read where the channel posts", err))
 		return
 	}
 	if !found || conv.Next == nil {
@@ -425,7 +424,7 @@ func (s *Server) handleTeamsMove(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodDelete {
 		conv.Next = nil
 		if err := s.Chat.Store.SaveConversation(r.Context(), conv); err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Errorf("could not save: %w", err))
+			writeError(w, http.StatusBadGateway, errHidden("could not save", err))
 			return
 		}
 		s.Log.Info("Teams app channel move declined", "audit", true, "user", userOf(r), "channel", id, "teams_channel", conv.Place(), "declined", next.Place())
@@ -444,7 +443,7 @@ func (s *Server) handleTeamsMove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.Chat.Store.SaveConversation(r.Context(), next); err != nil {
-		writeError(w, http.StatusBadGateway, fmt.Errorf("could not save: %w", err))
+		writeError(w, http.StatusBadGateway, errHidden("could not save", err))
 		return
 	}
 	s.Log.Info("Teams app channel now posts to a Teams conversation", "audit", true, "user", userOf(r), "channel", id,

@@ -68,8 +68,12 @@ Analysts and admins can open **Endpoints**:
 - **Live query** (admins) runs osquery SQL on hosts now: all hosts, one platform, or one
   host, optionally only those online. Online hosts answer within about ten seconds.
   Results can be saved as CSV. A query stays open for ten minutes, returns at most 1,000
-  rows and 4 KB per value per host, and is recorded in the audit log. The table
-  reference is at <https://osquery.io/schema/>.
+  rows and 4 KB per value per host, and is recorded in the audit log. Sending one asks
+  for your password again when you have not entered it in the last 15 minutes. The
+  `curl` and `curl_certificate` tables are off on every host, since they would make
+  the computer fetch any address; they are osquery's only tables that fetch an address
+  you name (the cloud metadata tables ask only the cloud's fixed metadata address). To
+  match the word curl in text, put it in single quotes. The table reference is at <https://osquery.io/schema/>.
 
 Admins also have:
 

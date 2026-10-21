@@ -9,12 +9,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -218,7 +220,7 @@ func (s *Server) handleCreateDetection(w http.ResponseWriter, r *http.Request) {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detection created", "detection", d.ID, "by", userOf(r))
+	s.audit(r, "detection.create: detection created", "target", d.ID, "enabled", d.Enabled)
 	s.detectionSaved(w, http.StatusCreated, d.ID)
 }
 
@@ -244,7 +246,7 @@ func (s *Server) handlePutDetection(w http.ResponseWriter, r *http.Request) {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detection saved", "detection", d.ID, "enabled", d.Enabled, "by", userOf(r))
+	s.audit(r, "detection.save: detection saved", "target", d.ID, "enabled", d.Enabled)
 	s.detectionSaved(w, http.StatusOK, d.ID)
 }
 
@@ -257,7 +259,7 @@ func (s *Server) handleDeleteDetection(w http.ResponseWriter, r *http.Request) {
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detection deleted", "detection", id, "by", userOf(r))
+	s.audit(r, "detection.delete: detection deleted", "target", id)
 	// Deleting an override brings the built-in back; return what remains.
 	if d, err := s.Detections.Get(id); err == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"deleted": false, "reverted": d})
@@ -412,7 +414,8 @@ func (s *Server) handleEnableDetections(w http.ResponseWriter, r *http.Request) 
 		writeDetectionError(w, err)
 		return
 	}
-	s.Log.Info("detections turned "+map[bool]string{true: "on", false: "off"}[req.Enabled], "count", len(req.IDs), "by", userOf(r))
+	s.audit(r, "detection.enable: detections turned "+map[bool]string{true: "on", false: "off"}[req.Enabled],
+		"enabled", req.Enabled, "count", len(req.IDs), "detections", auditIDs(req.IDs))
 	writeJSON(w, http.StatusOK, map[string]any{"changed": len(req.IDs), "enabled": req.Enabled})
 }
 
@@ -447,6 +450,43 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 		Owner:       v.Get("owner"),
 		DetectionID: v.Get("detection"),
 		Text:        v.Get("q"),
+		Unowned:     v.Get("unowned") == "true",
+		Order:       v.Get("sort"),
+	}
+	if e := v.Get("entity"); e != "" {
+		flt.EntityValues = []string{e}
+	}
+	sla := s.findingSLA()
+	if due := v.Get("due"); due != "" {
+		// due=overdue keeps findings late now; due=1h also those due
+		// within the hour.
+		var within time.Duration
+		if due != "overdue" {
+			d, err := detect.ParseDuration(due)
+			if err != nil || d < 0 || d > 7*24*time.Hour {
+				writeError(w, http.StatusBadRequest, errors.New("due must be overdue or a time up to 7d, such as 1h"))
+				return
+			}
+			within = d
+		}
+		flt.Due = &findings.DueWithin{SLA: sla, Within: within, Now: time.Now()}
+	}
+	group := v.Get("group")
+	if group != "" && group != findings.GroupDetection && group != findings.GroupEntity {
+		writeError(w, http.StatusBadRequest, errors.New("group must be detection or entity"))
+		return
+	}
+	if !findings.ValidOrder(flt.Order) {
+		writeError(w, http.StatusBadRequest, fmt.Errorf("sort must be one of %s", strings.Join(findings.Orders, ", ")))
+		return
+	}
+	if a := v.Get("after"); a != "" {
+		c, err := findings.DecodeCursor(a)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		flt.After = c
 	}
 	if since := v.Get("since"); since != "" {
 		dur, err := detect.ParseDuration(strings.TrimPrefix(since, "-"))
@@ -476,7 +516,47 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 	for _, f := range list {
 		f.History = nil
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"findings": list, "total": total})
+	resp := map[string]any{"findings": list, "total": total}
+	if !sla.Off() {
+		now := time.Now()
+		due := map[string]*findings.Due{}
+		for _, f := range list {
+			if d := sla.DueOf(f, now); d != nil {
+				due[f.ID] = d
+			}
+		}
+		resp["due"] = due
+	}
+	if uc, ok := s.Findings.(findings.UrgencyCounter); ok && v.Get("counts") == "urgency" {
+		// The pills count every urgency the other filters let through.
+		cf := flt
+		cf.Urgency, cf.After = nil, nil
+		counts, err := uc.UrgencyCounts(r.Context(), cf)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		resp["by_urgency"] = counts
+	}
+	if g, ok := s.Findings.(findings.Grouper); ok && group != "" {
+		cf := flt
+		cf.After = nil
+		groups, err := g.Groups(r.Context(), cf, group)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		resp["groups"] = groups
+	}
+	limit := flt.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if len(list) == limit {
+		// There may be more: next continues after the last one.
+		resp["next"] = findings.CursorOf(list[len(list)-1]).Encode()
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
@@ -493,6 +573,9 @@ func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resp := map[string]any{"finding": f}
+	if d := s.findingSLA().DueOf(f, time.Now()); d != nil {
+		resp["due"] = d
+	}
 	if d, err := s.Detections.Get(f.DetectionID); err == nil {
 		resp["detection"] = d
 	}
@@ -504,9 +587,75 @@ func (s *Server) handleGetFinding(w http.ResponseWriter, r *http.Request) {
 // someone else changed the finding meanwhile, so no comment or status
 // change made at the same moment is lost.
 func (s *Server) updateFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, error) {
-	return s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
-		return f.Apply(u, author, time.Now().UTC()), nil
+	f, _, err := s.changeFinding(ctx, id, u, author)
+	return f, err
+}
+
+// changeFinding is updateFinding that also returns what changed, for the
+// audit line.
+func (s *Server) changeFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, []findings.Change, error) {
+	var changes []findings.Change
+	f, err := s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
+		n := len(f.History)
+		changed := f.Apply(u, author, time.Now().UTC())
+		changes = slices.Clone(f.History[n:])
+		return changed, nil
 	})
+	return f, changes, err
+}
+
+// describeHistory writes history entries for an audit line, such as
+// "status: new -> closed, owner: (none) -> bob".
+func describeHistory(ch []findings.Change) string {
+	parts := make([]string, 0, len(ch))
+	for _, c := range ch {
+		from, to := c.From, c.To
+		if from == "" {
+			from = "(none)"
+		}
+		if to == "" {
+			to = "(none)"
+		}
+		parts = append(parts, c.Field+": "+safelog.Cut(from, 200)+" -> "+safelog.Cut(to, 200))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// auditIDs lists IDs for an audit line, the first 50 of them.
+func auditIDs(ids []string) string {
+	if len(ids) > 50 {
+		return strings.Join(ids[:50], ",") + fmt.Sprintf(" and %d more", len(ids)-50)
+	}
+	return strings.Join(ids, ",")
+}
+
+// errNeedsDisposition is the answer to resolving a finding from the queue
+// without saying what it turned out to be, while that is required.
+var errNeedsDisposition = errors.New("pick a disposition (true positive, benign, false positive or undetermined) to resolve or close a finding")
+
+// triageFinding is an analyst's change from the queue: updateFinding, but
+// resolving or closing an open finding needs a disposition when
+// detections.require_disposition is on.
+func (s *Server) triageFinding(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, error) {
+	f, _, err := s.triageChanges(ctx, id, u, author)
+	return f, err
+}
+
+// triageChanges is triageFinding that also returns what changed, for the
+// audit line.
+func (s *Server) triageChanges(ctx context.Context, id string, u findings.Update, author string) (*findings.Finding, []findings.Change, error) {
+	need := u.Status != nil && !findings.IsOpen(*u.Status) && s.conf() != nil && s.conf().Detections.RequireDispositionOn()
+	var changes []findings.Change
+	f, err := s.Findings.Modify(ctx, id, func(f *findings.Finding) (bool, error) {
+		if need && findings.IsOpen(f.Status) && (u.Disposition == nil || *u.Disposition == "") && f.Disposition == "" {
+			return false, errNeedsDisposition
+		}
+		n := len(f.History)
+		changed := f.Apply(u, author, time.Now().UTC())
+		changes = slices.Clone(f.History[n:])
+		return changed, nil
+	})
+	return f, changes, err
 }
 
 // errFindingBusy is what an analyst sees when other changes to the same
@@ -526,7 +675,11 @@ func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	f, err := s.updateFinding(r.Context(), r.PathValue("id"), u, userOf(r))
+	f, changes, err := s.triageChanges(r.Context(), r.PathValue("id"), u, userOf(r))
+	if errors.Is(err, errNeedsDisposition) {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	if errors.Is(err, findings.ErrNotFound) {
 		writeError(w, http.StatusNotFound, err)
 		return
@@ -538,6 +691,10 @@ func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusBadGateway, err)
 		return
+	}
+	if len(changes) > 0 || strings.TrimSpace(u.Comment) != "" {
+		s.audit(r, "finding.update: finding changed", "target", f.ID, "detection", f.DetectionID,
+			"changes", describeHistory(changes), "commented", strings.TrimSpace(u.Comment) != "")
 	}
 	writeJSON(w, http.StatusOK, f)
 }
@@ -563,15 +720,37 @@ func (s *Server) handleBulkFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	failed := map[string]string{}
-	updated := 0
+	var updated []string
 	for _, id := range req.IDs {
-		if _, err := s.updateFinding(r.Context(), id, req.Update, userOf(r)); err != nil {
+		if _, err := s.triageFinding(r.Context(), id, req.Update, userOf(r)); err != nil {
 			failed[id] = err.Error()
 			continue
 		}
-		updated++
+		updated = append(updated, id)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"updated": updated, "failed": failed})
+	// One line for the whole request: the update asked for, and which
+	// findings took it.
+	s.audit(r, "finding.bulk_update: findings changed together", "update", describeUpdate(req.Update),
+		"updated", len(updated), "failed", len(failed), "findings", auditIDs(updated))
+	writeJSON(w, http.StatusOK, map[string]any{"updated": len(updated), "failed": failed})
+}
+
+// describeUpdate writes a triage update for an audit line, such as
+// "status=closed, disposition=false_positive, comment".
+func describeUpdate(u findings.Update) string {
+	var parts []string
+	for _, f := range []struct {
+		name string
+		v    *string
+	}{{"status", u.Status}, {"owner", u.Owner}, {"severity", u.Severity}, {"disposition", u.Disposition}} {
+		if f.v != nil {
+			parts = append(parts, f.name+"="+*f.v)
+		}
+	}
+	if strings.TrimSpace(u.Comment) != "" {
+		parts = append(parts, "comment")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // handleCreateFinding raises a finding by hand, for example from a search
@@ -631,6 +810,8 @@ func (s *Server) handleCreateFinding(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
+	s.audit(r, "finding.create: finding raised by hand", "target", f.ID, "title", f.Title, "severity", f.Severity,
+		"query", safelog.Cut(f.Query, 500))
 	writeJSON(w, http.StatusCreated, f)
 }
 
@@ -644,4 +825,12 @@ func (s *Server) handleFindingsSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, sum)
+}
+
+// findingSLA is the due times of findings in use.
+func (s *Server) findingSLA() findings.SLA {
+	if c := s.conf(); c != nil {
+		return c.FindingSLA()
+	}
+	return findings.DefaultSLA()
 }

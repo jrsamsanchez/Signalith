@@ -43,6 +43,9 @@ jobs:
       packages: write
       id-token: write
       attestations: write
+    outputs:
+      image: ${{ steps.tags.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
     env:
       IMAGE: ghcr.io/${{ github.repository_owner }}/signalith
       VERSION: ${{ needs.packages.outputs.version }}
@@ -146,6 +149,8 @@ jobs:
     needs: packages
     if: github.event_name == 'push' && vars.SIGNPATH_ORGANIZATION_ID != ''
     runs-on: windows-latest
+    # The SignPath token is a secret of the release environment.
+    environment: release
     permissions:
       contents: read
       actions: read
@@ -199,6 +204,9 @@ jobs:
     # Also when windows-signing is skipped (no SignPath set up, or a dry run).
     if: ${{ !cancelled() && needs.packages.result == 'success' && needs.image.result == 'success' && needs.chart.result == 'success' && needs.windows-signing.result != 'failure' }}
     runs-on: ubuntu-latest
+    # For the GPG key, a secret of the release environment; a dry run has
+    # none, so it signs the checksums with Sigstore only.
+    environment: ${{ github.event_name == 'push' && 'release' || '' }}
     permissions:
       contents: write
       id-token: write
@@ -231,6 +239,19 @@ jobs:
           cp release/signalith-windows-amd64.exe "$RUNNER_TEMP/$name/signalith.exe"
           cp deploy/windows/install.ps1 LICENSE NOTICE "$RUNNER_TEMP/$name/"
           (cd "$RUNNER_TEMP" && zip -qr "$GITHUB_WORKSPACE/release/$name.zip" "$name")
+      - name: Docker quick start locked to the image
+        env:
+          IMAGE: ${{ needs.image.outputs.image }}
+          DIGEST: ${{ needs.image.outputs.digest }}
+        run: |
+          # deploy/docker with Signalith's image as IMAGE:VERSION@DIGEST,
+          # the image this release pushed and signed. Made before the
+          # checksums, so they cover it. A dry run that got no digest from
+          # the build uses a placeholder.
+          if [ -z "$DIGEST" ] && [ "$PUBLISH" != true ]; then
+            DIGEST=sha256:0000000000000000000000000000000000000000000000000000000000000000
+          fi
+          sh .github/scripts/docker-release.sh "$VERSION" "$IMAGE" "$DIGEST" release
       - uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         id: syft
         with:

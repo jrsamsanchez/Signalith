@@ -1,0 +1,2 @@
+go test fuzz v1
+string("|tstAts vAlues(0)BY 0 spAn*0")

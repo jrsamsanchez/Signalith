@@ -8,8 +8,8 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 Signalith needs two things: **OpenSearch 2.17 or newer (3.x included)**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
-runs both for you, and from the next release (0.3.1) so does the Windows installer. On
-Linux, and on Windows with 0.3.0, you install OpenSearch first and then Signalith next to it.
+runs both for you, and so does the Windows installer from 0.3.1 on. On Linux, and on
+Windows with 0.3.0, you install OpenSearch first and then Signalith next to it.
 
 | Way to run it | Good for | Takes |
 | --- | --- | --- |
@@ -55,13 +55,13 @@ docker compose -f deploy/docker/docker-compose.yml restart signalith
 ```
 
 Settings changed on the **Settings** page are kept in the `signalith-data` volume, so
-they survive updates. To update, run `git pull` and then the `up` command again; it
-downloads the Signalith image built from the newest code. After a reboot everything
+they survive updates. To update, run `git pull` and then the `up` command again; once a new release
+is out, it downloads that release's image (the quick start runs the newest release). After a reboot everything
 starts again by itself once Docker is running (in Docker Desktop, turn on *Start Docker
 Desktop when you sign in*).
 
 [Docker quick start](docker.md) has the rest: which ports are open and how to limit
-them, [running a release or your own build](docker.md#running-a-release-or-building-the-image-yourself),
+them, [running the newest build of `main` or your own build](docker.md#running-another-version-or-building-the-image-yourself),
 [what to do if an update gets stuck](docker.md#if-an-update-gets-stuck), and
 [step-by-step upgrades from older quick starts](docker.md#upgrading-the-docker-quick-start)
 that keep your events, findings, users and detections.
@@ -161,8 +161,7 @@ Older versions cannot read encrypted values: before going back to one, run
 ## Windows
 
 The easiest way is the `.msi` installer: see [Install from packages](install-packages.md#windows).
-From the next release (0.3.1) it installs OpenSearch as well, so there is nothing to set
-up first; with 0.3.0, install OpenSearch first and give the installer its address with
+From 0.3.1 on it installs OpenSearch as well, so there is nothing to set up first; with 0.3.0, install OpenSearch first and give the installer its address with
 `OPENSEARCHURL`. To install by hand instead:
 
 1. In an elevated PowerShell, from the folder holding `signalith.exe` and

@@ -100,6 +100,7 @@ type RuleInput struct {
 	Detections    []string `json:"detections"`
 	MinRiskScore  float64  `json:"min_risk_score"`
 	IncludeSample bool     `json:"include_sample"`
+	Late          bool     `json:"late"`
 }
 
 // Problem is one setting to fix. Where is "channel:<id>" or
@@ -652,7 +653,7 @@ func (in RuleInput) rule(old *Rule, w string, cur, next Settings, now func() tim
 	}
 	r := Rule{
 		ID: strings.TrimSpace(in.ID), Name: strings.TrimSpace(in.Name), Enabled: in.Enabled == nil || *in.Enabled,
-		MinUrgency: strings.ToLower(strings.TrimSpace(in.MinUrgency)), MinRiskScore: in.MinRiskScore, IncludeSample: in.IncludeSample,
+		MinUrgency: strings.ToLower(strings.TrimSpace(in.MinUrgency)), MinRiskScore: in.MinRiskScore, IncludeSample: in.IncludeSample, Late: in.Late,
 	}
 	if r.ID != "" && old == nil && !idForm.MatchString(r.ID) {
 		add("id", "a new rule's ID may only hold lowercase letters, digits, - and _ (at most 40 characters)")

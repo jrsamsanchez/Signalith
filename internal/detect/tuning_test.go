@@ -159,3 +159,17 @@ func TestExceptionsAreSavedWithoutCopyingTheRule(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestExactExceptionTakesWildcardsLiterally(t *testing.T) {
+	e := Exception{Match: map[string]string{"user": "adm*", "host": "h?"}, Exact: true}
+	if e.Matches(map[string]any{"user": "administrator", "host": "h1"}) {
+		t.Error("exact exception matched as a wildcard")
+	}
+	if !e.Matches(map[string]any{"user": "ADM*", "host": []any{"x", "h?"}}) {
+		t.Error("exact exception missed its own values")
+	}
+	e.Exact = false
+	if !e.Matches(map[string]any{"user": "administrator", "host": "h1"}) {
+		t.Error("a typed exception lost its wildcards")
+	}
+}

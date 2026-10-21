@@ -4,6 +4,7 @@
 package query
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -285,5 +286,54 @@ func TestSplunkSyntaxForms(t *testing.T) {
 		if _, err := Parse(bad); err == nil {
 			t.Errorf("%s parsed", bad)
 		}
+	}
+}
+
+// A bare name on the right of a where comparison may name a field
+// (SL-02); written back, a quoted value stays quoted so it stays text.
+func TestWhereBareNameIsAReference(t *testing.T) {
+	q, err := Parse(`* | where a > b AND user="admin" AND c=adm* AND d=5 AND e=~x`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var refs []string
+	for _, c := range q.Commands[0].(*Where).Expr.(*And).Children {
+		if c := c.(*Compare); c.Ref {
+			refs = append(refs, c.Value)
+		}
+	}
+	if fmt.Sprint(refs) != "[b]" {
+		t.Errorf("references = %v", refs)
+	}
+	if got, want := q.String(), "*\n| "+`where a>b AND user="admin" AND c=adm* AND d=5 AND e=~x`; got != want {
+		t.Errorf("String() = %s, want %s", got, want)
+	}
+	if s, _ := Parse(`user=admin`); s.Search.(*Compare).Ref {
+		t.Error("a search term's value is never a reference")
+	}
+}
+
+// sort N keeps N rows, as in Splunk, and sort keys may name how their
+// values compare (SL-09).
+func TestSortLimitAndFunctions(t *testing.T) {
+	for src, want := range map[string]string{
+		`* | sort 5 -count`:               "*\n| sort 5 -count",
+		`* | sort limit=5 -count`:         "*\n| sort 5 -count",
+		`* | sort 0 -count`:               "*\n| sort -count",
+		`* | sort -num(count), str(user)`: "*\n| sort -num(count), str(user)",
+		`* | sort auto(x) ip(src)`:        "*\n| sort x, ip(src)",
+		`* | sort num`:                    "*\n| sort num",
+	} {
+		q, err := Parse(src)
+		if err != nil {
+			t.Errorf("%s: %v", src, err)
+			continue
+		}
+		if got := q.String(); got != want {
+			t.Errorf("%s = %q, want %q", src, got, want)
+		}
+	}
+	if _, err := Parse(`* | sort num(a, b)`); err == nil || !strings.Contains(err.Error(), "num() takes one field") {
+		t.Errorf("err = %v", err)
 	}
 }

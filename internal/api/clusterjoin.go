@@ -173,7 +173,7 @@ func (s *Server) handleJoin(w http.ResponseWriter, r *http.Request) {
 		// so rather than to try again.
 		attempt.Done()
 		s.Log.Warn("cluster.join failed after the token was used", slices.Concat(from.logAttrs(), []any{"err", clusterjoin.Reason(err)})...)
-		writeError(w, http.StatusInternalServerError, clusterjoin.ErrSpent)
+		writeError(w, http.StatusInternalServerError, &userError{msg: clusterjoin.ErrSpent.Error(), err: clusterjoin.ErrSpent})
 	default:
 		attempt.Done()
 		s.Log.Warn("cluster.join could not be answered", slices.Concat(from.logAttrs(), []any{"err", clusterjoin.Reason(err)})...)

@@ -25,6 +25,12 @@ type Query struct {
 	// detections must see events that arrived late at once, not when
 	// the summaries are next checked. Set by callers, not parsed.
 	EventsOnly bool
+
+	// TimeZone is the IANA time zone (America/New_York) that snaps such
+	// as @d, dates without a zone, timechart days and strftime use; empty
+	// is UTC. Set by callers, such as the Search page from the browser's
+	// zone, not parsed.
+	TimeZone string
 }
 
 // Expr is a boolean filter expression.
@@ -42,10 +48,18 @@ type Not struct{ Child Expr }
 // Compare is field <op> value, where op is one of = != < <= > >=, or =~
 // for a regular expression found anywhere in the value (RE2 syntax, ^ and
 // $ to anchor it).
+//
+// Ref is set on a where command's comparison whose value is a bare name,
+// as in where bytes_out > bytes_in: on a row that has a field of that
+// name, the comparison is with the field's value, as in Splunk; on any
+// other row, with the text.
 type Compare struct {
 	Field string
 	Op    string
 	Value string
+	Ref   bool
+
+	lit bool // written in a where command, so a bare name is put in quotes
 }
 
 // In is field IN (v1, v2, ...).
@@ -69,6 +83,9 @@ func (e *Or) String() string  { return "(" + joinExprs(e.Children, " OR ") + ")"
 func (e *Not) String() string { return "NOT " + e.Child.String() }
 func (e *Compare) String() string {
 	v := FormatValue(e.Value)
+	if e.lit && !e.Ref && v == e.Value && isEvalIdent(v) && e.Op != "=~" {
+		v = quote(v) // bare, it would name a field
+	}
 	if e.Op == "=" && strings.HasPrefix(v, "~") {
 		v = quote(v) // =~ would read as a regular expression match
 	}
@@ -115,8 +132,9 @@ func FormatValue(v string) string {
 	case "AND", "OR", "NOT", "IN", "AS", "BY":
 		needs = true
 	}
-	// Brackets would end or open a join's subsearch.
-	needs = needs || strings.ContainsAny(v, "[]")
+	// Brackets would end or open a join's subsearch, and a leading ' would
+	// read as a field name in where.
+	needs = needs || strings.ContainsAny(v, "[]") || strings.HasPrefix(v, "'")
 	if !needs {
 		return v
 	}
@@ -143,12 +161,16 @@ func quote(v string) string {
 func sortKeysString(ks []SortKey) string {
 	keys := make([]string, len(ks))
 	for i, k := range ks {
+		name := k.Field
+		if k.As != "" {
+			name = k.As + "(" + k.Field + ")"
+		}
 		if k.Desc {
-			keys[i] = "-" + k.Field
-		} else if strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+") {
-			keys[i] = "+" + k.Field // the sign is part of the name
+			keys[i] = "-" + name
+		} else if k.As == "" && (strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+")) {
+			keys[i] = "+" + name // the sign is part of the name
 		} else {
-			keys[i] = k.Field
+			keys[i] = name
 		}
 	}
 	return strings.Join(keys, ", ")
@@ -211,6 +233,10 @@ type Timechart struct {
 	// Limit is how many of the by field's values become series: 0 the
 	// default of 10, NoTimechartLimit as many as Signalith charts.
 	Limit int
+	// NoOther leaves out the OTHER series of the values beyond Limit, and
+	// NoNull the NULL series of events without the by field
+	// (useother=f, usenull=f).
+	NoOther, NoNull bool
 }
 
 // NoTimechartLimit is timechart limit=0.
@@ -265,14 +291,24 @@ type Where struct {
 	Search bool
 }
 
-// SortKey is one sort field.
+// SortKey is one sort field. As is how its values compare: "num" as
+// numbers, "str" as text, "ip" as addresses, or "" (auto) numbers as
+// numbers and the rest as text.
 type SortKey struct {
 	Field string
 	Desc  bool
+	As    string
 }
 
-// Sort orders rows: sort -count, src.
-type Sort struct{ Keys []SortKey }
+// SortFuncs are the functions a sort key may be written in: sort num(x).
+var SortFuncs = []string{"auto", "ip", "num", "str"}
+
+// Sort orders rows: sort -count, src. Limit, when above 0, keeps only
+// that many rows: sort 10 -count, or sort limit=10 -count.
+type Sort struct {
+	Keys  []SortKey
+	Limit int
+}
 
 // Head keeps the first N rows.
 type Head struct{ N int }
@@ -365,6 +401,12 @@ func CommandString(c Command) string {
 		case c.Limit > 0 && c.Limit != 10:
 			s += " limit=" + strconv.Itoa(c.Limit)
 		}
+		if c.NoOther {
+			s += " useother=f"
+		}
+		if c.NoNull {
+			s += " usenull=f"
+		}
 		s += " " + aggList(c.Aggs)
 		if c.By != "" {
 			s += " by " + c.By
@@ -389,7 +431,7 @@ func CommandString(c Command) string {
 		if c.Search {
 			return "search " + topLevel(c.Expr, " ")
 		}
-		return "where " + topLevel(c.Expr, " AND ")
+		return "where " + topLevel(whereLiterals(c.Expr), " AND ")
 	case *Eval:
 		return evalString(c)
 	case *Rex:
@@ -399,6 +441,10 @@ func CommandString(c Command) string {
 	case *Fillnull:
 		return fillnullString(c)
 	case *Sort:
+		// A first key named with digits would read as the limit.
+		if c.Limit > 0 || len(c.Keys) > 0 && !c.Keys[0].Desc && c.Keys[0].As == "" && isDigits(c.Keys[0].Field) {
+			return "sort " + strconv.Itoa(c.Limit) + " " + sortKeysString(c.Keys)
+		}
 		return "sort " + sortKeysString(c.Keys)
 	case *Head:
 		return "head " + strconv.Itoa(c.N)
@@ -552,6 +598,33 @@ func aggList(aggs []Agg) string {
 }
 
 // topLevel renders an expression without its outermost parentheses.
+// whereLiterals returns e with its comparisons marked as written in a
+// where command, so that a value that is not a field reference prints in
+// quotes and reads back as text.
+func whereLiterals(e Expr) Expr {
+	switch e := e.(type) {
+	case *And:
+		return &And{Children: whereLiteralList(e.Children)}
+	case *Or:
+		return &Or{Children: whereLiteralList(e.Children)}
+	case *Not:
+		return &Not{Child: whereLiterals(e.Child)}
+	case *Compare:
+		c := *e
+		c.lit = true
+		return &c
+	}
+	return e
+}
+
+func whereLiteralList(es []Expr) []Expr {
+	var out []Expr
+	for _, c := range es {
+		out = append(out, whereLiterals(c))
+	}
+	return out
+}
+
 func topLevel(e Expr, andSep string) string {
 	// Without its parentheses, a term such as earliest=0 would read back
 	// as the query's own earliest=, not as a search of that field.

@@ -75,8 +75,8 @@ Settings changed on the **Settings** page are kept in the `signalith-data` volum
 certificate authority, so they survive updates; settings given in `docker-compose.yml`'s
 `environment:` show there locked.
 
-To update, run `git pull` and then the first command again. It downloads the Signalith
-image built from the newest code each time. If `git pull` says your local changes to
+The quick start runs the newest release. To update, run `git pull` and then the first
+command again: once a new release is out, it downloads that release's image. If `git pull` says your local changes to
 `deploy/docker/signalith.yaml` would be overwritten, run `git stash` and `git pull` again.
 If the change you had made there was `plaintext_ingest: deny`, add that line back under
 `mode: auto`, indented the same, before you run the first command; otherwise agents on
@@ -110,19 +110,26 @@ memory=6GB
 then run `wsl --shutdown` and start Docker Desktop again. Signalith with OpenSearch needs
 at least 4 GB there.
 
-## Running a release, or building the image yourself
+## Running another version, or building the image yourself
 
-The quick start runs the image GitHub builds from `main`, which matches the code `git pull`
-gives you. To run a release instead, check out its tag and set `SIGNALITH_VERSION` to the
-same version before the first command, for example in PowerShell:
+The quick start runs the image of the newest release, named in
+`deploy/docker/docker-compose.yml`, and moves to the next release when `git pull` brings
+it. To run another version, set `SIGNALITH_VERSION` before the first command. `main` is
+the image built from every change to `main`: the newest code, not yet released, for
+trying what's coming or for development. For example in PowerShell:
 
 ```powershell
-git checkout v0.3.0
-$env:SIGNALITH_VERSION = "0.3.0"
+$env:SIGNALITH_VERSION = "main"
 docker compose -f deploy/docker/docker-compose.yml up -d
 ```
 
-(in a Linux or macOS terminal: `export SIGNALITH_VERSION=0.3.0`). To build the image
+(in a Linux or macOS terminal: `export SIGNALITH_VERSION=main`). To keep it for every
+command, put `SIGNALITH_VERSION=main` in a file called `.env` in `deploy/docker`. Going
+back from `main` to a release isn't supported: a newer version may have changed your
+data, so to leave `main`, wait for the release that follows it. For an older release,
+check out its tag first (`git checkout v0.3.1`) and set `SIGNALITH_VERSION` to the same
+version. Each release also has the quick start locked to its own image, which needs no
+`git`: see [The quick start locked to a release](install-packages.md#the-quick-start-locked-to-a-release). To build the image
 from the code you checked out, for example to try a change of your own, add
 `-f deploy/docker/docker-compose.build.yml` after the first `-f` in every command:
 
@@ -131,6 +138,11 @@ docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compo
 ```
 
 ## Upgrading the Docker quick start
+
+Up to 0.3.1 the quick start ran the image built from `main`; from 0.3.2 on it runs the
+newest release. If you updated from `main` after 0.3.1 was released, you are on code newer
+than that release: to stay on `main` until the next one, put `SIGNALITH_VERSION=main` in
+`deploy/docker/.env` before you `git pull`.
 
 From 0.3.0 on, the quick start runs OpenSearch 3.9 instead of 2.17. Your data moves over
 by itself on the next start, but OpenSearch can't go back to 2.17 afterwards, so copy the
@@ -222,7 +234,7 @@ agents on the web port, with a warning in the log for each one, so nothing stops
    servers.
 2. Set up each agent again from **Add data**: its new configuration sends to port 7779.
 3. Set `server.agent_listen` (for example `0.0.0.0:7779`) so the web port stops taking
-   agents. The next release stops taking agents on the web port anyway.
+   agents. A later release will stop taking agents on the web port.
 
 See [The agent port](sending-data.md#the-agent-port).
 

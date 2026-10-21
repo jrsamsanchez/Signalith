@@ -53,6 +53,9 @@ func (s *Server) searchAuditAttrs(src string, q *query.Query, res *search.Result
 	attrs := []any{"query", auditQuery(src)}
 	if q != nil {
 		attrs = append(attrs, "earliest", q.Earliest, "latest", q.Latest)
+		if q.TimeZone != "" {
+			attrs = append(attrs, "time_zone", q.TimeZone)
+		}
 		if s.Engine != nil {
 			if idx, ierr := s.Engine.IndexPattern(q); ierr == nil {
 				attrs = append(attrs, "index", idx)

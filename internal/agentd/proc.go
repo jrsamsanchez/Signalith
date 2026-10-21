@@ -6,6 +6,7 @@ package agentd
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -244,6 +245,13 @@ func (p *proc) start(s *procSpec) (chan error, error) {
 	go func() {
 		<-lines
 		err := cmd.Wait()
+		if hint := memoryHint(cmd.Process.Pid); hint != "" {
+			if err != nil {
+				err = fmt.Errorf("%w (%s)", err, hint)
+			} else {
+				err = errors.New(hint)
+			}
+		}
 		p.procMu.Lock()
 		p.cmd = nil
 		p.procMu.Unlock()

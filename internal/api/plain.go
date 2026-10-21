@@ -5,7 +5,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"net"
 	"net/http"
 	"net/netip"
@@ -43,6 +42,29 @@ func (s *Server) viaTrustedProxy(r *http.Request) bool {
 		return true
 	}
 	return false
+}
+
+// proxiedPlain reports whether a request came through a reverse proxy
+// Signalith trusts (listed, or believed for an old config as in
+// viaTrustedProxy) that says the browser or agent used plain HTTP
+// (X-Forwarded-Proto other than https), and returns who sent it: the
+// client the proxy named, or else the proxy. A request without the
+// header says nothing either way.
+func (s *Server) proxiedPlain(r *http.Request) (netip.Addr, bool) {
+	proto, _, _ := strings.Cut(r.Header.Get("X-Forwarded-Proto"), ",")
+	proto = strings.TrimSpace(proto)
+	if proto == "" || strings.EqualFold(proto, "https") {
+		return netip.Addr{}, false
+	}
+	from := clientaddr.Parse(r.RemoteAddr)
+	if !from.IsValid() {
+		return netip.Addr{}, false
+	}
+	srv := s.conf().Server
+	if !srv.TrustsProxy(from) && !srv.LegacyProxy(from) {
+		return netip.Addr{}, false
+	}
+	return s.client(r).Addr, true
 }
 
 // maxLegacyProxies caps the proxies the legacy proxy list remembers.
@@ -203,7 +225,7 @@ func plainRefusal(w http.ResponseWriter, r *http.Request, status int, msg string
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if strings.HasPrefix(r.URL.Path, "/api/") {
-		writeError(w, status, errors.New(msg))
+		writeError(w, status, errUser(msg))
 		return
 	}
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")

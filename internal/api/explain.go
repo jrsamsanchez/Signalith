@@ -145,6 +145,9 @@ func describeExpr(e query.Expr) string {
 		if strings.ContainsAny(e.Value, "*?") && (e.Op == "=" || e.Op == "!=") {
 			verb = map[string]string{"=": "matches", "!=": "does not match"}[e.Op]
 		}
+		if e.Ref {
+			return fmt.Sprintf("%s %s the field %s (or the text %q where there is no such field)", e.Field, verb, e.Value, e.Value)
+		}
 		return fmt.Sprintf("%s %s %s", e.Field, verb, e.Value)
 	case *query.Cond:
 		return e.String() + " holds"
@@ -179,6 +182,12 @@ func describeAggs(aggs []query.Agg) string {
 			s = "the standard deviation of " + a.Field
 		case "var":
 			s = "the variance of " + a.Field
+		case "stdevp":
+			s = "the population standard deviation of " + a.Field
+		case "varp":
+			s = "the population variance of " + a.Field
+		case "sumsq":
+			s = "the sum of the squares of " + a.Field
 		case "range":
 			s = "the range (largest minus smallest) of " + a.Field
 		case "mode":
@@ -512,6 +521,9 @@ func describeCommand(c query.Command) string {
 		s := strings.Join(parts, " and ")
 		return strings.ToUpper(s[:1]) + s[1:] + "."
 	case *query.Sort:
+		if c.Limit > 0 {
+			return fmt.Sprintf("Sort by %s and keep the first %d rows.", describeSortKeys(c.Keys), c.Limit)
+		}
 		return "Sort by " + describeSortKeys(c.Keys) + "."
 	case *query.Head:
 		return fmt.Sprintf("Keep the first %d rows.", c.N)
@@ -787,6 +799,14 @@ func describeSortKeys(keys []query.SortKey) string {
 		dir := "lowest first"
 		if k.Desc {
 			dir = "highest first"
+		}
+		switch k.As {
+		case "num":
+			dir += ", as numbers"
+		case "str":
+			dir += ", as text"
+		case "ip":
+			dir += ", as addresses"
 		}
 		parts[i] = k.Field + " (" + dir + ")"
 	}

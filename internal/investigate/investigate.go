@@ -172,6 +172,21 @@ type run struct {
 	emit  func(Event)
 	// from and to bound the searches gathered by default.
 	from, to time.Time
+	// probed is set by a search refused for a value that could match a
+	// masked value; the run then stops.
+	probed bool
+}
+
+// StoppedError ends a run whose model asked for a search with a value
+// that could match a masked value. Telling the model so would confirm
+// the guess, and a model could grow a guess one refused search at a
+// time, so nothing more is sent to it. Steps are the run's steps, the
+// refused search last.
+type StoppedError struct{ Steps []Step }
+
+func (e *StoppedError) Error() string {
+	return "The investigation stopped: the AI model asked for a search with a value that could match a masked value, " +
+		"which could reveal it. Nothing more was sent to the model. Text in the logs may have steered it; the refused search is in the audit log."
 }
 
 func (inv *Investigator) now() time.Time {
@@ -243,6 +258,9 @@ func (inv *Investigator) Run(ctx context.Context, f *findings.Finding, emit func
 				}
 				asked++
 				st := r.followUp(ctx, s)
+				if r.probed {
+					return nil, &StoppedError{Steps: r.steps}
+				}
 				data.WriteString(r.describe(st))
 			}
 			var b strings.Builder
@@ -580,6 +598,8 @@ func (r *run) followUp(ctx context.Context, s askedSearch) Step {
 	}
 	if err := guardQuery(q, r.mask); err != nil {
 		st.Error = RefusedPrefix + err.Error()
+		var mv *MaskedValueError
+		r.probed = errors.As(err, &mv)
 		return r.add(st)
 	}
 	// Times in the query itself are relative to now; the ones given
@@ -650,7 +670,7 @@ Rules:
 - Base every claim on the data shown, and cite the step numbers it came from. Say "unsure" when the data is thin or points both ways.
 - Values like masked-user-1 stand in for values that are hidden from you. Use them as they are in queries; never guess the real value.
 - Suggest response actions only when the verdict is real, only from the list given, and only on a user, host or address the data shows; leave "actions" empty otherwise. A person reviews and runs them.
-- Your searches may use search, where, stats, timechart, top, sort, head, table, dedup and fields. A masked field can be matched only with = or != and one of its stand-ins, and counted with count or dc.
+- Your searches may use search, where, stats, timechart, top, sort, head, table, dedup and fields. A masked field can be matched only with = or != and one of its stand-ins, and counted with count or dc. Regular expressions are not allowed; a wildcard pattern needs at least 3 characters between wildcards, free text needs words of at least 3 characters, values use ASCII characters only, < and > work only on _time and on counts made by stats or top (such as | stats count by src | where count > 10), and where may only compare a field with a single value (=, !=, < and > on _time and counts, like(field, "pattern"), in(field, values), cidrmatch("network", field), isnull, isnotnull) joined with AND, OR and NOT. A search with a value that could match a masked value, in any field, ends the investigation.
 - Keep the timeline to the events that matter, in time order, at most %d entries.
 - Plain language for a busy analyst. No markdown.
 

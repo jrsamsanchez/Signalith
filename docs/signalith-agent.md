@@ -140,7 +140,13 @@ that folder and prints the commands instead of running them.
   which reads log lines anyone can write to, stays fenced in. Before osquery starts, its
   service checks the settings the agent wrote, outside the agent's service, and osquery
   runs with the checked copy with extensions off, so nothing in the agent's service can
-  hand osquery more.
+  hand osquery more. osquery's `curl` and `curl_certificate` tables, which would make the
+  computer fetch any address, are off whatever the server sends.
+- **It cannot take over the computer's memory or CPU.** On Linux the agent's service,
+  which runs Fluent Bit too, may use at most 512 MB of memory and two CPU cores
+  (`MemoryMax=512M`, `CPUQuota=200%`), and osquery's at most 512 MB and one core; on
+  Windows each collector may commit at most 512 MB. One that goes past it is stopped
+  and started again. Computers set up before 0.3.2 get these when you run the line again.
 - **Updates are signed.** An agent updates itself only to a program listed in a manifest
   signed with the Signalith release key, whose public key is built into the agent, and
   only to a newer version. A server that was broken into can hand out neither a program
@@ -364,6 +370,9 @@ How it works, and why it is safe:
    outside the agent's fenced-in service (the agent itself cannot change its own
    program); on Windows a copy of the agent. The updater checks the signature and the
    SHA-256 again itself, keeps the version before, and restarts the agent.
+   Neither takes a manifest signed with a revoked key: the server hands each agent
+   its [revocation list](key-management.md#revocation-lists), and the agent and the
+   updater each keep the newest one they have seen.
 4. If the new version does not reach Signalith within 3 minutes, or does not keep running, the
    updater puts the version before back and restarts it. The computer's row on the
    **Endpoints** page then says the update failed, with the reason.

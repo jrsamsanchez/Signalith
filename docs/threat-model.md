@@ -182,7 +182,9 @@ Each arrow is a boundary where data from the other side is not trusted:
   settings, users or audit records unnoticed, but they can delete them.
 - **Your identity provider and directory**, when you use single sign-on or directory
   sign-in, decide who is who.
-- **The release key and the content key** built into Signalith.
+- **The release key, the content key and the offline root key** built into Signalith.
+  A leaked release or content key is revoked with a list signed by the root key
+  ([Key management](key-management.md)).
 
 ## Out of scope and known limits
 

@@ -111,6 +111,9 @@ func TestDetectionsAndFindingsErrors(t *testing.T) {
 		{"POST", "/api/detections/nope/run", "", 404, ""},
 		{"GET", "/api/findings?since=forever", "", 400, "since: "},
 		{"GET", "/api/findings?limit=5000", "", 400, "limit must be 1-1000"},
+		{"GET", "/api/findings?sort=owner", "", 400, "sort must be one of"},
+		{"GET", "/api/findings?group=owner", "", 400, "group must be detection or entity"},
+		{"GET", "/api/findings?after=%7B%7D", "", 400, "page cursor is not valid"},
 		{"GET", "/api/findings/nope", "", 404, ""},
 		{"POST", "/api/findings", `{`, 400, ""},
 		{"POST", "/api/findings", `{"title":" "}`, 400, "title is required"},
@@ -138,7 +141,10 @@ func TestDetectionsAndFindingsErrors(t *testing.T) {
 	if code, out := do(t, ts, "GET", "/api/findings?since=-1h&limit=5&status=new&severity=medium", "", true); code != http.StatusOK || out["total"] != float64(1) {
 		t.Errorf("list: %d %v", code, out)
 	}
-	if code, out := do(t, ts, "POST", "/api/findings/bulk", `{"ids":["`+id+`","nope"],"update":{"status":"closed"}}`, true); code != http.StatusOK || out["updated"] != float64(1) || out["failed"].(map[string]any)["nope"] == nil {
+	if code, out := do(t, ts, "PATCH", "/api/findings/"+id, `{"status":"resolved"}`, true); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "pick a disposition") {
+		t.Errorf("resolve without a disposition: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "POST", "/api/findings/bulk", `{"ids":["`+id+`","nope"],"update":{"status":"closed","disposition":"false_positive"}}`, true); code != http.StatusOK || out["updated"] != float64(1) || out["failed"].(map[string]any)["nope"] == nil {
 		t.Errorf("bulk: %d %v", code, out)
 	}
 	if code, out := do(t, ts, "GET", "/api/findings/"+id, "", true); code != http.StatusOK || out["finding"].(map[string]any)["status"] != "closed" {

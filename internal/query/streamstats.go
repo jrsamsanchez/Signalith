@@ -64,6 +64,9 @@ func (p *parser) parseStreamStats(cmd token) (Command, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := noWildcardAggs("streamstats", cmd.pos, aggs); err != nil {
+		return nil, err
+	}
 	for _, a := range aggs {
 		if !isStreamFunc(a.Func) {
 			return nil, errorf(cmd.pos, "streamstats runs %s; use eventstats or stats for %s", strings.Join(StreamFuncs, ", "), a.Func)

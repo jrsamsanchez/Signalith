@@ -168,14 +168,15 @@ func TestSearchTime(t *testing.T) {
 		"now":                  now,
 		"2026-10-01T00:00:00Z": time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC),
 		"1760000000000":        time.UnixMilli(1760000000000).UTC(),
+		"1760000000":           time.Unix(1760000000, 0).UTC(),
 	}
 	for in, want := range cases {
-		if got, ok := searchTime(in, now); !ok || !got.Equal(want) {
+		if got, ok := searchTime(in, now, time.UTC); !ok || !got.Equal(want) {
 			t.Errorf("searchTime(%q) = %v, %v; want %v", in, got, ok, want)
 		}
 	}
 	for _, in := range []string{"", "0", "soon"} {
-		if _, ok := searchTime(in, now); ok {
+		if _, ok := searchTime(in, now, time.UTC); ok {
 			t.Errorf("searchTime(%q) has a time", in)
 		}
 	}

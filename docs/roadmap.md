@@ -22,12 +22,9 @@ Ideas and requests are welcome as
 ## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
 
 **The next release**
-:   Finished and waiting for the next release: the [Signalith Agent](signalith-agent.md),
-    which updates itself from signed releases and rolls back if an update fails; the
-    Windows installer setting up [OpenSearch on the same computer](install-packages.md#opensearch-on-windows);
-    [detections spread over several servers](servers.md#the-background-jobs) by default;
-    and syslog over TLS on port 6514 only for new installs, with
-    [plain syslog on 514](sending-data.md#turning-on-plain-syslog) one click away.
+:   Finished and waiting for the next release: the Signalith Agent caps Fluent Bit's
+    buffer on disk, stops sending when the server refuses its token, and keeps an update
+    only once the new agent has reached the server.
 
 **Correct answers**
 :   Search results that say when they were sampled or cut short, compliance scores that
@@ -35,7 +32,7 @@ Ideas and requests are welcome as
     the findings of an internal review.
 
 **Easy to keep running**
-:   Backup and restore, OpenSearch shard limits checked before they bite, syslog that
+:   OpenSearch shard limits checked before they bite, syslog that
     keeps events through an OpenSearch restart, and safer upgrades on Windows.
 
 **Proof**
@@ -188,7 +185,7 @@ Everything below is in Signalith now. A few items, named under **Now**, arrive w
   with one line on Linux, Windows or Docker, shared settings, users and detections,
   each server's detection health on the Servers page,
   [detections spread over the servers](servers.md#the-background-jobs) (on by default
-  from the next release), one certificate authority, rolling upgrades,
+  from 0.3.1), one certificate authority, rolling upgrades,
   draining and removing a server, and
   [OpenSearch with several nodes](opensearch-failover.md).
 - [Load balancers](load-balancers.md) in front of several servers, with PROXY protocol so
@@ -248,6 +245,6 @@ Everything below is in Signalith now. A few items, named under **Now**, arrive w
 - [Backup and restore](backup.md) of a server's files and OpenSearch data.
 - A [security check](security.md) of how each server is set up, a
   [tamper-evident audit log](audit.md#tamper-evidence), and API tokens that expire.
-- [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0,
+- [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0.1,
   ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, with evidence reports for auditors.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.

@@ -19,6 +19,10 @@ func runningAsAdmin() bool { return security.Elevated() }
 // access lists (securefile and signalith service install).
 func serviceOwner() (uid, gid int, ok bool) { return 0, 0, false }
 
+// asServiceUser: outside Unix the state folder's access list keeps
+// other users out, so any administrator may change it.
+func asServiceUser(state, command string) error { return nil }
+
 // ownerOf: outside Unix a file's access is its access list, which
 // securefile sets.
 func ownerOf(fs.FileInfo) (uid, gid int, ok bool) { return 0, 0, false }

@@ -2,7 +2,8 @@
 
 A query is a **search** followed by zero or more **commands**, each after a `|`.
 The search selects events; commands reshape the results. It reads like Splunk's SPL,
-but it is Signalith's own language and does not claim SPL compatibility.
+but it is Signalith's own language. [Splunk SPL compatibility](compatibility.md) lists what
+works as in SPL, what works differently and what is missing.
 
 ```
 datamodel=Authentication action=failure earliest=-24h
@@ -58,8 +59,18 @@ add `-explain` to see the compiled request. `signalith ask "failed logins from
 | `a OR b` | Either. As in SPL, OR binds tighter than the implicit AND, so `x a OR b` means `x AND (a OR b)` |
 | `earliest=-7d@d latest=now` | Time range; overrides the UI time picker |
 
-Relative times: `-30s`, `-15m`, `-4h`, `-7d`, `-2w`, `-1mon`, `-1y`, optionally snapped
-with `@d`, `@h`, `@w`. Absolute times are ISO 8601 (`2026-10-01T00:00:00Z`).
+Relative times: `-30s`, `-15m`, `-4h`, `-7d`, `-2w`, `-1mon`, `-1q`, `-1y`, optionally
+snapped with `@d`, `@h`, `@w`, `@mon`, `@q` or `@y`, and chained as in Splunk (`@d-1h`,
+`-1d@d+8h`). Weeks start on Sunday (`@w` or `@w0`); `@w1` to `@w6` snap to Monday through
+Saturday. The same week start holds for `bin` and `timechart span=1w`. Absolute times are
+ISO 8601 (`2026-10-01T00:00:00Z`; with no zone, in the search's time zone), epoch seconds (`1767225600`;
+13 digits read as milliseconds) or `10/01/2026:08:00:00`. A time Signalith cannot read is
+an error rather than an empty result.
+
+**Time zone.** The Search page runs searches in your browser's time zone, shown next to the
+results: `@d`, `@w` and the other snaps, dates without a zone, `timechart` and `bin` days
+and weeks, `strftime`, `strptime` and `relative_time` all use it. Detections, dashboards
+and searches through the API without a `time_zone` run in UTC.
 A search reads only the daily indices of the days in its time range (UTC, an hour
 either side), including the extra parts of busy days, so a short range stays fast
 however many days are kept. All time, or a range that names too many days to list,
@@ -75,14 +86,14 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 
 | Command | Example | Notes |
 | --- | --- | --- |
-| `stats` | `stats count, dc(user) as users, perc95(bytes) by src, dest` | Functions are listed [below](#stats-functions) |
+| `stats` | `stats count, dc(user) as users, perc95(bytes) by src, dest` | Functions are listed [below](#stats-functions). A row with several values in a by field counts in the group of each value, as in Splunk (`top` too) |
 | `eventstats` | `eventstats avg(bytes) as avg_bytes by src` | Same [functions](#stats-functions) as `stats`, but adds the results to every row instead of replacing the rows, so later commands can compare each event with its group: `\| where bytes > avg_bytes * 10` |
 | `streamstats` | `streamstats current=f window=5 avg(bytes) as prev_avg by src` | Adds running results to each row, over the rows before it in result order (events come newest first; `sort` first for oldest first). Takes `count`, `dc`, `sum`, `avg`, `min`, `max`, `range`, `first` and `last`. `current=f` leaves the row itself out; `window=N` (up to 10,000) looks back over the last N rows of each group |
-| `timechart` | `timechart span=1h count by action` | One aggregation when splitting by a field; span picked automatically if omitted. A split shows the 10 largest series; `limit=N` changes that, up to 100, and `limit=0` shows up to 100 |
+| `timechart` | `timechart span=1h count by action` | One aggregation when splitting by a field; span picked automatically if omitted. A split shows the 10 values with the most events over the whole range as series, each counted in every bucket, plus `OTHER` for the rest and `NULL` for events without the field, as in Splunk; `limit=N` changes the 10, up to 100 (`limit=0` is 100), and `useother=f` and `usenull=f` leave out those two. The options may also come after the by field |
 | `chart` | `chart count over host by action` | One row per `over` value and, with `by`, one column per `by` value: the 10 with the largest totals unless `limit=N` says (`0` for all, up to 1,000). Without a split field it is `stats ... by` the over field; `chart count by host, action` is the same as `over host by action`. Runs in OpenSearch like `stats` when it comes first |
 | `xyseries` | `xyseries host action count` | Turns rows into one row per first field and one column per second field's value, holding the third; with several value fields the columns are named `count: allow` |
 | `untable` | `untable host action count` | The reverse of `xyseries`: one row per cell, with the row field, the column's name and its value |
-| `top` | `top limit=10 process_name by host` | Adds `count` and `percent`. `countfield=` and `percentfield=` rename them, `showcount=f` and `showperc=f` leave them out, and `useother=t` adds a row per group counting the values past the limit, with `OTHER` (or `otherstr=`) as the value. `top 5 user` is `limit=5` |
+| `top` | `top limit=10 process_name by host` | Adds `count` and `percent` (to six decimal places, as Splunk gives it). `countfield=` and `percentfield=` rename them, `showcount=f` and `showperc=f` leave them out, and `useother=t` adds a row per group counting the values past the limit, with `OTHER` (or `otherstr=`) as the value. `top 5 user` is `limit=5` |
 | `rare` | `rare limit=10 process_name by host` | Like `top`, least common values first |
 | `search` | `search count>20 user=adm*` | After the first `\|`, filters the rows with the [search syntax](#search) (wildcards, bare words, `OR` binding tighter than the implicit AND). Right after the search it runs in OpenSearch. A query may also start with the word `search`, as copied from Splunk |
 | `where` | `where count > 20 AND users >= 2` | AND binds tighter than OR here, as in most languages. Also takes [expressions](#expressions-eval-and-where): `where len(process) > 1000`, `where bytes_out > bytes_in * 10` |
@@ -94,7 +105,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `append` | `append [search datamodel=Change \| stats count by user]` | Adds a subsearch's rows after the results. The subsearch works as in `join` and counts toward the same limits |
 | `union` | `union [search datamodel=Authentication] [search datamodel=Change]` | Adds the rows of each subsearch, in order, after the results. Each subsearch works as in `append` and counts toward the same limits |
 | `appendpipe` | `appendpipe [stats sum(count) as count \| eval user="TOTAL"]` | Runs the commands in `[ ]` over a copy of the results so far and adds the rows they give after them, for totals and summary rows. `inputlookup`, `makeresults`, `timechart` and `threatmatch` cannot run inside |
-| `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Monday, all in UTC) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
+| `bin` | `bin span=1h _time` | Rounds values down into buckets so `stats ... by _time` groups them: a time span (`30s`, `15m`, `1h`, `1d`, `1w`; weeks start on Sunday, and days and weeks follow the search's time zone) on times, or a number span (`span=100`) that turns numbers into ranges like `200-300`. `AS name` writes the bucket to another field. Also `bucket` |
 | `regex` | `regex process="(?i)-enc(odedcommand)?\s"` | Keeps rows where the field matches an [RE2](https://github.com/google/re2/wiki/Syntax) regular expression (any value of a multivalue field); `field!="..."` keeps those that do not. `regex "..."` looks at `_raw`. Rows without the field never match |
 | `spath` | `spath output=user path=actor.user.name` | Extracts values from JSON in `_raw` (or `input=field`): the value at `path=` (`items{}.id` takes `id` from every item of the `items` array, as a multivalue field), written to `output=` or the path's name. Without a path it extracts every value (up to 500 per event), each named by its path. Objects and arrays come out as JSON text |
 | `fromjson` | `fromjson body prefix=b_` | Extracts each top-level key of the JSON object in a field as a field of the same name, or `prefix=` and the name. Arrays of plain values come out as multivalue fields; objects and other arrays as JSON text. Up to 500 keys per event |
@@ -145,8 +156,8 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `convert` | `convert timeformat="%Y-%m-%d %H:%M" ctime(firstTime) AS first, dur2sec(duration)` | Changes values in place, or into the `AS` field: `ctime` writes a time with `timeformat=` (default `%m/%d/%Y %H:%M:%S`), `mktime` reads one back into seconds, `dur2sec` reads `[D+]HH:MM:SS`, `mstime` reads `[MM:]SS.SSS`, `memk` reads sizes like `10m` as kilobytes, `rmcomma` and `rmunit` read numbers written with commas or units, `num` keeps only numbers and `auto` turns what it can into numbers. A field with `*` converts every matching field; `none(f)` leaves f out of them |
 | `addtotals` | `addtotals fieldname=total bytes_*` | Adds each row's numeric fields (or the listed ones, `*` matching any text) into `Total` (or `fieldname=`). Fields starting with `_` are left out. `col=t` also adds a last row with each column's total, labelled with `label=` (default `Total`) in `labelfield=`; `row=f` leaves out the row totals. `addcoltotals [labelfield=f] [label=x]` adds only the column totals |
 | `fillnull` | `fillnull value=0 bytes, packets` | Sets missing values (default `0`). With no fields it fills every column |
-| `sort` | `sort -count, src` | `-` for descending |
-| `head` | `head 20` | Also `limit` |
+| `sort` | `sort -count, src` | `-` for descending. `sort 10 -count` (or `limit=10`) keeps the first 10 rows; `sort 0` keeps them all. `num(f)` compares as numbers (other values after them), `str(f)` as text, `ip(f)` as addresses, `auto(f)` as usual: numbers in order before text, and text in byte order, so `Bob` sorts before `alice`, as in Splunk |
+| `head` | `head 20` | Also `head limit=20`, and `limit` as the command's name |
 | `table` | `table _time, user, src` | Also `fields`; wildcards allowed. `fields - _raw, tmp_*` removes fields instead |
 | `rename` | `rename src as source_ip, dest as target` | Pairs may be separated by commas or spaces. A `*` in the old name matches any text, which the new name's `*` takes: `rename *_ip as *` renames `src_ip` to `src`, `rename Processes.* as *` drops a `tstats` prefix. A renamed field replaces one that already had its new name |
 | `lookup` | `lookup owners host OUTPUT owner, team` | Adds columns from a lookup table (Settings > Lookups) to rows whose field matches a key column; `host AS dest` matches another field, `OUTPUTNEW` fills only missing fields, no `OUTPUT` adds every column. A table can hold `*` patterns or ignore case; `local=true` is accepted and changes nothing. See [Lookup tables](https://github.com/jrsamsanchez/signalith/blob/main/docs/lookups.md) |
@@ -183,12 +194,15 @@ Columns produced by `stats` are referenced by name in later commands, for exampl
 | `sum(f)`, `avg(f)`, `min(f)`, `max(f)`, `range(f)` | Totals, average, smallest, largest, and largest minus smallest. Over `_time` they are in seconds since 1970, as in Splunk, so `min(_time) as firstTime` works with `convert ctime(firstTime)` |
 | `median(f)`, `perc95(f)` | The median and any percentile from `perc1` to `perc99` (`p95` works too). OpenSearch estimates these on large data |
 | `stdev(f)`, `var(f)` | Sample standard deviation and variance; 0 for a single value, as in Splunk |
+| `stdevp(f)`, `varp(f)`, `sumsq(f)` | Population standard deviation and variance, and the sum of the squares |
 | `mode(f)` | The most common value |
-| `values(f)` | The distinct values, sorted, up to 100 |
+| `values(f)` | The distinct values, sorted as text: up to 10,000, or 100 when `stats` runs in OpenSearch. A result that leaves values out is marked truncated |
 | `list(f)` | The values, newest first, up to 100 |
 | `first(f)`, `latest(f)` | The newest value; `last(f)` and `earliest(f)` give the oldest |
 
 Any function can take an expression instead of a field, as in Splunk: `stats count(eval(action="failure")) as failures, values(eval(if(bytes>1000, dest, null()))) as big_dests by user`. Each needs `as name`. `count(eval(x))` counts the events where `x` is true. A search that uses one runs `stats` in the Signalith server over at most `search.max_events` events instead of in OpenSearch. `stats`, `eventstats`, `streamstats` and `chart` take these.
+
+In `stats` and `eventstats` a field name with `*` covers every matching field, as in Splunk: `stats sum(bytes*) by user` gives `sum(bytes_in)`, `sum(bytes_out)` and so on, and `stats values(*) as * by user` names each column after its field. The `by` fields, and fields starting with `_` unless the pattern does, are left out. Which fields match is known only from the events, so such a `stats` runs in the Signalith server over at most `search.max_events` events. `timechart`, `chart`, `streamstats`, `tstats` and `by` clauses refuse `*` field names rather than give an empty result.
 
 ## Expressions (eval and where)
 
@@ -219,20 +233,25 @@ A comparison with a missing field is null, which `where` treats as false. Use `i
 
 `where` keeps its plain filter reading for conditions such as `count > 20`,
 `user=adm*` or `src IN (a, b)`: there the right side is a value, matching ignores case and
-`*` is a wildcard. As soon as the condition uses a function, arithmetic or a quoted field
-name it is read as an expression, so `where bytes_out > bytes_in` compares the text
-`bytes_in`, while `where bytes_out > bytes_in * 1` compares the two fields.
+`*` is a wildcard, as in a search; a multivalue field matches when one of its values does
+(`!=` when none does). A bare name on the right names a field, as in Splunk:
+`where bytes_out > bytes_in` compares the two fields on every row that has `bytes_in`, and
+compares with the text `bytes_in` only on rows without it. Right after the search, where OpenSearch runs the `where`, only a field a data model names is read as a field there; any other bare name is compared as text, so write `where bytes_out > 'my_field'` or move the `where` after a command such as `eval` when comparing with a field of your own. Put a value in double quotes
+(`where user="admin"`) to always compare with the text. As soon as the condition uses a
+function, arithmetic or a single-quoted field name it is read as an expression, which
+compares text case-sensitively as Splunk's `where` does: `where action="Failure"` matches
+`failure`, but `where action="Failure" AND len(action) > 0` does not.
 
 | Functions | |
 | --- | --- |
 | Conditions | `if(cond, then, else)`, `case(cond1, value1, cond2, value2, ...)` (null when none is true), `coalesce(a, b, ...)` (first non-null), `nullif(a, b)`, `null()`, `true()`, `false()` |
-| Tests | `isnull(x)`, `isnotnull(x)`, `isnum(x)`, `isstr(x)`, `typeof(x)`, `in(x, v1, v2, ...)`, `like(x, "a%")`, `match(x, "regex")`, `cidrmatch("10.0.0.0/8", ip)`, `isint(x)`, `validate(cond1, "message1", ...)` (the message of the first false condition) |
-| Text | `lower(s)`, `upper(s)`, `len(s)`, `substr(s, start[, length])` (start at 1; negative counts from the end), `replace(s, "regex", "with \1")`, `trim(s[, chars])`, `ltrim`, `rtrim`, `urldecode(s)`, `md5(s)`, `sha1(s)`, `sha256(s)`, `printf("%-10s %05.1f", s, x)` (`%s %d %i %f %e %g %x %X %o %c %%`, widths up to 1,000) |
-| Numbers | `round(x[, digits])`, `floor(x)`, `ceil(x)`, `abs(x)`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `ln(x)`, `log(x[, base])`, `min(...)`, `max(...)`, `bit_and(a, b, ...)`, `bit_or`, `bit_xor`, `bit_not(x[, mask])`, `bit_shift_left(x, n)`, `bit_shift_right(x, n)` (on whole numbers from 0 to 2^53) |
-| Conversion | `tonumber(s[, base])`, `tostring(x[, "hex" \| "commas" \| "duration"])` |
+| Tests | `isnull(x)`, `isnotnull(x)`, `isnum(x)`, `isstr(x)`, `typeof(x)`, `in(x, v1, v2, ...)`, `like(x, "a%")`, `match(x, "regex")`, `cidrmatch("10.0.0.0/8", ip)`, `isbool(x)`, `isint(x)`, `validate(cond1, "message1", ...)` (the message of the first false condition) |
+| Text | `lower(s)`, `upper(s)`, `len(s)`, `substr(s, start[, length])` (start at 1; negative counts from the end), `replace(s, "regex", "with \1")`, `trim(s[, chars])`, `ltrim`, `rtrim`, `urldecode(s)`, `md5(s)`, `sha1(s)`, `sha256(s)`, `sha512(s)`, `printf("%-10s %05.1f", s, x)` (`%s %d %i %f %e %g %x %X %o %c %%`, widths up to 1,000) |
+| Numbers | `round(x[, digits])`, `floor(x)`, `ceil(x)`, `abs(x)`, `sqrt(x)`, `pow(x, y)`, `exp(x)`, `ln(x)`, `log(x[, base])`, `min(...)`, `max(...)`, `pi()`, `random()` (a whole number from 0 to 2^31-1), `exact(x)`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh`, `asinh`, `acosh`, `atanh` (radians), `atan2(y, x)`, `hypot(x, y)`, `bit_and(a, b, ...)`, `bit_or`, `bit_xor`, `bit_not(x[, mask])`, `bit_shift_left(x, n)`, `bit_shift_right(x, n)` (on whole numbers from 0 to 2^53) |
+| Conversion | `ipmask("255.255.255.0", ip)` (an IPv4 address with the mask applied), `tonumber(s[, base])`, `tostring(x[, "hex" \| "commas" \| "duration"])` |
 | Multivalue | `split(s, ",")`, `mvcount(mv)`, `mvindex(mv, start[, end])` (from 0; negative counts from the end), `mvjoin(mv, ",")`, `mvappend(a, b, ...)`, `mvdedup(mv)`, `mvsort(mv)`, `mvfind(mv, "regex")` (the first matching value's index), `mvzip(a, b[, ","])` (pairs of values joined), `mvfilter(match(email, "@corp$"))` (the values for which the expression is true; it must use one field), `mvmap(sizes, sizes * 2)` (the expression for each value). `mvfilter` and `mvmap` go through at most 10 million values in one search, counting the values of nested calls, `mvrange(start, end[, step])` (end not included) |
 | JSON | `spath(j, "a.b{}")` and `json_extract(j, "a.b")` (the value at a path, as the `spath` command reads it), `json_keys(j)` (the top-level keys as a JSON array), `json_valid(j)`, `json_array_to_mv(j)`, `json_object("k", v, ...)`, `json_array(v, ...)` |
-| Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are UTC; `strftime` takes epoch seconds or an event's `_time`, `relative_time(t, "-1d@d")` (a Splunk time modifier applied to `t`, in UTC; `@w` is Sunday) |
+| Time | `now()` and `time()` (epoch seconds), `strftime(_time, "%Y-%m-%d %H:%M:%S")`, `strptime("2026-10-15", "%Y-%m-%d")` (to epoch seconds). Times are in the search's time zone (UTC unless the Search page sends yours); `strftime` takes epoch seconds or an event's `_time`, `relative_time(t, "-1d@d")` (a Splunk time modifier applied to `t`; `@w` is Sunday) |
 
 Regular expressions use RE2 syntax and are case-sensitive unless they start with `(?i)`.
 To keep one search from exhausting the server, a value `eval` builds can be up to 1 MB
@@ -253,7 +272,9 @@ at. It understands:
 
 | You write | It adds |
 | --- | --- |
-| logins, processes, connections, account changes, risk | `datamodel=...` |
+| logins, processes, connections, account changes, risk, dns, web requests, registry, suricata or wazuh alerts, certificates | `datamodel=...` |
+| account lockouts, locked out | `signature_id=4740` (Windows), by user when the question asks about accounts |
+| dns queries for evil.com, web requests with status 500, requests to example.com | `query=`, `status=`, `dest_host=` |
 | failed, successful, blocked, allowed, created, deleted | `action=...` |
 | from 10.0.0.5, to web1, on dc01, by alice, port 22, user bob | field filters; `not`/`except` negates |
 | powershell, cmd, certutil, mimikatz.exe, spawned by winword | `process_name`, `parent_process_name` |
@@ -268,7 +289,11 @@ at. It understands:
 | per hour, over time, daily | `timechart` |
 | show user, src and dest | `table _time, user, src, dest` |
 
-Names from the asset and identity lists are recognized as users or hosts.
+Names from the asset and identity lists are recognized as users or hosts. A word that
+ends up in no filter, grouping or data model counts as not understood, even when it
+is a field name: "service account logins from workstations" keeps only `logins`, so
+it is not read as understood. A question less than 80% understood is shown with its
+query but not run until you check the query and run it.
 
 ### Using an AI model
 
@@ -293,8 +318,14 @@ The AI assistant can also be set on the **Settings** page (see
 
 - The search and any `where` commands that come before the first `stats`, `timechart`
   or `top` run inside OpenSearch, so they scale with the cluster.
-- `stats` and `top` use composite aggregations and page through every group (up to
-  50,000 groups, then results are marked truncated).
+- `stats` and `top` use composite aggregations and page through every group, up to
+  50,000 groups. With more groups than that, OpenSearch ranks them instead and keeps the
+  top ones: for `top` and `rare` by count, for `stats ... | sort -<column> | head N` by
+  that column (count, `dc`, `sum`, `avg`, `min` or `max`), and for other `stats` with a
+  `count` by event count.
+  When the rows kept are all the search shows (`top limit=10`, `head 10`) the result is
+  marked *Ranked*; otherwise it is marked truncated. With several shards, counts of groups
+  near the cut can be slightly low.
 - `threatmatch` becomes `terms` filters of indicator values (10,000 per clause) and
   prefix filters for networks, so matching runs inside OpenSearch too.
 - Commands after that run in the Signalith server on the aggregated rows. So do `eval`,
@@ -303,8 +334,9 @@ The AI assistant can also be set on the **Settings** page (see
   `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
   `search.max_events` (at most 100,000) when later commands need to sort, filter,
-  de-duplicate or aggregate them all. To work on more events, filter in the search or
-  aggregate with `stats` first.
+  de-duplicate or aggregate them all. When more events match than that, those commands
+  see only the newest ones and the result is marked *Sampled* (Explain says so too). To
+  work on more events, filter in the search or aggregate with `stats` first.
 - Wildcard values (`*`, `?`) can be up to 1,000 characters long, and the wildcard values
   in `where` commands up to 4,096 characters together (`where` runs over every row in the
   server, so put long filters in the search before the first `|`). An `IN` list holds at

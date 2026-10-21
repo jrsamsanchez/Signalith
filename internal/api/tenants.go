@@ -28,7 +28,7 @@ var (
 		"me", "health", "search", "explain", "build", "parse", "datamodels", "fields", "language", "ask",
 		"detections", "coverage", "findings", "cases", "lookups", "lookuptables", "risk", "storyline", "intel", "posture",
 		"dashboards", "panels", "notebooks", "investigate", "notify", "respond", "playbooks", "retention", "sample",
-		"endpoints", "agents", "agent-tokens", "agent", "users", "ticketing", "baselines",
+		"endpoints", "agents", "agent-tokens", "agent", "users", "ticketing", "baselines", "exception-requests",
 	}
 	// platformResources are about the server itself, shared by every
 	// tenant: only the provider's own users may use them, and always in
@@ -404,7 +404,7 @@ func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
 		ts, err := s.Tenants.List()
 		if err != nil {
 			s.Log.Error("could not read the tenants", "file", s.Tenants.Path, "err", err)
-			writeError(w, http.StatusInternalServerError, errors.New("the list of tenants cannot be read; see the server's log"))
+			writeError(w, http.StatusInternalServerError, errUser("the list of tenants cannot be read; see the server's log"))
 			return
 		}
 		for _, t := range ts {
