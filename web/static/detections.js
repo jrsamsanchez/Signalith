@@ -1636,7 +1636,7 @@ function renderPacks(list) {
           el('span', { class: 'dx-meta' }, `${p.rules.toLocaleString()} rules · ${on ? on.toLocaleString() + ' on' : 'all off'}`)),
         el('p', { class: 'dx-pack__desc' }, browsing ? 'Filter by name, ATT&CK ID or tag, then turn on what fits your systems.'
           : info.desc),
-        !browsing && dark ? el('p', { class: 'dx-meta' }, `Start with the starter rules: they read only what hosts send as installed. ${dark.toLocaleString()} of the rules need Sysmon, process auditing, PowerShell logging or the Linux audit log, and stay quiet until hosts send it; Browse rules marks them.`) : null,
+        !browsing && dark ? el('p', { class: 'dx-pack__note' }, `Start with the starter rules: they read only what hosts send as installed. ${dark.toLocaleString()} rules need Sysmon, process auditing, PowerShell logging or the Linux audit log and stay quiet without it; Browse rules marks them.`) : null,
         credit),
       el('div', { class: 'dx-pack__actions' }, ...actions));
   });
