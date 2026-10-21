@@ -11,6 +11,8 @@ import (
 	"path"
 	"regexp"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/agentproto"
 )
@@ -59,6 +61,9 @@ var (
 	shortName = regexp.MustCompile(`~[0-9]`)
 )
 
+// fbMaxPattern is the longest grep pattern allowed.
+const fbMaxPattern = 512
+
 func keys(ks ...string) map[string]bool {
 	m := map[string]bool{"name": true}
 	for _, k := range ks {
@@ -84,6 +89,19 @@ func checkFluentBit(conf string, r fbRules) error {
 	u, err := url.Parse(r.server)
 	if err != nil || u.Hostname() == "" {
 		return fmt.Errorf("the agent's server address %q is not valid", r.server)
+	}
+	// Fluent Bit's parser reads bytes: a NUL or a lone carriage return
+	// could end a line or the file where this check does not, so it would
+	// see other settings than were checked.
+	for i, c := range conf {
+		switch {
+		case c == '\r' && !strings.HasPrefix(conf[i:], "\r\n"):
+			return errors.New("it has a carriage return that does not end a line")
+		case c == utf8.RuneError && !strings.HasPrefix(conf[i:], "\uFFFD"):
+			return errors.New("it is not valid UTF-8")
+		case c != '\t' && c != '\r' && c != '\n' && !unicode.IsPrint(c) && c != ' ':
+			return fmt.Errorf("it has the control character %U", c)
+		}
 	}
 	type section struct {
 		kind string
@@ -159,6 +177,14 @@ func checkFluentBit(conf string, r fbRules) error {
 				return fmt.Errorf("%s: %s is not allowed", where, k)
 			}
 		}
+		// Patterns short enough not to tie up the computer.
+		for _, k := range []string{"regex", "exclude"} {
+			for _, v := range s.kv[k] {
+				if len(v) > fbMaxPattern {
+					return fmt.Errorf("%s: %s is longer than %d characters", where, k, fbMaxPattern)
+				}
+			}
+		}
 		// Files Fluent Bit writes: in the agent's own folder.
 		for _, k := range []string{"db", "storage.path"} {
 			for _, p := range s.kv[k] {
@@ -196,7 +222,7 @@ func checkFluentBit(conf string, r fbRules) error {
 		if !fbOn(one("tls")) || !fbOn(one("tls.verify")) {
 			return fmt.Errorf("%s: it must send over TLS that checks the certificate", where)
 		}
-		if uri := one("uri"); uri != "" && !strings.HasPrefix(uri, "/api/") {
+		if uri := one("uri"); uri != "" && (!strings.HasPrefix(uri, "/api/") || strings.ContainsAny(uri, "?#%\\") || strings.Contains(uri, "..")) {
 			return fmt.Errorf("%s: it sends to %q, not to Signalith's API", where, uri)
 		}
 		ca := s.kv["tls.ca_file"]

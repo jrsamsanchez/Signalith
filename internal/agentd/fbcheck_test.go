@@ -120,6 +120,13 @@ func TestCheckFluentBit(t *testing.T) {
 		{"db dot dot", state + "/auth.db", state + "/../../../etc/cron.d/x", ".."},
 		{"unknown key", "Tag                  linux.auth", "Tag                  linux.auth\n    Key_Unknown x", "key_unknown"},
 		{"setting outside", "# generated", "Name tail", "outside any section"},
+		{"nul", "tls                  On", "tls                  On\x00", "control character"},
+		{"lone cr", "Port                 7780\n", "Port                 7780\r    tls Off\n", "carriage return"},
+		{"vertical tab", "Port                 7780", "Port                 7780\v", "control character"},
+		{"bad utf-8", "# generated", "# generated \xff", "UTF-8"},
+		{"long pattern", "Exclude              log ^$", "Exclude              log " + strings.Repeat("a", 600), "longer than"},
+		{"uri dot dot", "URI                  /api/ingest", "URI                  /api/../x", "/api/../x"},
+		{"uri query", "URI                  /api/ingest", "URI                  /api/ingest?x=1", "?x=1"},
 	} {
 		conf := strings.Replace(good, c.old, c.new, 1)
 		if conf == good {
@@ -128,6 +135,9 @@ func TestCheckFluentBit(t *testing.T) {
 		if err := checkFluentBit(conf, r); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", c.name, err, c.want)
 		}
+	}
+	if err := checkFluentBit(strings.Replace(good, "# generated", "# généré", 1), r); err != nil {
+		t.Errorf("non-ASCII comment: %v", err)
 	}
 	if err := checkFluentBit("[INPUT]\n    Name tail\n    Path /var/log/x\n", r); err == nil || !strings.Contains(err.Error(), "one output") {
 		t.Errorf("no output: %v", err)
