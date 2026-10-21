@@ -316,6 +316,45 @@ detections in it that search `*` over `30d` every `1m`, and watch the "running f
 lines and the other tenants' lag. The plan's other settings (OpenSearch shards, the extra
 tenants of ~300 rules, 1,500 enabled rules) are also set by hand before the run.
 
+### Seven-day soak
+
+`sudo lab-loadtest soak` runs the 7-day soak: real recorded Windows and Sysmon events at
+about a terabyte a day, through every server's agent port, with 5 analysts searching
+([loadtest/soak-7d.yaml](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/soak-7d.yaml)).
+The events are the 1,677 recordings the detection packs carry as tests, replayed by the load
+generator with each agent's name and the time now (see
+[Real events](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/README.md#real-events-replay)).
+They average about 1.6 KB, so 7,200 a second is about 1 TB a day. One in a thousand is
+sent as recorded, so the detections that match it fire; the rest have their text rotated,
+which the detections leave alone. Turn on the detections you want measured before the run.
+
+A week at this rate is far more than two 500 GB volumes hold with a replica, so before the
+run set a retention policy on the **Data retention** page that keeps a day or two (the
+deletions are part of what a soak tests), or make the volumes bigger with
+`loadtest_volume_gb`. Check the free disk in `opensearch-nodes.csv` during the first day.
+
+It works with one Signalith server or several. The same machines as the spread test fit
+in Hetzner's first 20 cores; if the account runs other servers, give the cores left as
+`vcpu_limit`:
+
+```powershell
+terraform apply -var size=loadtest -var loadtest_servers=3 -var loadtest_opensearch_type=cx33 -var vcpu_limit=18
+```
+
+Then, on signalith-1:
+
+```
+ssh root@<signalith-1 address> lab-loadtest soak
+```
+
+It records what the other tests do, but keeps the detections' run state every 10 minutes
+rather than every minute, so a week of samples fits on signalith-1's disk. `report.md`
+adds, for each day, the events stored, their size (primary and with replicas), the bytes
+per event, the event indices and the shards in the cluster, the lag per day, and the
+events stored a second per Signalith core. At the end of every test, before the held
+updates are released, it keeps OpenSearch's node counters (`node-stats-end.json`). The
+week costs about $25 with the spread test's machines.
+
 ## A lab made before the port change
 
 Labs set up before Signalith moved to ports 9000 (web page) and 7779 (agents) still use 8080

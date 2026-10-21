@@ -776,11 +776,31 @@ var timeLayouts = []string{
 func parseTime(s string) (time.Time, bool) {
 	s = strings.TrimSpace(s)
 	for _, l := range timeLayouts {
-		if t, err := time.Parse(l, s); err == nil {
-			return t.UTC(), true
+		t, err := time.Parse(l, s)
+		if err != nil {
+			continue
 		}
+		if strings.HasSuffix(l, "MST") && !knownZone(t) {
+			// Go reads a zone name it doesn't know (one that isn't this
+			// server's, or "XYZ") as UTC, which could be hours off: the
+			// time isn't used, and the receive time is.
+			return time.Time{}, false
+		}
+		return t.UTC(), true
 	}
 	return time.Time{}, false
+}
+
+// knownZone reports whether a time parsed with a zone name has the offset
+// that name stands for: UTC and GMT, or this server's own zone names. Go
+// gives any other name an offset of zero.
+func knownZone(t time.Time) bool {
+	name, off := t.Zone()
+	if off != 0 || name == "UTC" || name == "GMT" {
+		return true
+	}
+	local, _ := t.In(time.Local).Zone()
+	return name == local
 }
 
 func has(r map[string]any, k string) bool {

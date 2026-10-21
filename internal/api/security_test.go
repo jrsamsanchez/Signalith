@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
+	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/security"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
@@ -324,6 +325,48 @@ func TestPlainSignInsAreNoted(t *testing.T) {
 	srv.notePlainSignIn(r)
 	if got := srv.security().plain.since(time.Now().Add(-time.Hour)); len(got) != 1 || got[0] != "10.0.0.7" {
 		t.Errorf("%v", got)
+	}
+
+	// A reverse proxy on this computer that says the browser used plain
+	// HTTP: noted under the client it names, or itself when it names
+	// none. One that says HTTPS, or says nothing, is not noted.
+	_, srv, _ = newSecurityServer(t, func(s *Server) {
+		s.Config.Server.TrustedProxies = []string{"127.0.0.1", "::1"}
+		s.Config.Server.ClientHeader = config.ClientHeaderXFF
+	})
+	proxied := func(proto, xff string, agent bool) {
+		r := httptest.NewRequest("POST", "/api/login", nil)
+		r.RemoteAddr = "127.0.0.1:5555"
+		if proto != "" {
+			r.Header.Set("X-Forwarded-Proto", proto)
+		}
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		if agent {
+			srv.notePlainAgent(r)
+		} else {
+			srv.notePlainSignIn(r)
+		}
+	}
+	proxied("http", "10.0.0.77", false)
+	proxied("http", "", false)
+	proxied("https", "10.0.0.78", false)
+	proxied("", "10.0.0.79", false)
+	proxied("http", "10.0.0.80", true)
+	since := time.Now().Add(-time.Hour)
+	if got := srv.security().proxiedPlain.since(since); len(got) != 2 || !slices.Contains(got, "10.0.0.77") || !slices.Contains(got, "127.0.0.1") {
+		t.Errorf("proxied sign-ins %v", got)
+	}
+	if got := srv.security().proxiedPlainAgents.since(since); len(got) != 1 || got[0] != "10.0.0.80" {
+		t.Errorf("proxied agents %v", got)
+	}
+	if got := srv.security().plain.since(since); len(got) != 0 {
+		t.Errorf("direct sign-ins %v", got)
+	}
+	rt := srv.runtimeFacts(time.Now(), false)
+	if len(rt.ProxiedPlain) != 2 || len(rt.ProxiedPlainAgents) != 1 {
+		t.Errorf("runtime facts %+v", rt)
 	}
 	// It remembers the latest few.
 	c := NewSecurityChecker(nil)

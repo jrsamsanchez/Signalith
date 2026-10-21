@@ -145,6 +145,9 @@ func describeExpr(e query.Expr) string {
 		if strings.ContainsAny(e.Value, "*?") && (e.Op == "=" || e.Op == "!=") {
 			verb = map[string]string{"=": "matches", "!=": "does not match"}[e.Op]
 		}
+		if e.Ref {
+			return fmt.Sprintf("%s %s the field %s (or the text %q where there is no such field)", e.Field, verb, e.Value, e.Value)
+		}
 		return fmt.Sprintf("%s %s %s", e.Field, verb, e.Value)
 	case *query.Cond:
 		return e.String() + " holds"
