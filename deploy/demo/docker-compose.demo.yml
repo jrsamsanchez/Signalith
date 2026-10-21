@@ -22,7 +22,13 @@
 # Every path below is relative to deploy/docker, the folder of the first
 # file, as Compose reads them.
 services:
+  # The demo shows what's coming: the newest build of main, where the quick
+  # start runs the newest release. SIGNALITH_VERSION in .env names another.
+  setup:
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
+
   signalith:
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-main}
     # Nothing of Signalith's is published: Caddy reaches it over the
     # private network, and it takes no events in, so it needs no agent or
     # syslog port.

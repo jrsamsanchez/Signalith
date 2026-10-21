@@ -329,12 +329,12 @@ func TestGuardMore(t *testing.T) {
 		`user=adm* OR src=1.2.3.4`:                   false,
 		`NOT (src=1 OR user=bob)`:                    false,
 		`* | where -len(user) < 3`:                   false,
-		`* | where len(src) > 3`:                     true,
+		`* | where len(src) > 3`:                     false,
 		`masked-user-1 | where user="masked-user-1"`: true,
 		`* | eval x=1`:                               false,
 		`* | where src < user`:                       false,
 		`* | where src = _raw`:                       false,
-		`* | where src < dest`:                       true,
+		`* | where src < dest`:                       false,
 		`* | where src = "user"`:                     true,
 	} {
 		q, err := query.Parse(src)
@@ -367,5 +367,49 @@ func TestGuardMore(t *testing.T) {
 	r.f.Entities["src"] = []string{"10.0.0.2"}
 	if s, ok := r.evidenceValue(respond.TargetIP, "10.0.0.2"); !ok || s != "10.0.0.2" {
 		t.Errorf("a list of strings = %q %v", s, ok)
+	}
+}
+
+// TestGuardFoldsCase: a masked value with letters outside ASCII is still
+// found by the ASCII letters the search would match them with, and a
+// value written with such letters is refused while any value is masked.
+func TestGuardFoldsCase(t *testing.T) {
+	for in, want := range map[string]string{
+		"ADMINIſTRATOR": "ADMINISTRATOR",
+		"fınance":       "FINANCE",
+		"FİNANCE":       "FINANCE",
+		"Kelvin":        "KELVIN",
+	} {
+		if got, w := fold(in), fold(want); got != w {
+			t.Errorf("fold(%q) = %q, want %q", in, got, w)
+		}
+	}
+
+	m := NewMasker([]string{"user"})
+	m.Value("user", "ſtripe-admin")
+	for src, ok := range map[string]bool{
+		`TargetUserName=stripe-admin`:        false,
+		`TargetUserName=*STRIPE*`:            false,
+		`* | where like(owner, "%tripe-a%")`: false,
+		`stripe`:                             false,
+		`TargetUserName=bob`:                 true,
+		`TargetUserName=bøb`:                 false,
+	} {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if err := guardQuery(q, m); (err == nil) != ok {
+			t.Errorf("%s: allowed = %v, want %v (%v)", src, err == nil, ok, err)
+		}
+	}
+
+	// With nothing masked yet, there is nothing to guess.
+	q, err := query.Parse(`TargetUserName=bøb`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := guardQuery(q, NewMasker([]string{"user"})); err != nil {
+		t.Errorf("no masked values: %v", err)
 	}
 }

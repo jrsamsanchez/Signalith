@@ -306,7 +306,7 @@ func (s *Server) otherServerView(ctx context.Context, sv sharedServer) (map[stri
 	}
 	osh, nc, err := s.Settings.Layer(ctx, sv.NodeID)
 	if err != nil {
-		return nil, fmt.Errorf("the settings of %s cannot be read now: %w", sv.Name, err)
+		return nil, errHidden("the settings of "+sv.Name+" cannot be read now", err)
 	}
 	servers := s.sharedServers()
 	if nc == nil {
@@ -562,7 +562,7 @@ func (s *Server) handlePutSharedSettings(w http.ResponseWriter, r *http.Request,
 	base := sh
 	if !sv.Self {
 		if base, _, err = s.Settings.Layer(ctx, sv.NodeID); err != nil {
-			writeError(w, http.StatusServiceUnavailable, fmt.Errorf("the settings of %s cannot be read now: %w", sv.Name, err))
+			writeError(w, http.StatusServiceUnavailable, errHidden("the settings of "+sv.Name+" cannot be read now", err))
 			return
 		}
 	}
@@ -671,7 +671,7 @@ func (s *Server) handlePutSharedSettings(w http.ResponseWriter, r *http.Request,
 		}
 		if err != nil {
 			if len(savedKeys) > 0 {
-				err = fmt.Errorf("%w (%s were saved before this)", err, strings.Join(savedKeys, ", "))
+				err = errHidden("the settings could not all be saved ("+strings.Join(savedKeys, ", ")+" were saved before this)", err)
 			}
 			var stale *shared.StaleError
 			if errors.As(err, &stale) && len(savedKeys) > 0 {
