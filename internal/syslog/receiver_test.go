@@ -1058,15 +1058,27 @@ func TestTLSSendAndCloseAtOnce(t *testing.T) {
 		return b.String()
 	}
 
-	// The receiver is busy, so the lines wait in the sender's kernel.
-	const many = 10000
+	// The receiver is busy, so the lines wait in the kernel's buffers.
+	// Where those are too small to hold them all (Windows), the receiver
+	// goes back to work once the write has stalled, and the socket closes
+	// as soon as the write is done.
+	const many = 3000
 	raw, c := dial()
-	c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if _, err := io.WriteString(c, lines(many)); err != nil {
+	wrote := make(chan error, 1)
+	go func() { _, err := io.WriteString(c, lines(many)); wrote <- err }()
+	var err error
+	select {
+	case err = <-wrote:
+		raw.Close() // the socket alone, without close_notify
+		close(bulk.block)
+	case <-time.After(time.Second):
+		close(bulk.block)
+		err = <-wrote
+		raw.Close()
+	}
+	if err != nil {
 		t.Fatal(err)
 	}
-	raw.Close() // the socket alone, without close_notify
-	close(bulk.block)
 	waitFor(t, "every line", func() bool { return p.Stats().Indexed == many })
 
 	// A few lines, the last without a newline, from senders that close at
