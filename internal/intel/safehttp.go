@@ -257,9 +257,21 @@ func newFeedClientWith(allowLoopback bool, protected []string, proxy func(*http.
 		ResponseHeaderTimeout: 2 * time.Minute,
 		ExpectContinueTimeout: time.Second,
 	}
-	return &http.Client{Transport: tr, CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	return &http.Client{Transport: trackDials{tr}, CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		return checkRedirect(req, via, allowLoopback, protected)
 	}}
+}
+
+// trackDials gives each request a dialTrack when its caller did not, so
+// a proxy on this machine works for every caller of the client, not only
+// feed downloads.
+type trackDials struct{ *http.Transport }
+
+func (t trackDials) RoundTrip(req *http.Request) (*http.Response, error) {
+	if _, ok := req.Context().Value(dialTrackKey{}).(*dialTrack); !ok {
+		req = req.WithContext(context.WithValue(req.Context(), dialTrackKey{}, &dialTrack{}))
+	}
+	return t.Transport.RoundTrip(req)
 }
 
 // checkRedirect limits redirects and checks the new address. It never
@@ -305,6 +317,17 @@ var errTooManyRedirects = fmt.Errorf("the server redirected more than %d times",
 
 // secretHeadersKey marks the request headers that hold secrets.
 type secretHeadersKey struct{}
+
+// WithSecretHeaders marks the named request headers as secrets for a
+// request made with ctx through a NewDownloadClient client: a redirect to
+// another server drops them, as it drops Authorization.
+func WithSecretHeaders(ctx context.Context, names ...string) context.Context {
+	return context.WithValue(ctx, secretHeadersKey{}, names)
+}
+
+// SameOrigin reports whether a redirect from a to b stays on the same
+// server, so headers that hold secrets may go with it (see checkRedirect).
+func SameOrigin(a, b *url.URL) bool { return sameOrigin(a, b) }
 
 // plainError is a message already written for people.
 type plainError struct{ msg string }
