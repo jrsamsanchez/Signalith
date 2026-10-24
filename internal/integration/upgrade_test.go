@@ -333,9 +333,16 @@ func TestUpgradeRollingPair(t *testing.T) {
 
 	var session *http.Cookie
 	if caps.sharedUsers {
-		if session, _ = a.signIn("admin", clusterPassword); session == nil {
-			t.Fatal("could not sign in on siem-a before the upgrade")
-		}
+		// siem-a moves to the shared users a moment after the level allows
+		// it. A session made before that is carried with its old cookie,
+		// which works on siem-a only until it restarts (Sessions.Carry), so
+		// sign in again until siem-b accepts the cookie too.
+		waitUntil(t, 60*time.Second, "a sign-in on siem-a that siem-b accepts", func() bool {
+			if session, _ = a.signIn("admin", clusterPassword); session == nil {
+				return false
+			}
+			return sb.me(session) == http.StatusOK
+		})
 	} else {
 		t.Logf("prev %s: no shared sessions, skipped", b.prevVersion)
 	}

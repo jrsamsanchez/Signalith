@@ -56,6 +56,7 @@
     $('sensor-layout').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
     loadAgentConfig();
   });
+  $('sensor-ot').addEventListener('change', () => loadAgentConfig());
   let typing = 0;
   [ifaceEl, netsEl].forEach((n) => n.addEventListener('input', () => {
     clearTimeout(typing);
@@ -119,7 +120,7 @@
     agentServerSent = server;
     const q = new URLSearchParams({
       zeek: $('sensor-zeek').checked, suricata: $('sensor-suricata').checked, protocols: $('sensor-protocols').checked,
-      interface: ifaceEl.value.trim(), networks: netsEl.value.trim(), docker: S.layout === 'docker',
+      interface: ifaceEl.value.trim(), networks: netsEl.value.trim(), docker: S.layout === 'docker', ot: $('sensor-ot').checked,
     });
     if (server) q.set('server', server);
     try {

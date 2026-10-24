@@ -79,8 +79,10 @@ func ParseButton(c Channel, v string) (Button, error) {
 	if len(parts) != 5 || parts[0] != buttonVersion {
 		return Button{}, ErrBadButton
 	}
+	// Only the one way SignButton writes a step ("1", never "01" or "+1"),
+	// so a signed value has a single spelling.
 	step, err := strconv.Atoi(parts[3])
-	if err != nil || step < 0 || step > 1000 {
+	if err != nil || step < 0 || step > 1000 || parts[3] != strconv.Itoa(step) {
 		return Button{}, ErrBadButton
 	}
 	b := Button{Action: parts[1], ID: parts[2], Step: step}

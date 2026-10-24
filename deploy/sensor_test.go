@@ -316,6 +316,17 @@ func (m *sensorMachine) install(t *testing.T, cores string, args ...string) (str
 	return root, out
 }
 
+// again runs a dry run into root again, as a re-run of the line.
+func (m *sensorMachine) again(t *testing.T, root, cores string, args ...string) string {
+	t.Helper()
+	out, err := m.run(t, cores, testToken, append([]string{"--role", "sensor", "--from", "https://siem.example.com:8443",
+		"--ca-sha256", m.caSHA, "--version", "1.6.0", "--token", "-", "--dry-run", root}, args...)...)
+	if err != nil {
+		t.Fatalf("again %v: %v\n%s", args, err, out)
+	}
+	return out
+}
+
 func readFile(t *testing.T, path string) string {
 	t.Helper()
 	b, err := os.ReadFile(path)
@@ -569,6 +580,42 @@ func TestSensorScriptDryRunOptions(t *testing.T) {
 	if conf := readFile(t, filepath.Join(root, "etc/signalith-sensor/fluent-bit.conf")); !strings.Contains(conf, "zeek=false&suricata=true&protocols=true") {
 		t.Errorf("Suricata only: agent configuration asked for %s", conf)
 	}
+	// Industrial protocols: Suricata parses them, Zeek logs them with the
+	// ICSNPP analyzers, each pinned to a commit.
+	root, out := m.install(t, "4", "--ot")
+	yaml = readFile(t, filepath.Join(root, "etc/suricata/signalith-sensor.yaml"))
+	if !strings.Contains(yaml, "\napp-layer.protocols.modbus.enabled: yes\napp-layer.protocols.dnp3.enabled: yes\napp-layer.protocols.enip.enabled: yes\n") || strings.Contains(yaml, "- modbus") {
+		t.Errorf("--ot: Suricata parses, and leaves the logs to Zeek: %s", yaml)
+	}
+	if z := readFile(t, filepath.Join(root, "opt/zeek/share/zeek/site/signalith.zeek")); !strings.Contains(z, "\n@load packages\n") {
+		t.Errorf("--ot: signalith.zeek does not load the packages: %s", z)
+	}
+	if conf := readFile(t, filepath.Join(root, "var/lib/signalith-sensor/zkg/config")); !strings.Contains(conf, "[sources]\n[paths]\nstate_dir = /var/lib/signalith-sensor/zkg\n") {
+		t.Errorf("--ot: zkg config: %s", conf)
+	}
+	pin := regexp.MustCompile(`would run: /opt/zeek/bin/zkg --configfile \S+/var/lib/signalith-sensor/zkg/config install --force --skiptests --nodeps --version [0-9a-f]{40} https://github\.com/cisagov/icsnpp-[a-z0-9-]+\n`)
+	if n := len(pin.FindAllString(out, -1)); n != 10 || !strings.Contains(out, "would run: env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git cmake make g++") {
+		t.Errorf("--ot: %d ICSNPP analyzers installed by commit:\n%s", n, out)
+	}
+	manifest := readFile(t, filepath.Join(root, "etc/signalith-sensor/manifest"))
+	if !strings.Contains(manifest, "\nzkg icsnpp-s7comm 7ebeb03a0f954541369361651d1c27d09a64b5a3 dry-run\n") || !strings.Contains(readFile(t, filepath.Join(root, "etc/signalith-sensor/sensor.conf")), "\nOT='yes'\n") {
+		t.Errorf("--ot: manifest %s", manifest)
+	}
+	// Run again: nothing to build. Without --ot: the analyzers go.
+	if out = m.again(t, root, "4", "--ot"); strings.Contains(out, "icsnpp") || !strings.Contains(out, "Nothing to change") {
+		t.Errorf("--ot again: built again:\n%s", out)
+	}
+	out = m.again(t, root, "4")
+	if !strings.Contains(out, "would run: /opt/zeek/bin/zkg --configfile "+root+"/var/lib/signalith-sensor/zkg/config remove --force icsnpp-hart-ip") ||
+		strings.Contains(readFile(t, filepath.Join(root, "etc/signalith-sensor/manifest")), "zkg ") {
+		t.Errorf("without --ot: analyzers not removed:\n%s", out)
+	}
+	// Suricata only: it logs the industrial protocols itself.
+	root, _ = m.install(t, "4", "--no-zeek", "--ot")
+	yaml = readFile(t, filepath.Join(root, "etc/suricata/signalith-sensor.yaml"))
+	if !strings.Contains(yaml, "        - tls\n        - modbus\n        - dnp3\n        - enip\n# Industrial") {
+		t.Errorf("--no-zeek --ot: %s", yaml)
+	}
 	// Zeek only.
 	root, _ = m.install(t, "4", "--no-suricata")
 	if _, err := os.Stat(filepath.Join(root, "etc/suricata")); err == nil {
@@ -600,7 +647,7 @@ func TestSensorScriptDryRunOptions(t *testing.T) {
 	}
 	// Rocky Linux, Suricata only.
 	m.os("rocky", "9.4")
-	root, out := m.install(t, "4", "--no-zeek", "--interface", "eth1")
+	root, out = m.install(t, "4", "--no-zeek", "--interface", "eth1")
 	if repo := readFile(t, filepath.Join(root, "etc/yum.repos.d/signalith-fluent-bit.repo")); !strings.Contains(repo, "gpgcheck=1\nrepo_gpgcheck=1\ngpgkey=file:///etc/pki/rpm-gpg/signalith-fluentbit.asc\n") {
 		t.Errorf("Fluent Bit repo: %s", repo)
 	}
