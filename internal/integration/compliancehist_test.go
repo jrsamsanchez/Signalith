@@ -43,15 +43,23 @@ func TestComplianceHistoryInOpenSearch(t *testing.T) {
 		}
 	}
 	list, err := st.List(ctx)
-	if err != nil || len(list) != 2 || list[0].ID != compliancehist.ManualID(later) {
+	if err != nil || len(list) != 2 || list[0].ID != compliancehist.ManualID(later) || list[1].ID != compliancehist.MonthID(month) {
 		t.Fatalf("list: %+v %v", list, err)
 	}
 	got, err := st.Get(ctx, compliancehist.MonthID(month))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c := compliancehist.Check(got, nil); c.Check != compliancehist.Unsigned || c.Record.Trigger != compliancehist.Monthly {
+	if c := compliancehist.Check(got, nil); c.Check != compliancehist.Unsigned || c.Record != nil || got.Taken.IsZero() {
 		t.Errorf("check: %+v", c)
+	}
+	// A copy of one month's record stored as another's is read under the
+	// ID it is stored at, so it no longer matches its data (SEC-527-4).
+	if err := cl.Do(ctx, "PUT", "/"+st.Index+"/_create/2026-11?refresh=true", got, nil); err != nil {
+		t.Fatal(err)
+	}
+	if back, err := st.Get(ctx, "2026-11"); err != nil || back.ID != "2026-11" {
+		t.Errorf("copy: %+v %v", back, err)
 	}
 	if due, _ := compliancehist.Due(ctx, st, month); due {
 		t.Error("due after the month's record")

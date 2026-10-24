@@ -48,7 +48,9 @@ func TestSignedRecordChecks(t *testing.T) {
 		t.Fatalf("check: %+v", c)
 	}
 	unsigned, _ := Sign(record(now), nil)
-	if c := Check(unsigned, keys); c.Check != Unsigned || c.Record == nil {
+	// An unsigned record shows nothing: anyone who can write to OpenSearch
+	// could have made it, hash and all (SEC-527-1).
+	if c := Check(unsigned, keys); c.Check != Unsigned || c.Record != nil || c.Problem == "" {
 		t.Errorf("unsigned: %+v", c)
 	}
 
@@ -109,5 +111,34 @@ func TestDueOncePerMonth(t *testing.T) {
 	}
 	if due, _ := Due(context.Background(), m, now); due {
 		t.Error("due after the month's record")
+	}
+}
+
+// Monthly records are listed apart from those taken by hand, so many of
+// the latter never push the former out.
+func TestListKeepsMonthly(t *testing.T) {
+	m := NewMemory()
+	ctx := context.Background()
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	for i := range 3 {
+		s, _ := Sign(record(start.AddDate(0, i, 0)), nil)
+		m.Create(ctx, s)
+	}
+	at := start.AddDate(0, 3, 0)
+	for i := range MaxList + 5 {
+		r := record(at)
+		r.ID, r.Trigger = ManualID(at.Add(time.Duration(i)*time.Second)), Manual
+		s, _ := Sign(r, nil)
+		m.Create(ctx, s)
+	}
+	list, _ := m.List(ctx)
+	monthly := 0
+	for _, s := range list {
+		if len(s.ID) == len("2006-01") {
+			monthly++
+		}
+	}
+	if monthly != 3 || len(list) != 3+MaxList {
+		t.Errorf("%d monthly of %d", monthly, len(list))
 	}
 }

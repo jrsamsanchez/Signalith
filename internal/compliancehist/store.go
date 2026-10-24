@@ -16,9 +16,10 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
-// MaxList caps the records one list returns: over eight years of monthly
-// ones, with room for those taken by hand.
-const MaxList = 200
+// MaxList caps the records of each kind one list returns: the monthly
+// ones (over eight years of them) and, apart, those taken by hand, so
+// records taken by hand never push the monthly ones out.
+const MaxList = 100
 
 // Store keeps the records. Records are only ever added: none is changed
 // or deleted through Signalith.
@@ -27,7 +28,8 @@ type Store interface {
 	Create(ctx context.Context, s *Signed) error
 	// Get returns one record.
 	Get(ctx context.Context, id string) (*Signed, error)
-	// List returns the newest records first, at most MaxList.
+	// List returns the newest records first: at most MaxList monthly
+	// ones and MaxList taken by hand.
 	List(ctx context.Context) ([]*Signed, error)
 }
 
@@ -108,10 +110,39 @@ func (s *OpenSearch) Get(ctx context.Context, id string) (*Signed, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The document's own ID, not the one it names: a copy of another
+	// month's record stored here is checked as changed (SEC-527-4).
+	out.Source.ID = id
 	return &out.Source, nil
 }
 
+// monthlyQuery matches the monthly records by their ID.
+var monthlyQuery = map[string]any{"regexp": map[string]any{"id": "[0-9]{4}-[0-9]{2}"}}
+
 func (s *OpenSearch) List(ctx context.Context) ([]*Signed, error) {
+	monthly, err := s.list(ctx, map[string]any{"bool": map[string]any{"filter": []any{monthlyQuery}}})
+	if err != nil {
+		return nil, err
+	}
+	manual, err := s.list(ctx, map[string]any{"bool": map[string]any{"must_not": []any{monthlyQuery}}})
+	if err != nil {
+		return nil, err
+	}
+	out := append(monthly, manual...)
+	sortNewest(out)
+	return out, nil
+}
+
+func sortNewest(list []*Signed) {
+	slices.SortFunc(list, func(a, b *Signed) int {
+		if c := b.Taken.Compare(a.Taken); c != 0 {
+			return c
+		}
+		return strings.Compare(b.ID, a.ID)
+	})
+}
+
+func (s *OpenSearch) list(ctx context.Context, query map[string]any) ([]*Signed, error) {
 	var page struct {
 		Hits struct {
 			Hits []struct {
@@ -121,7 +152,7 @@ func (s *OpenSearch) List(ctx context.Context) ([]*Signed, error) {
 		} `json:"hits"`
 	}
 	err := s.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(s.Index)+"/_search", map[string]any{
-		"size": MaxList, "sort": []any{map[string]any{"taken": "desc"}, map[string]any{"id": "desc"}},
+		"size": MaxList, "query": query, "sort": []any{map[string]any{"taken": "desc"}, map[string]any{"id": "desc"}},
 	}, &page)
 	if statusOf(err) == http.StatusNotFound {
 		return []*Signed{}, nil
@@ -168,25 +199,28 @@ func (m *Memory) Get(_ context.Context, id string) (*Signed, error) {
 	if !ok {
 		return nil, ErrNotFound
 	}
+	s.ID = id
 	return &s, nil
 }
 
 func (m *Memory) List(context.Context) ([]*Signed, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := []*Signed{}
+	var monthly, manual []*Signed
 	for _, s := range m.recs {
-		out = append(out, &s)
-	}
-	slices.SortFunc(out, func(a, b *Signed) int {
-		if c := b.Taken.Compare(a.Taken); c != 0 {
-			return c
+		if len(s.ID) == len("2006-01") {
+			monthly = append(monthly, &s)
+		} else {
+			manual = append(manual, &s)
 		}
-		return strings.Compare(b.ID, a.ID)
-	})
-	if len(out) > MaxList {
-		out = out[:MaxList]
 	}
+	sortNewest(monthly)
+	sortNewest(manual)
+	out := append(monthly[:min(len(monthly), MaxList)], manual[:min(len(manual), MaxList)]...)
+	if out == nil {
+		out = []*Signed{}
+	}
+	sortNewest(out)
 	return out, nil
 }
 

@@ -225,13 +225,13 @@ framework's score, and says for each one whether it checks out:
 | Check | Meaning |
 | --- | --- |
 | Verified | The record is as it was taken, signed with one of this server's report keys. |
-| Not signed | The record is intact, but it was taken when the server had no report key, so its signature cannot prove who made it. |
+| Not signed | The record has no signature, so nothing shows Signalith made it: anyone who can write to OpenSearch could have. Nothing in it is shown. A server with a report key never stores an unsigned record: when signing fails, it tries again an hour later. |
 | Revoked key | The signature matches, but the key that made it was [revoked](cases.md#report-keys) because it may have leaked. |
-| Changed | The record was changed or was not made by Signalith. Nothing in it is shown. |
+| Changed | The record was changed, is stored under another record's name, or was not made by Signalith. Nothing in it is shown. |
 
 Records are kept in OpenSearch, in the `<prefix>_compliance_history` index, and are never
-changed or deleted by Signalith. The page and the API show the newest 200 (over 8 years of
-monthly records).
+changed or deleted by Signalith. The page and the API show the newest 100 monthly records
+(over 8 years) and the newest 100 taken by hand.
 
 Over the API (any role reads, admins take a record):
 

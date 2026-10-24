@@ -4,9 +4,12 @@
 package api
 
 import (
+	"cmp"
 	"context"
+	"crypto/ed25519"
 	"errors"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/compliancehist"
@@ -44,7 +47,9 @@ func (s *Server) historyKeys(ctx context.Context) (func(string) (*reportkeys.Key
 // controls.
 type historySummary struct {
 	*compliancehist.Checked
-	Taken      time.Time                  `json:"taken"`
+	// Taken is the signed time; a record whose signature does not match
+	// has none (SEC-527-3).
+	Taken      *time.Time                 `json:"taken,omitempty"`
 	Trigger    string                     `json:"trigger,omitempty"`
 	By         string                     `json:"by,omitempty"`
 	Frameworks []compliancehist.Framework `json:"frameworks,omitempty"`
@@ -68,9 +73,9 @@ func (s *Server) handleComplianceHistory(w http.ResponseWriter, r *http.Request)
 	out := make([]historySummary, 0, len(list))
 	for _, rec := range list {
 		c := compliancehist.Check(rec, keys)
-		sum := historySummary{Taken: rec.Taken}
+		sum := historySummary{}
 		if rec := c.Record; rec != nil {
-			sum.Trigger, sum.By = rec.Trigger, rec.By
+			sum.Taken, sum.Trigger, sum.By = &rec.Taken, rec.Trigger, rec.By
 			for _, f := range rec.Frameworks {
 				f.Controls = nil
 				sum.Frameworks = append(sum.Frameworks, f)
@@ -80,6 +85,15 @@ func (s *Server) handleComplianceHistory(w http.ResponseWriter, r *http.Request)
 		sum.Checked = c
 		out = append(out, sum)
 	}
+	// Newest first by the signed time; records without one last.
+	slices.SortStableFunc(out, func(a, b historySummary) int {
+		switch {
+		case a.Taken == nil || b.Taken == nil:
+			return cmp.Compare(boolInt(a.Taken == nil), boolInt(b.Taken == nil))
+		default:
+			return b.Taken.Compare(*a.Taken)
+		}
+	})
 	writeJSON(w, http.StatusOK, map[string]any{"records": out})
 }
 
@@ -112,13 +126,20 @@ func (s *Server) handleTakeComplianceRecord(w http.ResponseWriter, r *http.Reque
 	}
 	now := time.Now()
 	list, err := s.ComplianceHistory.List(r.Context())
+	keys, kerr := s.historyKeys(r.Context())
+	if err == nil {
+		err = kerr
+	}
 	if err != nil {
 		s.Log.Warn("the compliance history could not be read", "err", err)
 		writeError(w, http.StatusBadGateway, errors.New("the compliance history could not be read; try again"))
 		return
 	}
 	for _, rec := range list {
-		if rec.ID != compliancehist.MonthID(rec.Taken) && now.Sub(rec.Taken) < manualGap {
+		// Only signed times count, so a record with a forged one cannot
+		// hold off new ones (SEC-527-3).
+		c := compliancehist.Check(rec, keys)
+		if c.Record != nil && c.Record.Trigger == compliancehist.Manual && now.Sub(c.Record.Taken) < manualGap {
 			writeError(w, http.StatusTooManyRequests, errors.New("a record was taken a few minutes ago; take another later"))
 			return
 		}
@@ -142,9 +163,17 @@ func (s *Server) handleTakeComplianceRecord(w http.ResponseWriter, r *http.Reque
 func (s *Server) takeComplianceRecord(ctx context.Context, r *http.Request, id, trigger, by string) (*compliancehist.Checked, error) {
 	rep := s.complianceReportAt(ctx, r, true)
 	rec := compliancehist.FromReport(rep, id, trigger, by, s.serverName(), s.Version, s.conf().OpenSearch.IndexPrefix)
-	key, why := s.reportKey(ctx)
-	if key == nil {
-		rec.Notes = append(rec.Notes, "This record is not signed: "+why)
+	// A server with a report key signs every record: when signing fails
+	// for now, no record is stored, and the monthly job tries again in an
+	// hour rather than keep the month unsigned for good (SEC-527-2).
+	var key ed25519.PrivateKey
+	if s.ReportSigner != nil && s.ReportKeys != nil {
+		var why string
+		if key, why = s.reportKey(ctx); key == nil {
+			return nil, errors.New("the record could not be signed: " + why)
+		}
+	} else {
+		rec.Notes = append(rec.Notes, "This record is not signed: this server has no report key.")
 	}
 	signed, err := compliancehist.Sign(rec, key)
 	if err != nil {
@@ -198,4 +227,11 @@ func (s *Server) complianceMonth(ctx context.Context, now time.Time) {
 	default:
 		s.Log.Info("compliance.history: took this month's compliance evidence record", "audit", true, "record", c.ID, "sha256", c.SHA256, "key", c.KeyID)
 	}
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

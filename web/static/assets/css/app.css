@@ -6055,7 +6055,7 @@ dialog.modal.sj-dialog[open] { display: flex; flex-direction: column; max-height
 .cp-hist__item { display: grid; grid-template-columns: minmax(130px, 180px) minmax(0, 1fr) auto; align-items: center; gap: 4px 16px; padding: 12px 0; border-top: 1px solid var(--border); }
 .cp-hist__item:first-child { border-top: 0; }
 .cp-hist__when { display: grid; gap: 2px; }
-.cp-hist__when time { font-weight: 600; }
+.cp-hist__when time, .cp-hist__date { font-weight: 600; }
 .cp-hist__how, .cp-hist__counts { color: var(--text-2); font-size: var(--fs-sm); }
 .cp-hist__score b { font-size: var(--fs-md); }
 .cp-hist__problem { grid-column: 1 / -1; margin: 0; color: var(--text-2); font-size: var(--fs-sm); overflow-wrap: anywhere; }

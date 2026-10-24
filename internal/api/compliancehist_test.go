@@ -6,6 +6,7 @@ package api
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"errors"
 	"net/http"
 	"testing"
 	"time"
@@ -76,5 +77,56 @@ func TestComplianceHistory(t *testing.T) {
 	_, out = do(t, ts, "GET", "/api/compliance/history", "", true)
 	if r := out["records"].([]any)[0].(map[string]any); r["check"] != compliancehist.Revoked {
 		t.Errorf("revoked: %v", r)
+	}
+}
+
+// When signing fails for now, the month's record is not stored unsigned
+// but taken at the next try (SEC-527-2); a copy of a verified record
+// stored under another month's ID does not verify (SEC-527-4).
+func TestComplianceHistorySigningFails(t *testing.T) {
+	_, priv, _ := ed25519.GenerateKey(nil)
+	keys := &reportkeys.Memory{}
+	hist := compliancehist.NewMemory()
+	broken := true
+	var srv *Server
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		s.ReportSigner = func() (ed25519.PrivateKey, string, error) {
+			if broken {
+				return nil, "", errors.New("the shared settings did not answer")
+			}
+			return priv, reportkeys.FromMaster, nil
+		}
+		s.ReportKeys = keys
+		s.ComplianceHistory = hist
+		srv = s
+	})
+	now := time.Now()
+	srv.complianceMonth(t.Context(), now)
+	if due, _ := compliancehist.Due(t.Context(), hist, now); !due {
+		t.Fatal("an unsigned monthly record was stored")
+	}
+	if code, out := do(t, ts, "POST", "/api/compliance/history", "", true); code != http.StatusBadGateway {
+		t.Errorf("manual while signing fails: %d %v", code, out)
+	}
+	broken = false
+	srv.complianceMonth(t.Context(), now)
+	got, err := hist.Get(t.Context(), compliancehist.MonthID(now))
+	if err != nil || got.Sig == "" {
+		t.Fatalf("after the retry: %+v %v", got, err)
+	}
+
+	copied := *got
+	copied.ID = "2001-01"
+	hist.Create(t.Context(), &copied)
+	hist.Tamper("2001-01", got.Payload)
+	_, out := do(t, ts, "GET", "/api/compliance/history/2001-01", "", true)
+	if rec := out["record"].(map[string]any); rec["check"] != compliancehist.Changed || rec["record"] != nil {
+		t.Errorf("copy: %v", out)
+	}
+	_, out = do(t, ts, "GET", "/api/compliance/history", "", true)
+	for _, r := range out["records"].([]any) {
+		if r := r.(map[string]any); r["id"] == "2001-01" && (r["taken"] != nil || r["frameworks"] != nil) {
+			t.Errorf("a copy shows a time or scores: %v", r)
+		}
 	}
 }

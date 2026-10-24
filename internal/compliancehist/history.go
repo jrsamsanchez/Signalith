@@ -144,13 +144,15 @@ type Checked struct {
 	SHA256 string  `json:"sha256"`
 	KeyID  string  `json:"key_id,omitempty"`
 	// Check is Verified, Unsigned, Revoked or Changed; Problem says why
-	// for the last two.
+	// for the last three.
 	Check   string `json:"check"`
 	Problem string `json:"problem,omitempty"`
 }
 
-// Check reads s and checks its hash and signature against keys. A record
-// that is not intact keeps no Record: nothing in it can be trusted.
+// Check reads s and checks its hash and signature against keys. Only a
+// record whose signature matches keeps its Record: an unsigned one could
+// have been written by anyone who can write to OpenSearch, hash and all,
+// so nothing in it is shown as evidence (SEC-527-1).
 func Check(s *Signed, keys func(id string) (*reportkeys.Key, bool)) *Checked {
 	out := &Checked{ID: s.ID, SHA256: s.SHA256, KeyID: s.KeyID, Check: Changed}
 	b, err := base64.StdEncoding.DecodeString(s.Payload)
@@ -173,7 +175,8 @@ func Check(s *Signed, keys func(id string) (*reportkeys.Key, bool)) *Checked {
 	}
 	switch {
 	case s.KeyID == "" && s.Sig == "":
-		out.Check = Unsigned
+		out.Check, out.Problem = Unsigned, "it is not signed, so nothing shows it was not made or changed by someone who can write to OpenSearch"
+		return out
 	case !reportkeys.ValidID(s.KeyID):
 		out.Problem = "its signature is not one Signalith makes"
 		return out

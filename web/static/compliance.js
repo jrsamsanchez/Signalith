@@ -26,7 +26,7 @@
   const S = { data: null, fw: '', tab: 'controls', find: '', show: 'all', open: new Set(), loading: false, seq: 0, hist: null, histErr: null };
   const CHECK = {
     verified: { label: 'Verified', tone: 'success', text: 'Intact and signed with one of this server’s report keys.' },
-    unsigned: { label: 'Not signed', tone: 'outline', text: 'Intact, but taken when the server had no report key.' },
+    unsigned: { label: 'Not signed', tone: 'warning', text: '' },
     revoked: { label: 'Revoked key', tone: 'warning', text: '' },
     changed: { label: 'Changed', tone: 'danger', text: '' },
   };
@@ -421,18 +421,24 @@
 
   function historyItem(f, r) {
     const chk = CHECK[r.check] || CHECK.changed;
+    // Only a record whose signature matches has a time, a kind and scores.
+    const trusted = r.check === 'verified' || r.check === 'revoked';
     const mine = (r.frameworks || []).find((x) => x.id === f.id);
-    const when = new Date(r.taken);
-    const how = r.trigger === 'manual' ? `Taken by ${r.by || 'an admin'}` : 'Monthly';
-    const score = mine
-      ? el('span', { class: 'cp-hist__score' }, el('b', { class: 'num' }, mine.score + '%'), ' ',
-        el('span', { class: 'cp-hist__counts' }, `${mine.counts.met || 0} evidence · ${mine.counts.partial || 0} partial · ${mine.counts.missing || 0} ${mine.counts.missing === 1 ? 'gap' : 'gaps'}`))
-      : el('span', { class: 'cp-hist__counts' }, `${f.name} was not in this record`);
+    const when = r.taken ? new Date(r.taken) : null;
+    const how = !trusted ? 'Record ' + r.id : r.trigger === 'manual' ? `Taken by ${r.by || 'an admin'}` : 'Monthly';
+    let score;
+    if (!trusted) score = el('span', { class: 'cp-hist__counts' }, 'Nothing in this record can be trusted.');
+    else if (mine) {
+      score = el('span', { class: 'cp-hist__score' }, el('b', { class: 'num' }, mine.score + '%'), ' ',
+        el('span', { class: 'cp-hist__counts' }, `${mine.counts.met || 0} evidence · ${mine.counts.partial || 0} partial · ${mine.counts.missing || 0} ${mine.counts.missing === 1 ? 'gap' : 'gaps'}`));
+    } else score = el('span', { class: 'cp-hist__counts' }, `${f.name} was not in this record`);
     return el('li', { class: 'cp-hist__item' },
       el('div', { class: 'cp-hist__when' },
-        el('time', { datetime: r.taken }, isNaN(when) ? r.id : when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })),
+        when && !isNaN(when)
+          ? el('time', { datetime: r.taken }, when.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' }))
+          : el('span', { class: 'cp-hist__date' }, 'Unknown date'),
         el('span', { class: 'cp-hist__how' }, how)),
-      r.check === 'changed' ? el('span', { class: 'cp-hist__counts' }, 'Nothing in this record can be trusted.') : score,
+      score,
       el('span', { class: `badge badge--${chk.tone} cp-badge`, title: r.problem || chk.text }, chk.label),
       r.problem ? el('p', { class: 'cp-hist__problem' }, sentence(r.problem)) : null);
   }
