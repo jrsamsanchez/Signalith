@@ -154,13 +154,14 @@
         return b;
       }));
     const programs = d.programs || [];
-    const wanted = { linux: ['linux-amd64', 'linux-arm64'], windows: ['windows-amd64'], darwin: ['darwin-arm64', 'darwin-amd64'] }[S.os];
+    const wanted = { linux: ['linux-amd64', 'linux-arm64'], windows: ['windows-amd64', 'windows-arm64'], darwin: ['darwin-arm64', 'darwin-amd64'] }[S.os];
     const missing = wanted.filter((p) => !programs.includes(p));
     let missingText = 'This server has no agent program to hand out.';
     if (S.os === 'linux' && missing.length === 1) missingText = 'This server has no agent program for ' + (missing[0] === 'linux-arm64' ? 'ARM' : 'x86') + ' computers.';
     if (mac && missing.length === 1) missingText = 'This server has no agent program for ' + (missing[0] === 'darwin-arm64' ? 'Apple silicon' : 'Intel') + ' Macs.';
     if (mac && missing.length === 2) missingText = 'This server has no agent program for Macs.';
-    if (win) missingText = 'This server has no agent program for Windows.';
+    if (win && missing.length === 1) missingText = 'This server has no agent program for ' + (missing[0] === 'windows-arm64' ? 'ARM' : 'x86') + ' Windows computers.';
+    if (win && missing.length === 2) missingText = 'This server has no agent program for Windows.';
     const noProgram = missing.length
       ? el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'),
         el('div', {}, el('b', {}, missingText),
