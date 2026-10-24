@@ -9,6 +9,7 @@ package cases
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -42,6 +43,9 @@ const (
 	// KindNotebook is a hunting notebook linked to the case: Text is its
 	// title when it was linked, NotebookID names it.
 	KindNotebook = "notebook"
+	// KindFile is a file attached to the case (package casefiles): the
+	// entry names it, and FileSHA256 is the SHA-256 of its bytes.
+	KindFile = "file"
 )
 
 // Limits keep one case document a reasonable size.
@@ -70,6 +74,11 @@ type Case struct {
 	// Tickets are the issues in Jira or ServiceNow opened for the case
 	// (package ticketing), which are kept in step with it.
 	Tickets []Ticket `json:"tickets,omitempty"`
+	// Tasks are the investigation's steps (tasks.go), often from a
+	// template.
+	Tasks []Task `json:"tasks,omitempty"`
+	// Template is the ID of the template the case was opened from.
+	Template string `json:"template,omitempty"`
 	// Sample marks a case the sample-data feature created, holding the
 	// load's ID, so Remove can delete it; empty for real investigations.
 	Sample    string    `json:"sample,omitempty"`
@@ -136,6 +145,58 @@ type Entry struct {
 
 	RunID  string `json:"run_id,omitempty"`
 	Status string `json:"status,omitempty"` // of the run: succeeded or failed
+
+	FileID     string `json:"file_id,omitempty"`
+	FileName   string `json:"file_name,omitempty"`
+	FileSize   int64  `json:"file_size,omitempty"`
+	FileType   string `json:"file_type,omitempty"`
+	FileSHA256 string `json:"file_sha256,omitempty"`
+
+	// SHA256 fingerprints a pinned event or a search snapshot when it is
+	// added (EvidenceHash), so a report can show it is unchanged since.
+	SHA256 string `json:"sha256,omitempty"`
+}
+
+// EvidenceHash is the SHA-256, in hex, of what an evidence entry holds:
+// the pinned event, the search with its snapshot, or the attached file's
+// name, size and SHA-256 (the bytes are checked against FileSHA256). It is taken over
+// JSON with sorted keys, so it is the same wherever it is computed. Other
+// kinds of entry have none.
+func EvidenceHash(e Entry) string {
+	var v any
+	switch e.Kind {
+	case KindEvent:
+		v = map[string]any{"kind": e.Kind, "event": e.Event}
+	case KindSearch:
+		v = map[string]any{"kind": e.Kind, "query": e.Query, "earliest": e.Earliest, "latest": e.Latest,
+			"result_kind": e.Result, "columns": e.Columns, "rows": e.Rows, "matched": e.Matched, "truncated": e.Truncated}
+	case KindFile:
+		v = map[string]any{"kind": e.Kind, "file_id": e.FileID, "file_name": e.FileName, "file_size": e.FileSize,
+			"file_type": e.FileType, "file_sha256": e.FileSHA256}
+	default:
+		return ""
+	}
+	// Round-trip through JSON first, so values read back from the store
+	// (numbers as float64, times as text) hash the same as when added.
+	b, err := json.Marshal(v)
+	if err != nil {
+		return ""
+	}
+	var norm any
+	if err := json.Unmarshal(b, &norm); err != nil {
+		return ""
+	}
+	if b, err = json.Marshal(norm); err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+// EvidenceIntact reports whether an evidence entry still matches the hash
+// taken when it was added; entries without one are taken as intact.
+func EvidenceIntact(e Entry) bool {
+	return e.SHA256 == "" || e.SHA256 == EvidenceHash(e)
 }
 
 // Filter selects cases.
@@ -231,6 +292,7 @@ func (c *Case) AddEntry(e Entry, author string, now time.Time) (*Entry, error) {
 	e.ID = NewEntryID()
 	e.Author = author
 	e.Time = now
+	e.SHA256 = EvidenceHash(e)
 	c.Entries = append(c.Entries, e)
 	c.Updated = now
 	return &c.Entries[len(c.Entries)-1], nil
@@ -430,3 +492,14 @@ func modifyResult(err error) error {
 
 // OpenStatuses are the statuses that still need work.
 var OpenStatuses = []string{findings.StatusNew, findings.StatusInProgress, findings.StatusPending}
+
+// FileUsage counts the files attached to the case and their bytes.
+func (c *Case) FileUsage() (n int, bytes int64) {
+	for _, e := range c.Entries {
+		if e.Kind == KindFile {
+			n++
+			bytes += e.FileSize
+		}
+	}
+	return n, bytes
+}

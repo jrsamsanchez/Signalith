@@ -43,7 +43,7 @@ the run in progress already skips anything the new settings keep. The same setti
 | Other events | `other` | `<prefix>-other-YYYY.MM.DD` | Event policy; listed once it has data or a policy |
 | Risk events | `risk` | `<prefix>-risk-YYYY.MM.DD` | Event policy |
 | Findings | `findings` | `<prefix>_findings` | Delete closed findings after N days |
-| Investigations | `cases` | `<prefix>_cases` | Delete closed cases after N days |
+| Investigations | `cases` | `<prefix>_cases` (files: `<prefix>_case_files`) | Delete closed cases, and their files, after N days |
 | Audit records | `audit` | `<prefix>_audit-YYYY.MM` | Kept by month, 400 days by default; listed once it has data or a policy |
 | Threat intel | `intel` | `<prefix>_intel` | Managed by feeds: indicators expire through each feed's `max_age` |
 

@@ -8,11 +8,12 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels the runs of its older pushes. Every
-# push to main runs to the end, one after another, so each commit on main
-# has a full result and a failure points at the commit that caused it.
+# A new push to a pull request cancels the runs of its older pushes. A run
+# on main always runs to the end; while it runs, only the newest push to
+# main waits behind it, so a result and its alert come within one run's
+# time even when merges land faster than the runners test them.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.sha }}
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

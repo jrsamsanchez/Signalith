@@ -8,6 +8,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdh"
+	"crypto/ed25519"
 	"crypto/hkdf"
 	"crypto/rand"
 	"crypto/sha256"
@@ -50,6 +51,7 @@ const (
 	infoBrowser = "signalith known browser v1"
 	infoLocks   = "signalith sign-in locks v1"
 	infoAudit   = "signalith audit chain v1"
+	infoReport  = "signalith case-report v1 cluster"
 )
 
 const keySize = 32
@@ -168,6 +170,18 @@ func (k *ClusterKey) LockKey() []byte { return k.sub(infoLocks) }
 // AuditKey returns the key that signs the audit records each server
 // writes to OpenSearch (internal/audit), so any member can check them.
 func (k *ClusterKey) AuditKey() []byte { return k.sub(infoAudit) }
+
+// ReportKey returns the key that signs the case reports of the cluster's
+// servers. Its info differs from the master key's report key, so the two
+// never coincide.
+func (k *ClusterKey) ReportKey() ed25519.PrivateKey {
+	seed, err := hkdf.Key(sha256.New, k.raw, []byte(secrets.ReportSalt), infoReport, ed25519.SeedSize)
+	if err != nil {
+		panic(err)
+	}
+	defer clear(seed)
+	return ed25519.NewKeyFromSeed(seed)
+}
 
 func (k *ClusterKey) sub(info string) []byte {
 	b, err := hkdf.Key(sha256.New, k.raw, nil, info, 32)

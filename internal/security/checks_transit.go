@@ -205,6 +205,17 @@ func checkCertificate(f *Facts) *Check {
 			Docs:     doc(docHTTPSOwn)}
 	}
 	var probs []problem
+	if auto && t.ClusterKeyLost {
+		// Restarting renews nothing: no server has the key.
+		restart = &Fix{Steps: []string{
+			"Before " + day(leaf.NotAfter) + ", give agents, browsers and syslog senders a new certificate authority to trust.",
+			"A folder signalith cluster export --to-files wrote before the key was lost holds the certificate authority's key (ca.key in its tls folder). Keep it safe.",
+		}, Docs: doc(docClusterResetKey)}
+		if f.Now.Before(leaf.NotAfter) {
+			probs = append(probs, problem{Attention, "The cluster's certificate authority key was lost; HTTPS certificates expire on " + day(leaf.NotAfter) +
+				" and cannot be renewed.", restart})
+		}
+	}
 	switch {
 	case !f.Now.Before(leaf.NotAfter):
 		fix := restart
@@ -216,7 +227,7 @@ func checkCertificate(f *Facts) *Check {
 	case !auto && left <= 30:
 		probs = append(probs, problem{Attention, "Your certificate expires on " + day(leaf.NotAfter) + ", " + inDays(left) +
 			". Replace the files before then; Signalith loads the new ones by itself.", replace})
-	case auto && left <= 21:
+	case auto && left <= 21 && !t.ClusterKeyLost:
 		probs = append(probs, problem{Attention, "Signalith's certificate expires on " + day(leaf.NotAfter) +
 			" and hasn't renewed itself. The server log says why.", restart})
 	}

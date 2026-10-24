@@ -261,3 +261,25 @@ func (s *Server) clusterCAOwner() string {
 	}
 	return ""
 }
+
+// caKeyLostWarnings is the Servers page's warning while a running server
+// reports the cluster's certificate authority key lost, with the soonest
+// day one of those servers' certificates expires.
+func caKeyLostWarnings(st cluster.Status) []cluster.Warning {
+	lost := false
+	var soonest time.Time
+	for _, sv := range st.Servers {
+		d := sv.Detail
+		if !running(sv) || d == nil || d.TLS == nil || !d.TLS.CAKeyLost {
+			continue
+		}
+		lost = true
+		if e := d.TLS.LeafExpires; e != nil && (soonest.IsZero() || e.Before(soonest)) {
+			soonest = *e
+		}
+	}
+	if !lost {
+		return nil
+	}
+	return []cluster.Warning{{Level: "red", Text: clustertls.KeyLostText(soonest)}}
+}

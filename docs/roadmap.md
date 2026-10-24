@@ -21,27 +21,17 @@ Ideas and requests are welcome as
 
 ## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
 
-**The next release**
-:   Finished and waiting for the next release: the Signalith Agent caps Fluent Bit's
-    buffer on disk, stops sending when the server refuses its token, and keeps an update
-    only once the new agent has reached the server.
-
 **Correct answers**
-:   Search results that say when they were sampled or cut short, compliance scores that
-    count only real evidence, behavior baselines that know the time of day, and fixes for
-    the findings of an internal review.
+:   Fixes for the remaining findings of an internal review, and searches checked against
+    Splunk's answers where the two should agree.
 
 **Easy to keep running**
 :   OpenSearch shard limits checked before they bite, syslog that
-    keeps events through an OpenSearch restart, and safer upgrades on Windows.
+    keeps events through an OpenSearch restart.
 
 **Proof**
 :   A seven-day lab run with real Windows and Sysmon events, with the bytes, cores and
     shards it took published on the [performance](performance.md) page.
-
-**The first hour**
-:   A measured starter set of rules in place of turning on every rule at once, and a
-    Windows install that turns on the auditing those rules need.
 
 ## Next: the 1.0 checklist <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next: 1.0" }
 
@@ -121,13 +111,15 @@ These are outside what Signalith is for:
 
 ## Done <span class="sg-pill sg-pill--done">Available</span> { #done data-toc-label="Done" }
 
-Everything below is in Signalith now. A few items, named under **Now**, arrive with the next release.
+Everything below is in Signalith now.
 
 **Search foundation**
 
 - The [Signalith Agent](signalith-agent.md): one line installs it on Linux, Windows
   (with optional Sysmon) or macOS, it runs Fluent Bit and osquery, and what each group
   of computers collects is chosen on the Endpoints page, so nobody edits a configuration.
+  Its buffer on disk is capped, it stops sending when the server refuses its token, and an
+  update is kept only once the new agent has reached the server.
 - Fluent Bit agents for Windows and Linux, set up from the **Add data** page, plus
   [syslog and CEF](sending-data.md#syslog) from network devices and
   [OpenTelemetry](opentelemetry.md) logs over OTLP, each agent with its own
@@ -149,6 +141,9 @@ Everything below is in Signalith now. A few items, named under **Now**, arrive w
   [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,330 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
+- A [starter set](detections.md#the-starter-set) of about 140 high and critical rules
+  that read only what hosts send as installed, and a Windows install line that turns on
+  the process auditing and the logs those rules need.
 - [Describe a detection](detections.md#describe-a-detection-in-plain-english) in plain
   English, then backtest it over the past 7, 30 or 90 days before turning it on.
 

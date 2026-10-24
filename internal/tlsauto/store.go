@@ -404,6 +404,18 @@ func (m *Manager) Retired() []CAInfo {
 	return out
 }
 
+// CAKeyMissing reports whether the certificate authority in use is the
+// cluster's and its key is not available here: the certificate in use
+// then stays until it expires, and no other can be issued.
+func (m *Manager) CAKeyMissing() bool {
+	if !m.LocalCA() {
+		return false
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.inCluster() && m.ca != nil && m.caKey == nil
+}
+
 // KeepsKey reports whether ca.key is still on this server's disk.
 func (m *Manager) KeepsKey() bool {
 	return m.LocalCA() && exists(m.path(caKeyFile))
