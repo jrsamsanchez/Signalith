@@ -15,7 +15,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/../.." && pwd)
 mkdir -p "$out"
 out=$(cd "$out" && pwd)
-for p in linux-amd64 linux-arm64 windows-amd64 darwin-amd64 darwin-arm64; do
+for p in linux-amd64 linux-arm64 windows-amd64 windows-arm64 darwin-amd64 darwin-arm64; do
   ext=''
   [ "${p%-*}" = windows ] && ext=.exe
   (cd "$root" && GOOS=${p%-*} GOARCH=${p#*-} CGO_ENABLED=0 go build -trimpath \
