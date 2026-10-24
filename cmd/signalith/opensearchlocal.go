@@ -254,6 +254,9 @@ var unpackRelease = func(ctx context.Context, out io.Writer, l oslocal.Layout, z
 	if err := oslocal.CheckRoom(l); err != nil {
 		return err
 	}
+	if w := oslocal.DiskWarning(l); w != "" {
+		fmt.Fprintln(out, "Warning: "+w)
+	}
 	file, err := oslocal.Fetch(ctx, zip, l.Download(), client, out)
 	if err != nil {
 		return err

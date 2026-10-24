@@ -161,6 +161,8 @@ type Manager struct {
 	// nanoseconds; 0 is none), and reschedule tells Start.
 	liveInterval atomic.Int64
 	reschedule   chan struct{}
+	// lastRun is the last run this server made since it started.
+	lastRun *Run
 }
 
 type queuedRun struct{ trigger, by string }
@@ -579,6 +581,10 @@ func (m *Manager) run(ctx context.Context, trigger, by string) (*Run, error) {
 			m.Log.Warn("retention run failed", "err", err)
 		}
 		run.Finished = m.now()
+		m.mu.Lock()
+		last := *run
+		m.lastRun = &last
+		m.mu.Unlock()
 		if err := m.hist.Record(context.WithoutCancel(ctx), run); err != nil {
 			m.Log.Warn("could not save the retention history", "file", m.HistoryFile, "err", err)
 		}
