@@ -38,6 +38,9 @@ type SensorLine struct {
 	Zeek, Suricata, Protocols bool
 	// Docker runs the three programs in containers instead.
 	Docker bool
+	// OT adds industrial protocols: Suricata's Modbus, DNP3 and
+	// EtherNet/IP parsers, and CISA's ICSNPP analyzers for Zeek.
+	OT bool
 }
 
 // SensorCommands is the sensor's pasted line, and a note for the page.
@@ -174,6 +177,9 @@ func SensorLines(l SensorLine) (SensorCommands, error) {
 		line += " --no-suricata"
 	case l.Protocols:
 		line += " --suricata-protocols"
+	}
+	if l.OT {
+		line += " --ot"
 	}
 	note := "Runs on " + SensorSystems + ". Zeek's packages are for Ubuntu and Debian only: on Rocky or Alma Linux, leave Zeek out or pick Docker."
 	if l.Docker {
