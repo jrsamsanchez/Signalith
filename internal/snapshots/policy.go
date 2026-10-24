@@ -38,7 +38,9 @@ import (
 // Permissions are the cluster permissions Signalith's OpenSearch user
 // needs for scheduled snapshots: the signalith_snapshots role of the
 // quick start's roles.yml.
-const Permissions = "cluster:admin/opensearch/snapshot_management/*, cluster:admin/snapshot/* and cluster:admin/repository/get"
+const Permissions = "cluster:admin/opensearch/snapshot_management/policy/write, cluster:admin/opensearch/snapshot_management/policy/get, " +
+	"cluster:admin/opensearch/snapshot_management/policy/delete, cluster:admin/opensearch/snapshot_management/policy/explain, " +
+	"cluster:admin/snapshot/create, cluster:admin/snapshot/get, cluster:admin/snapshot/delete and cluster:admin/repository/get"
 
 // Role is the role in deploy/docker/opensearch/security/roles.yml with
 // Permissions.
@@ -113,7 +115,9 @@ type policyDoc struct {
 	} `json:"snapshot_config"`
 }
 
-// ours reports whether Signalith wrote the policy.
+// ours reports whether Signalith wrote the policy, by the metadata it
+// sets. OpenSearch keeps the user that wrote a policy, but neither 2.17
+// nor 3.9 shows it in the GET answer, so that cannot be checked.
 func (p *policyDoc) ours() bool { return p.SnapshotConfig.Metadata["created_by"] == managedBy }
 
 // key is what of the policy Signalith decides, to tell whether it needs
@@ -168,6 +172,9 @@ type Manager struct {
 	refreshing chan struct{}
 	// tooMany is set while the cold indices are too many to leave out.
 	tooMany bool
+	// indices is the indices expression the last Sync wanted, for Status
+	// on this server, so that health checks never read the cold set.
+	indices string
 }
 
 // Synced is what the last Sync did.
@@ -274,6 +281,9 @@ func (m *Manager) sync(ctx context.Context) (Synced, error) {
 		if err := m.fence(ctx); err != nil {
 			return Synced{}, err
 		}
+		// OpenSearch 2.17 and 3.9 refuse if_seq_no and if_primary_term on
+		// this DELETE ("unrecognized parameters"), so it cannot name the
+		// version read; the fence just before keeps it to the lease holder.
 		if err := m.Client.Do(ctx, http.MethodDelete, "/_plugins/_sm/policies/"+url.PathEscape(name), nil, nil); err != nil && !notFound(err) {
 			return Synced{}, err
 		}
@@ -285,10 +295,13 @@ func (m *Manager) sync(ctx context.Context) (Synced, error) {
 	if found && !cur.ours() {
 		return Synced{Problem: fmt.Sprintf("OpenSearch already has a snapshot policy named %s that Signalith did not make. Delete it (DELETE _plugins/_sm/policies/%s) or give Signalith another opensearch.index_prefix.", name, name)}, nil
 	}
-	indices, err := m.indices(ctx)
+	indices, err := m.readIndices(ctx)
 	if err != nil {
 		return Synced{}, err
 	}
+	m.mu.Lock()
+	m.indices = indices
+	m.mu.Unlock()
 	want := desiredDoc(indices, s)
 	if found && cur.key() == want.key() {
 		return Synced{}, nil

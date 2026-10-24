@@ -457,8 +457,8 @@ Some changes ask for your password again when you have not entered it in the las
   PROXY protocol, the OpenSearch connection (`opensearch.*` and
   `cluster.opensearch_url`), syslog over TLS and **Allowed senders**, threat intel
   feeds on this computer (`intel.allow_loopback_feeds`), the AI assistant's address
-  and masked fields, the Microsoft 365 and Okta connections (`m365.*`, `okta.*`), or
-  **Reset all**.
+  and masked fields, the Microsoft 365 and Okta connections (`m365.*`, `okta.*`), the
+  scheduled snapshots (`backup.*`), or **Reset all**.
 
 With two-step sign-in on, a passkey, a code from your app or a recovery code works
 instead of the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.

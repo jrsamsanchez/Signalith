@@ -118,9 +118,9 @@ func (m *Manager) coldIndices(ctx context.Context) (cold, hot []string, err erro
 	return cold, hot, nil
 }
 
-// indices is the policy's indices expression as things are now: every
+// readIndices is the policy's indices expression as things are now: every
 // index of Signalith's but the mounted ones.
-func (m *Manager) indices(ctx context.Context) (string, error) {
+func (m *Manager) readIndices(ctx context.Context) (string, error) {
 	cold, hot, err := m.coldIndices(ctx)
 	if err != nil {
 		return "", err

@@ -5,6 +5,7 @@ package ostest
 
 import (
 	"encoding/json"
+	"html"
 	"net/http"
 	"path"
 	"strconv"
@@ -134,10 +135,16 @@ func (s *Server) smSnapshotGet(w http.ResponseWriter, r *http.Request, parts []s
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	sm := s.smLocked()
-	repo := parts[1]
-	typ, ok := sm.repos[repo]
-	if !ok {
-		writeError(w, http.StatusNotFound, "repository_missing_exception", "["+repo+"] missing")
+	// The answers name the repository by the fake's own key, and never
+	// echo what the request asked for (CodeQL: reflected XSS).
+	repo, typ := "", ""
+	for name, t := range sm.repos {
+		if name == parts[1] {
+			repo, typ = name, t
+		}
+	}
+	if repo == "" {
+		writeError(w, http.StatusNotFound, "repository_missing_exception", "repository missing")
 		return
 	}
 	if len(parts) == 2 {
@@ -154,7 +161,7 @@ func (s *Server) smSnapshotGet(w http.ResponseWriter, r *http.Request, parts []s
 			"start_time_in_millis": sn.start.UnixMilli(), "end_time_in_millis": sn.end.UnixMilli()})
 	}
 	if len(out) == 0 && r.URL.Query().Get("ignore_unavailable") != "true" && strings.Contains(parts[2], "*") {
-		writeError(w, http.StatusNotFound, "snapshot_missing_exception", "["+repo+":"+parts[2]+"] is missing")
+		writeError(w, http.StatusNotFound, "snapshot_missing_exception", "snapshot is missing")
 		return
 	}
 	if out == nil {
@@ -171,7 +178,10 @@ func (s *Server) smPolicies(w http.ResponseWriter, r *http.Request, rest []strin
 		writeError(w, http.StatusBadRequest, "illegal_argument_exception", "no policy named")
 		return
 	}
-	name := rest[0]
+	// The policy's name in answers is escaped: the fake writes no request
+	// input back as it came (CodeQL: reflected XSS). Policy names are
+	// letters, digits and dashes, which escaping leaves as they are.
+	name := html.EscapeString(rest[0])
 	p := sm.policies[name]
 	missing := func() {
 		reason := "Snapshot management policy not found"
@@ -208,7 +218,7 @@ func (s *Server) smPolicies(w http.ResponseWriter, r *http.Request, rest []strin
 		}
 		writeJSON(w, 200, map[string]any{"policies": list})
 	case len(rest) != 1:
-		writeError(w, http.StatusBadRequest, "illegal_argument_exception", "no handler found for uri ["+r.URL.Path+"]")
+		writeError(w, http.StatusBadRequest, "illegal_argument_exception", "no handler found for uri")
 	case r.Method == http.MethodGet:
 		if p == nil {
 			missing()
@@ -258,7 +268,7 @@ func (s *Server) smPolicies(w http.ResponseWriter, r *http.Request, rest []strin
 		delete(sm.policies, name)
 		writeJSON(w, 200, map[string]any{"_id": name + "-sm-policy", "result": "deleted"})
 	default:
-		writeError(w, http.StatusMethodNotAllowed, "illegal_argument_exception", "no handler found for uri ["+r.URL.Path+"] and method ["+r.Method+"]")
+		writeError(w, http.StatusMethodNotAllowed, "illegal_argument_exception", "no handler found for uri and method")
 	}
 }
 

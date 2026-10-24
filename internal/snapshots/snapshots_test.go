@@ -8,6 +8,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -228,7 +231,7 @@ func TestSyncSaysWhatPermissionsToAdd(t *testing.T) {
 		return nil
 	})
 	res, err := e.m.Sync(context.Background())
-	if err != nil || !strings.Contains(res.Problem, Role) || !strings.Contains(res.Problem, "cluster:admin/opensearch/snapshot_management/*") {
+	if err != nil || !strings.Contains(res.Problem, Role) || !strings.Contains(res.Problem, "cluster:admin/opensearch/snapshot_management/policy/write") {
 		t.Fatalf("%+v, %v", res, err)
 	}
 	st := e.m.Status(context.Background(), true)
@@ -376,13 +379,27 @@ func TestFilesBackupRecord(t *testing.T) {
 		t.Fatal("record in an empty folder")
 	}
 	at := time.Now().UTC().Truncate(time.Second)
-	owned := ""
-	if err := WriteFilesBackup(dir, FilesBackup{At: at, File: "signalith-backup.zip", Files: 12, Version: "v1"}, func(p string) { owned = p }); err != nil {
+	if err := WriteFilesBackup(dir, FilesBackup{At: at, File: "signalith-backup.zip", Files: 12, Version: "v1"}); err != nil {
 		t.Fatal(err)
 	}
 	r := ReadFilesBackup(dir)
-	if r == nil || !r.At.Equal(at) || r.File != "signalith-backup.zip" || r.Files != 12 || owned == "" {
-		t.Fatalf("%+v, %q", r, owned)
+	if r == nil || !r.At.Equal(at) || r.File != "signalith-backup.zip" || r.Files != 12 {
+		t.Fatalf("%+v", r)
+	}
+	// Again, over the first: replaced whole, with no temporary file left.
+	if err := WriteFilesBackup(dir, FilesBackup{At: at.Add(time.Hour), File: "next.zip", Files: 3}); err != nil {
+		t.Fatal(err)
+	}
+	if r := ReadFilesBackup(dir); r == nil || r.File != "next.zip" {
+		t.Fatalf("second record: %+v", r)
+	}
+	if left, _ := filepath.Glob(filepath.Join(dir, "*")); len(left) != 1 {
+		t.Errorf("files left: %q", left)
+	}
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(filepath.Join(dir, FilesBackupName)); err != nil || fi.Mode().Perm() != 0o600 {
+			t.Errorf("mode: %v, %v", fi.Mode(), err)
+		}
 	}
 }
 
@@ -421,16 +438,37 @@ func TestSyncLeavesColdIndicesOut(t *testing.T) {
 		t.Fatalf("sync with nothing new: %+v, %v", res, err)
 	}
 
-	// Another day goes cold: Status says the policy is behind, a server
-	// without the lease leaves it, and the one with it updates it.
+	// Another day goes cold. Health checks never read the cold set
+	// themselves; a server that lost the lease reads it but writes
+	// nothing, and the policy is then behind; the one with the lease
+	// updates it.
 	e.os.Mount(cold2)
-	if st := e.m.Status(ctx, true); !st.Pending {
-		t.Error("a new cold day is not pending")
+	// (Requests forgets what it returns.)
+	settingsReads := func() (n int) {
+		for _, r := range e.os.Requests() {
+			if strings.Contains(r, "/_settings/") {
+				n++
+			}
+		}
+		return n
+	}
+	settingsReads()
+	if st := e.m.Status(ctx, true); st.Pending || settingsReads() != 0 {
+		t.Errorf("status read the cold set, or is pending: %v", st.Pending)
 	}
 	e.deny.Store(true)
 	if _, err := e.m.Sync(ctx); err == nil || strings.Contains(indices(), cold2) {
 		t.Fatalf("written without the lease: %q, %v", indices(), err)
 	}
+	if st := e.m.Status(ctx, true); !st.Pending {
+		t.Error("a new cold day is not pending")
+	}
+	// A server that does not run the jobs goes by the policy.
+	e.m.Allowed = func() bool { return false }
+	if st := e.m.Status(ctx, true); st.Pending {
+		t.Error("pending on a server without the jobs")
+	}
+	e.m.Allowed = nil
 	e.deny.Store(false)
 	if res, err := e.m.Sync(ctx); err != nil || res.Action != "updated" {
 		t.Fatalf("sync after a new cold day: %+v, %v", res, err)

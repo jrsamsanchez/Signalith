@@ -358,10 +358,13 @@ snapshots, and says what to do.
 **Permissions** for Signalith's own OpenSearch user. OpenSearch runs the policy as the
 user that wrote it, so Signalith needs these cluster permissions itself:
 
-- `cluster:admin/opensearch/snapshot_management/*` to keep the policy and read how it
-  runs;
-- `cluster:admin/snapshot/*` to take, list and delete the snapshots;
+- `cluster:admin/opensearch/snapshot_management/policy/write`, `.../policy/get`,
+  `.../policy/delete` and `.../policy/explain` to keep the policy and read how it runs;
+- `cluster:admin/snapshot/create`, `cluster:admin/snapshot/get` and
+  `cluster:admin/snapshot/delete` to take, list and delete the snapshots;
 - `cluster:admin/repository/get` to check the repository.
+
+The role names each action, so Signalith cannot restore or clone a snapshot with it.
 
 The Docker quick start, the Helm chart and the OpenSearch the Windows installer sets up (`signalith opensearch install`)
 give them with the role `signalith_snapshots` (in
@@ -373,26 +376,67 @@ own security configuration, add the same role:
 ```yaml
 signalith_snapshots:
   cluster_permissions:
-    - "cluster:admin/opensearch/snapshot_management/*"
-    - "cluster:admin/snapshot/*"
+    - "cluster:admin/opensearch/snapshot_management/policy/write"
+    - "cluster:admin/opensearch/snapshot_management/policy/get"
+    - "cluster:admin/opensearch/snapshot_management/policy/delete"
+    - "cluster:admin/opensearch/snapshot_management/policy/explain"
+    - "cluster:admin/snapshot/create"
+    - "cluster:admin/snapshot/get"
+    - "cluster:admin/snapshot/delete"
     - "cluster:admin/repository/get"
 ```
 
 and map it to Signalith's user or certificate (in `roles_mapping.yml`, or with
-`PUT _plugins/_security/api/rolesmapping/signalith_snapshots`). OpenSearch's snapshot
-permissions are not limited to one repository: with them, Signalith could delete any
-repository's snapshots. On an OpenSearch you share with other applications, you may
-prefer to leave the role out and take snapshots yourself.
+`PUT _plugins/_security/api/rolesmapping/signalith_snapshots`).
+
+**What these snapshots do not protect against.** Read these before you rely on them:
+
+- **Snapshot rights in OpenSearch cover every repository.** They cannot be limited to
+  one, so with this role Signalith can list, take and delete snapshots in any
+  repository of that OpenSearch, not only its own. On an OpenSearch you share with
+  other applications, you may prefer to leave the role out and take snapshots yourself.
+- **Snapshots that Signalith's credentials can delete do not protect against a
+  compromised Signalith.** Someone who takes over a Signalith server, or its OpenSearch
+  certificate or password, can delete every snapshot, and so the evidence in them.
+  Copy the repository off-site, or use storage that refuses deletes for a time, such as
+  an S3 bucket with Object Lock or other WORM storage (see
+  [Copies elsewhere](#copies-elsewhere)).
+- **Turning scheduled snapshots off for good takes two steps.** OpenSearch keeps
+  running the policy with the roles that were stored with it when Signalith wrote it,
+  even after you take the role away from Signalith. Turn **Scheduled snapshots** off in
+  the settings (the server running the background jobs then deletes the policy), check
+  that it is gone, and delete it with OpenSearch's admin account if it is not:
+
+    ```sh
+    $CURL "$OS/_plugins/_sm/policies/signalith-daily"
+    $CURL -X DELETE "$OS/_plugins/_sm/policies/signalith-daily"
+    ```
+
+    (`<opensearch.index_prefix>-daily`). Then remove the `signalith_snapshots` mapping.
+
+Saving any of the backup settings asks for your password again, as other settings that
+change where data goes do.
 
 OpenSearch's snapshot management is part of its index-management plugin, which every
 OpenSearch download has; a minimal build without it gets a red item that says so.
 
 ### Copies elsewhere
 
-A snapshot in a folder on the same disk as OpenSearch does not survive the disk. Use a
-repository on another computer (an NFS share, an S3 bucket), or copy the folder off
-regularly, such as the quick start's volume with
-`docker compose -f deploy/docker/docker-compose.yml cp opensearch:/usr/share/opensearch/snapshots ./opensearch-snapshots`.
+A snapshot in a folder on the same disk as OpenSearch does not survive the disk, and a
+snapshot Signalith can delete does not survive someone who has taken over Signalith.
+So keep a copy where Signalith's credentials cannot reach it:
+
+- **Off-site:** copy the repository regularly to another computer or bucket that
+  Signalith and OpenSearch cannot write to, such as the quick start's volume with
+  `docker compose -f deploy/docker/docker-compose.yml cp opensearch:/usr/share/opensearch/snapshots ./opensearch-snapshots`.
+- **WORM storage:** an S3 bucket with Object Lock (compliance mode), or other
+  write-once storage, refuses deletes until its retention period ends, whoever asks.
+  Keep that period shorter than the time **Snapshots to keep** spans (under 14 days for
+  14 daily snapshots), or OpenSearch cannot delete the oldest ones and the policy's
+  deletions fail.
+
+A repository on another computer (an NFS share, an S3 bucket) survives a lost disk,
+but not a compromised Signalith.
 
 ## Schedule backups of each server's files
 

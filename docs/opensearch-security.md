@@ -359,6 +359,26 @@ certificate (use the first one). `add-to-opensearch.yml` lists every node in
 Node names may not be `signalith` or start with `signalith-`: those are for Signalith's own
 certificates.
 
+## Snapshot permissions
+
+The `signalith_snapshots` role lets Signalith keep its
+[scheduled snapshots](backup.md#scheduled-snapshots) policy, and lets OpenSearch take
+and delete the snapshots as Signalith. It names each action it needs (the policy's
+`write`, `get`, `delete` and `explain`, and `cluster:admin/snapshot/create`, `get` and
+`delete`, with `cluster:admin/repository/get`), so it cannot restore or clone
+snapshots. Know what it still allows:
+
+- **Snapshot rights cover every repository.** OpenSearch cannot limit them to one, so
+  Signalith can list, take and delete snapshots in any repository, not only its own.
+- **Snapshots that Signalith's credentials can delete do not protect against a
+  compromised Signalith.** Copy the repository off-site, or keep it on WORM storage such
+  as an S3 bucket with Object Lock (see [Copies elsewhere](backup.md#copies-elsewhere)).
+- **Removing the mapping does not stop the snapshots.** OpenSearch runs the policy with
+  the roles stored with it when Signalith wrote it. To turn them off, turn **Scheduled
+  snapshots** off in the settings, or delete the policy with the admin account
+  (`DELETE _plugins/_sm/policies/<opensearch.index_prefix>-daily`), and then remove the
+  `signalith_snapshots` mapping.
+
 ## OpenSearch's own audit log
 
 Signalith keeps its own audit log of what people do (see [audit.md](audit.md)). OpenSearch

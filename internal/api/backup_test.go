@@ -46,7 +46,7 @@ func TestHealthBackups(t *testing.T) {
 
 	// Snapshots going well, and a backup of the files recorded: no alert.
 	fake.st = snapshots.Status{On: true, State: snapshots.StateOK}
-	if err := snapshots.WriteFilesBackup(state, snapshots.FilesBackup{At: time.Now().UTC(), File: "/root/signalith-backup.zip", Files: 9}, nil); err != nil {
+	if err := snapshots.WriteFilesBackup(state, snapshots.FilesBackup{At: time.Now().UTC(), File: "/root/signalith-backup.zip", Files: 9}); err != nil {
 		t.Fatal(err)
 	}
 	_, body = do(t, ts, "GET", "/api/health", "", true)

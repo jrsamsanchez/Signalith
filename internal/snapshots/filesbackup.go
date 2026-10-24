@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/securefile"
 )
 
 // FilesBackupName is the file in the state folder where signalith backup
@@ -40,28 +42,18 @@ func ReadFilesBackup(stateDir string) *FilesBackup {
 	return &r
 }
 
-// WriteFilesBackup records r in stateDir through a temporary file renamed
-// into place. own, when set, gives the temporary file to the server's
-// account first (signalith backup may run as root).
-func WriteFilesBackup(stateDir string, r FilesBackup, own func(path string)) error {
+// WriteFilesBackup records r in stateDir: written to a temporary file,
+// synced to disk and renamed into place, readable by its owner only.
+// Run as root (signalith backup may be), a new record is given the
+// state folder's owner, the server's account.
+func WriteFilesBackup(stateDir string, r FilesBackup) error {
 	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(stateDir, "."+FilesBackupName+".*")
+	p, err := securefile.PreparePrivate(filepath.Join(stateDir, FilesBackupName), append(b, '\n'))
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	if _, err := tmp.Write(append(b, '\n')); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if own != nil {
-		own(tmp.Name())
-	}
-	return os.Rename(tmp.Name(), filepath.Join(stateDir, FilesBackupName))
+	return p.Commit()
 }

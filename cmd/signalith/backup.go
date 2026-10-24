@@ -231,8 +231,7 @@ func cmdBackup(args []string) error {
 	if aerr != nil {
 		abs = name
 	}
-	if err := snapshots.WriteFilesBackup(c.StateDir(), snapshots.FilesBackup{At: m.Made, File: abs, Files: m.Files, Archive: *archive, Version: version},
-		func(p string) { giveToOwnerOf(p, c.StateDir()) }); err != nil {
+	if err := snapshots.WriteFilesBackup(c.StateDir(), snapshots.FilesBackup{At: m.Made, File: abs, Files: m.Files, Archive: *archive, Version: version}); err != nil {
 		fmt.Fprintln(os.Stderr, "Could not note this backup for the Health page:", err)
 	}
 	fmt.Printf("Wrote %s: %d files from:\n", name, m.Files)

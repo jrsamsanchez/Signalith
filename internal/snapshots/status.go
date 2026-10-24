@@ -143,10 +143,15 @@ func (m *Manager) read(ctx context.Context) *Status {
 	if err != nil {
 		return fail(err)
 	}
-	indices, err := m.indices(ctx)
-	if err != nil {
-		// Unknown for now: the policy's own say.
-		indices = cur.SnapshotConfig.Indices
+	// Which indices are cold is read only by the server that writes the
+	// policy, at its last Sync; elsewhere the policy's own say goes.
+	indices := cur.SnapshotConfig.Indices
+	if m.Allowed == nil || m.Allowed() {
+		m.mu.Lock()
+		if m.indices != "" {
+			indices = m.indices
+		}
+		m.mu.Unlock()
 	}
 	want := desiredDoc(indices, s)
 	st.Pending = !found || cur.key() != want.key()
