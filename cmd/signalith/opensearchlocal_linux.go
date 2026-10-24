@@ -147,7 +147,8 @@ func onlyRootChanges(p string) error {
 		}
 		uid, _, ok := ownerOf(fi)
 		if !ok || uid != 0 || fi.Mode().Perm()&0o022 != 0 {
-			return fmt.Errorf("%s may be changed by someone other than root (%s, owner %d), so OpenSearch is not run from it", at, fi.Mode(), uid)
+			return fmt.Errorf("%s may be changed by someone other than root (%s, owner %d), so OpenSearch is not run from it; "+
+				"if nobody else should change it, run: sudo chown root %s && sudo chmod go-w %s", at, fi.Mode(), uid, at, at)
 		}
 		if at == "/" {
 			return nil

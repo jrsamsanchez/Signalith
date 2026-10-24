@@ -95,6 +95,9 @@ if [ "$armpublished" != "$armpin" ]; then
   echo "::error::The pinned SHA-512 for $arm is '$armpin'; OpenSearch publishes $armpublished"; bad=yes
 fi
 [ "$bad" = no ] || exit 1
+# GitHub's runners leave /opt writable by everyone, which a server should
+# not, and which signalith opensearch install rightly refuses.
+if [ -n "$(find /opt -maxdepth 0 -perm -o+w)" ]; then sudo chmod go-w /opt; fi
 sudo signalith opensearch install
 systemctl is-active --quiet signalith-opensearch
 pid=$(systemctl show -p MainPID --value signalith-opensearch)
