@@ -8,13 +8,14 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 Signalith needs two things: **OpenSearch 2.17 or newer (3.x included)**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
-runs both for you, and so does the Windows installer from 0.3.1 on. On Linux, and on
-Windows with 0.3.0, you install OpenSearch first and then Signalith next to it.
+runs both for you, and so does the Windows installer from 0.3.1 on. On Linux, from 0.3.2
+one command sets up OpenSearch next to Signalith; before that, and on Windows with 0.3.0,
+you install OpenSearch first and then Signalith next to it.
 
 | Way to run it | Good for | Takes |
 | --- | --- | --- |
 | [Docker quick start](#docker-quick-start) | Trying Signalith, labs, small sites | Two commands |
-| [Linux](#linux) | A systemd service on a server | OpenSearch, then a few commands |
+| [Linux](#linux) | A systemd service on a server | A few commands (OpenSearch included from 0.3.2) |
 | [Windows](#windows) | A Windows service | One installer (OpenSearch included from 0.3.1) |
 
 ## Docker quick start
@@ -118,9 +119,10 @@ browser; on a [multi-tenant](multi-tenant.md) install each tenant's users have t
 
 ## Linux
 
-1. Install OpenSearch 2.17 or newer (3.x included)
-   ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)).
-2. Install Signalith:
+The [packages](install-packages.md) are the easiest way on Linux; these steps install by
+hand.
+
+1. Install Signalith:
 
     ```sh
     sudo install -m 0755 signalith-linux-amd64 /usr/local/bin/signalith
@@ -136,10 +138,24 @@ browser; on a [multi-tenant](multi-tenant.md) install each tenant's users have t
     (`/var/lib/signalith/keys/master.key`). Back that file up, apart from the config;
     see [Encryption](encryption.md#the-master-key).
 
+2. Set up OpenSearch on this server (from 0.3.2 on):
+
+    ```sh
+    sudo signalith opensearch install
+    ```
+
+    It downloads the official OpenSearch release, checks it against the SHA-512 Signalith
+    pins, runs it as the `signalith-opensearch` service on this server only, over HTTPS
+    with no passwords, and has Signalith sign in to it with a certificate
+    ([OpenSearch on Linux](install-packages.md#opensearch-on-linux)).
+
+    To use an OpenSearch 2.17 or newer (3.x included) that you run yourself instead
+    ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)),
+    give its address on the **Settings** page (**OpenSearch** > **Address**), replace its
+    demo security setup, whose passwords and certificates are public, and have Signalith
+    sign in with a certificate of its own: [Securing OpenSearch](opensearch-security.md).
+
 3. Open `https://<server>:9000` and sign in as `signalithadmin`.
-4. Replace OpenSearch's demo security setup, whose passwords and certificates are
-   public, and have Signalith sign in with a certificate of its own:
-   [Securing OpenSearch](opensearch-security.md).
 
 To upgrade, stop the service, replace the program and the unit, encrypt passwords an
 older version kept as plain text, and start it again:

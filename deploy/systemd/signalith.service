@@ -1,7 +1,7 @@
 [Unit]
 Description=Signalith SIEM server
 Documentation=https://github.com/jrsamsanchez/Signalith
-After=network-online.target opensearch.service
+After=network-online.target opensearch.service signalith-opensearch.service
 Wants=network-online.target
 
 [Service]

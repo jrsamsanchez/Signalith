@@ -8,6 +8,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,7 +32,11 @@ type windowsOpenSearch struct{}
 
 func newLocalOpenSearch() (localOpenSearch, error) { return windowsOpenSearch{}, nil }
 
-const openSearchAccount = `NT SERVICE\` + oslocal.ServiceName
+// afterOpenSearchInstall does nothing: install.ps1 gives Signalith the
+// address and certificate.
+func afterOpenSearchInstall(io.Writer, oslocal.Layout) error { return nil }
+
+var openSearchAccount = `NT SERVICE\` + oslocal.ServiceName
 
 func (windowsOpenSearch) prepare(l oslocal.Layout, home string) error {
 	// Administrators only, not Signalith's account: it holds the CA key

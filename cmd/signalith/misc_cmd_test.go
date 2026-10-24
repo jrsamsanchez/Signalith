@@ -102,7 +102,8 @@ func TestOpenSearchCommandOffWindows(t *testing.T) {
 	if err := cmdOpenSearch(nil); err == nil || !strings.Contains(err.Error(), "an opensearch command is required") {
 		t.Errorf("no command: %v", err)
 	}
-	if err := cmdOpenSearch([]string{"status"}); err == nil || !strings.Contains(err.Error(), "for Windows") {
+	// On Linux it runs as root, with systemd (opensearchlocal_linux_test.go).
+	if err := cmdOpenSearch([]string{"status"}); runtime.GOOS != "linux" && (err == nil || !strings.Contains(err.Error(), "for Windows and Linux")) {
 		t.Errorf("status: %v", err)
 	}
 	if err := cmdService(nil); err == nil || !strings.Contains(err.Error(), "for Windows") {

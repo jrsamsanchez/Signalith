@@ -220,6 +220,7 @@
       <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
       <a class="nav__item" href="#sso" data-page="sso" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span>Single sign-on</span></a>
       <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
+      <a class="nav__item" href="#metrics" data-page="metrics" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-chart-line"/></svg><span>Metrics</span></a>
       <a class="nav__item" href="#tenants" data-page="tenants" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>Tenants</span></a>
       <a class="nav__item" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="nav__item" href="#ticketing" data-page="ticketing" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-ticket"/></svg><span>Ticketing</span></a>
@@ -298,6 +299,7 @@
       <a class="set-tab" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
       <a class="set-tab" href="#sso" data-page="sso" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span>Single sign-on</span></a>
       <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
+      <a class="set-tab" href="#metrics" data-page="metrics" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-chart-line"/></svg><span>Metrics</span></a>
       <a class="set-tab" href="#tenants" data-page="tenants" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>Tenants</span></a>
       <a class="set-tab" href="#notify" data-page="notify" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-bell"/></svg><span>Notifications</span></a>
       <a class="set-tab" href="#ticketing" data-page="ticketing" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-ticket"/></svg><span>Ticketing</span></a>
@@ -1933,6 +1935,25 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     </div>
   </section>
 
+  <!-- Metrics (admins): the scrape endpoint for Prometheus -->
+  <section id="page-metrics" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Metrics</h2>
+        <p class="page-head__desc">A scrape endpoint for Prometheus and other OpenMetrics scrapers: ingest, OpenSearch writes, syslog, retention and the background jobs. No event data, user or host names.</p>
+      </div>
+    </div>
+    <div class="card mt-card">
+      <div class="card__head">
+        <div>
+          <h3 class="card__title" id="mt-title">Scrape endpoint</h3>
+          <p class="card__sub">Each server answers with its own numbers. Scrape every server.</p>
+        </div>
+      </div>
+      <div class="card__body mt-body" id="mt-body" aria-busy="true" aria-labelledby="mt-title"></div>
+    </div>
+  </section>
+
   <!-- Tenants: the customers this install serves (provider admins) -->
   <section id="page-tenants" class="page">
     <div class="page-head">
@@ -2096,6 +2117,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="compliance.js"></script>
 <script src="tokens.js"></script>
 <script src="apitokens.js"></script>
+<script src="metrics.js"></script>
 <script src="tenants.js"></script>
 <script src="sso.js"></script>
 <script src="baselines.js"></script>
