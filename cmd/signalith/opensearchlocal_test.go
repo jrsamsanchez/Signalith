@@ -267,7 +267,7 @@ func TestInstallOpenSearchSaysItIsStarting(t *testing.T) {
 	t.Cleanup(func() { ospki.KeyBits = bits })
 	d := t.TempDir()
 	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
-	fakeRelease(t, l, oslocal.Version)
+	fakeUnpack(t, l)
 	sys := &fakeOpenSearch{t: t, l: l, slow: time.Second}
 	sys.loaded.Store(true)
 	var out strings.Builder
