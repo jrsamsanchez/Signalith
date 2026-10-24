@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cases"
@@ -49,6 +50,10 @@ type complianceState struct {
 	mu   sync.Mutex
 	snap *compliance.Snapshot
 	at   time.Time
+
+	// sawHTTPS is whether the page was last read over HTTPS, for the
+	// monthly record, which no request asks for (see compliancehist.go).
+	sawHTTPS atomic.Bool
 }
 
 // complianceTTL is how long a snapshot is reused.
@@ -77,11 +82,17 @@ func (s *Server) complianceNotes() compliance.NoteStore {
 }
 
 func (s *Server) complianceReport(r *http.Request) *compliance.Report {
+	return s.complianceReportAt(r.Context(), r, r.URL.Query().Get("fresh") == "1")
+}
+
+// complianceReportAt works out the report; r is nil for the monthly
+// record, which always takes a fresh snapshot.
+func (s *Server) complianceReportAt(ctx context.Context, r *http.Request, fresh bool) *compliance.Report {
 	c := s.compliance()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.snap == nil || r.URL.Query().Get("fresh") == "1" || time.Since(c.at) > complianceTTL {
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	if c.snap == nil || fresh || time.Since(c.at) > complianceTTL {
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 		c.snap = s.complianceSnapshot(ctx, r)
 		cancel()
 		c.at = time.Now()
@@ -202,7 +213,10 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	now := time.Now().UTC()
 	snap := &compliance.Snapshot{Now: now, Data: map[string]compliance.DataSeen{}, Assets: -1}
 	conf := s.conf()
-	snap.HTTPS = conf.Server.HTTPS() || s.overHTTPS(r)
+	if r != nil {
+		s.compliance().sawHTTPS.Store(s.overHTTPS(r))
+	}
+	snap.HTTPS = conf.Server.HTTPS() || s.compliance().sawHTTPS.Load()
 	snap.MFA = conf.MFARequiredMode()
 	if conf.Syslog.UDP != "" {
 		snap.PlainSyslog = append(snap.PlainSyslog, "UDP "+conf.Syslog.UDP)

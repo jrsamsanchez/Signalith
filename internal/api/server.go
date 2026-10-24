@@ -37,6 +37,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
 	"github.com/jrsamsanchez/signalith/internal/compliance"
+	"github.com/jrsamsanchez/signalith/internal/compliancehist"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
@@ -171,6 +172,9 @@ type Server struct {
 	ReportKeys   reportkeys.Registry
 	// CaseFiles keeps the files attached to cases; nil refuses files.
 	CaseFiles casefiles.Store
+	// ComplianceHistory keeps the monthly compliance evidence records;
+	// nil keeps none.
+	ComplianceHistory compliancehist.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -507,6 +511,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeVulns(api)
 	s.routeVulnLogins(api)
 	s.routeCompliance(api)
+	s.routeComplianceHistory(api)
 	s.routeSettings(api)
 	s.routeCluster(api)
 	s.routeClusterTLS(api)
