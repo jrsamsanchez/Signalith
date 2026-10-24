@@ -254,6 +254,7 @@ func (s *Server) gatherSecurity(ctx context.Context) *security.Report {
 	if f.TLS = security.TLSFactsFrom(s.TLS, c); f.TLS != nil {
 		f.TLS.Refusals = s.TLS.Refusals()
 		f.TLS.Seen = security.SeenFrom(ctx, s.TLS)
+		f.TLS.ClusterKeyLost = s.selfCAKeyLost()
 	}
 	f.Runtime = s.runtimeFacts(now, h.InContainer)
 	f.AgentTokens = TokenFacts(ctx, s.tokens())
@@ -762,4 +763,18 @@ func (s *Server) securityHealth() map[string]any {
 		return nil
 	}
 	return map[string]any{"risk": rep.Summary.Risk, "checked_at": rep.CheckedAt}
+}
+
+// selfCAKeyLost reports whether this server's heartbeat says the
+// cluster's certificate authority key was lost.
+func (s *Server) selfCAKeyLost() bool {
+	if s.Cluster == nil {
+		return false
+	}
+	for _, sv := range s.Cluster.Status().Servers {
+		if sv.Self && sv.Detail != nil && sv.Detail.TLS != nil {
+			return sv.Detail.TLS.CAKeyLost
+		}
+	}
+	return false
 }

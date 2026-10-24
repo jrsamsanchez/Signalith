@@ -53,7 +53,7 @@ services:
   # (docs/opensearch-security.md), for example:
   #   docker compose -f deploy/docker/docker-compose.yml run --rm setup bootstrap-docker -export-ca-key
   setup:
-    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.1}
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.2}
     pull_policy: always
     # Root, to give each file to the user that reads it: OpenSearch (1000)
     # or Signalith (65532), and allowed nothing else. It needs no network.
@@ -210,7 +210,7 @@ services:
     # `up`, so after `git pull` the same command runs the version it names.
     # To build it from the checked-out code instead, add
     # -f deploy/docker/docker-compose.build.yml (see that file).
-    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.1}
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.2}
     pull_policy: always
     # A fixed name, which goes into Signalith's own HTTPS certificate and the
     # name of its certificate authority ("Signalith Local CA (signalith)").
@@ -309,7 +309,7 @@ services:
   # OpenSearch. Only open the port to the other servers in the firewall.
   opensearch-port:
     profiles: ["cluster"]
-    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.1}
+    image: ghcr.io/jrsamsanchez/signalith:${SIGNALITH_VERSION:-0.3.2}
     pull_policy: always
     command: ["tcp-forward", "-listen", "0.0.0.0:9200", "-to", "opensearch:9200"]
     restart: unless-stopped

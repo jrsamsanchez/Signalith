@@ -281,6 +281,13 @@ func serverView(hb cluster.Heartbeat, self, clusterFP string, roots map[string]b
 		v.Warnings = append(v.Warnings, fmt.Sprintf("Its certificate leaves out %s, because its certificate authority may not vouch for %s.",
 			strings.Join(t.Outside, ", "), plural(len(t.Outside), "that name", "those names")))
 	}
+	if t.CAKeyLost {
+		var exp time.Time
+		if t.LeafExpires != nil {
+			exp = *t.LeafExpires
+		}
+		v.Warnings = append(v.Warnings, KeyLostText(exp))
+	}
 	if !t.CoversShared {
 		v.Warnings = append(v.Warnings, "Its certificate doesn't cover the cluster's shared address, so agents sent there by a load balancer refuse it.")
 	}

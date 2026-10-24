@@ -240,3 +240,32 @@ func TestWithWriteID(t *testing.T) {
 		t.Errorf("%s %v", raw, err)
 	}
 }
+
+// While OpenSearch starts and the index's shards are not assigned yet,
+// an mget answers 200 with an error in place of each document. That is
+// a read that failed, never a document that is not there.
+func TestMGetWhileShardsUnassigned(t *testing.T) {
+	c, os := newDocsClient(t)
+	ctx := context.Background()
+	if _, err := c.Create(ctx, "s_runtime", "a", map[string]any{"n": 1}, false); err != nil {
+		t.Fatal(err)
+	}
+	os.SetFault(func(method, path string) *ostest.Fault {
+		if strings.HasPrefix(path, "/_mget") {
+			return &ostest.Fault{Unassigned: true}
+		}
+		return nil
+	})
+	var oe *Error
+	if _, err := c.MGet(ctx, []Ref{{"s_runtime", "a"}}); !errors.As(err, &oe) || oe.Status != 503 || !strings.Contains(err.Error(), "no_shard_available_action_exception") {
+		t.Fatalf("mget while unassigned: %v", err)
+	}
+	if _, err := c.MGetVersions(ctx, []Ref{{"s_runtime", "a"}}); err == nil {
+		t.Fatal("mget versions while unassigned: no error")
+	}
+	os.SetFault(nil)
+	docs, err := c.MGet(ctx, []Ref{{"s_runtime", "a"}, {"s_nope", "x"}})
+	if err != nil || len(docs) != 2 || !docs[0].Found || docs[1].Found {
+		t.Fatalf("mget once assigned: %+v %v", docs, err)
+	}
+}

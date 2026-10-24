@@ -5,7 +5,9 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"os"
 	"path/filepath"
@@ -16,8 +18,11 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/clusterjoin"
+	"github.com/jrsamsanchez/signalith/internal/clustertls"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/store"
+	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
 
 // clusterServerDir gives a state folder an identity, as a server's first
@@ -95,6 +100,16 @@ func TestClusterCommands(t *testing.T) {
 	}
 	hb.State = cluster.StateStopped
 	fake.Put("cc_runtime", "node:n_other", asMap(t, hb))
+	// This server's own certificate authority, which founding makes the
+	// cluster's.
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs, err := tlsauto.New(tlsauto.Options{Dir: c.TLSDir(), Names: []string{"siem-a.lan"}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	out, err = run("", "found", "-name", "Plant")
 	if err != nil || !strings.Contains(out, `Founded cluster "Plant"`) {
 		t.Fatalf("found: %v\n%s", err, out)
@@ -114,6 +129,25 @@ func TestClusterCommands(t *testing.T) {
 	out, err = run("", "export")
 	if err != nil || !strings.Contains(out, "id: cluster") || !strings.Contains(out, "verified: \"yes\"") || !strings.Contains(out, "name: Plant") {
 		t.Fatalf("export: %v\n%s", err, out)
+	}
+	// The cluster's certificate authority: this server's own, published
+	// as the cluster's.
+	keys, err := shared.KeyStore{Dir: c.StateDir(), Master: c.Keyring()}.ClusterKeys()
+	if err != nil || len(keys) == 0 {
+		t.Fatalf("cluster keys: %v", err)
+	}
+	h := shared.NewHub(shared.Options{NodeName: "siem-a"})
+	h.SetKeys(shared.NewKeySet(keys[0]))
+	h.Use(store.New(store.Config{URL: fake.URL}), "cc")
+	tl := clustertls.New()
+	tl.Track(h)
+	if err := h.Cycle(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ca, caKey, names := tlsauto.LocalFiles(c.TLSDir())
+	caPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: ca.Raw})
+	if err := tl.Publish(context.Background(), "admin", "siem-a", caPEM, caKey, names); err != nil {
+		t.Fatal(err)
 	}
 
 	keyFile := filepath.Join(dir, "cluster-key.txt")
@@ -163,9 +197,29 @@ func TestClusterCommands(t *testing.T) {
 	if _, err := run("", "reset-key"); err == nil || !strings.Contains(err.Error(), "-yes") {
 		t.Errorf("reset-key without -yes: %v", err)
 	}
+	// Another server's certificate from the cluster's certificate
+	// authority, from its last heartbeat, expires sooner than this one's.
+	soon := time.Now().Add(-time.Hour).AddDate(0, 2, 0).UTC()
+	hb.TLS = &cluster.TLSStatus{Mode: "auto", Cluster: true, CASHA256: certs.Fingerprint(), LeafExpires: &soon}
+	fake.Put("cc_runtime", "node:n_other", asMap(t, hb))
 	out, err = run("", "reset-key", "-yes")
 	if err != nil || !strings.Contains(out, "Signed") || !strings.Contains(out, "no key here") {
 		t.Fatalf("reset-key: %v\n%s", err, out)
+	}
+	for _, want := range []string{
+		"The cluster's certificate authority key is lost too.",
+		"siem-z, " + shortDay(soon) + "\n  siem-a, " + shortDay(certs.Leaf().NotAfter),
+		"signalith cluster export-key", "signalith cluster export --to-files",
+		"trust a new certificate authority before " + shortDay(soon),
+		"(tls ca_key)",
+		"The cluster's certificate authority key was emptied with them: the servers' HTTPS certificates cannot be renewed, and work until " + shortDay(soon),
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("reset-key output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "\n  tls ca_key\n") {
+		t.Errorf("the certificate authority's key is listed to enter again:\n%s", out)
 	}
 	out, err = run("", "status", "-json")
 	st = clusterStatus{}

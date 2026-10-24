@@ -18,7 +18,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/api"
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/baselines"
+	"github.com/jrsamsanchez/signalith/internal/casefiles"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -385,6 +387,8 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, prefix)
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	cfiles := casefiles.NewOpenSearch(cl, prefix)
+	cfiles.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	nstore := notebooks.NewOpenSearch(cl, prefix)
 	nstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	estore := endpoint.NewStore(cl, prefix)
@@ -507,6 +511,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: server},
 		Dashboards:        boards,
 		Cases:             cstore,
+		CaseFiles:         cfiles,
 		Notebooks:         nstore,
 		Respond:           responder,
 		Playbooks:         &api.Playbooks{Manager: pbooks, Runs: pruns},
@@ -517,6 +522,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		SetupGuide:        &setupguide.OpenSearch{Docs: cl, Prefix: prefix},
 		FindingViews:      &findingviews.OpenSearch{Docs: cl, Prefix: prefix},
 		ExceptionRequests: &exceptionreqs.OpenSearch{Docs: cl, Prefix: prefix},
+		CaseTemplates:     &casetemplates.OpenSearch{Docs: cl, Prefix: prefix},
 		Content:           updater,
 		Endpoints:         estore,
 		Background:        front.Background,
@@ -540,6 +546,11 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	// Rules that escalate late findings follow the due times set on the
 	// Settings page.
 	dispatcher.SLA = func() findings.SLA { return srv.Running().FindingSLA() }
+	// Tenants exist only in a cluster: their reports are signed with the
+	// cluster's report key, and say which tenant they are for.
+	if t.r.sharedContent != nil {
+		srv.ReportSigner, srv.ReportKeys = reportSigning(c, t.r.shared, t.r.sharedContent.reportKeys)
+	}
 	pbRunner := &playbooks.Runner{
 		Playbooks: pbooks, Findings: fstore, Runs: pruns, Desk: srv.PlaybookDesk(), Respond: responder,
 		Notify: notes, Sender: senders, Deliveries: deliveries, Server: server, Log: log,
