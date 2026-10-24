@@ -168,6 +168,11 @@ type Vuln struct {
 	// Source is where it came from: "" for a CVE matched to the software
 	// version Nmap found, or openvas for a weakness OpenVAS tested for.
 	Source string `json:"source,omitempty"`
+	// Distro is the Linux distribution the service's banner says built
+	// it ("Ubuntu"), for a CVE matched by version only: distributions fix
+	// CVEs without changing the upstream version, so it may be fixed
+	// there already (ASI-02).
+	Distro string `json:"distro,omitempty"`
 	// From OpenVAS: the test's OID and name, every CVE it names (CVE is
 	// the newest of them, or empty), and how to fix it.
 	OID      string   `json:"oid,omitempty"`
@@ -175,6 +180,10 @@ type Vuln struct {
 	CVEs     []string `json:"cves,omitempty"`
 	Solution string   `json:"solution,omitempty"`
 }
+
+// ConfidenceVersionOnly is the vuln_confidence of a CVE matched by the
+// upstream version on a service a distribution built.
+const ConfidenceVersionOnly = "version_only"
 
 // SourceOpenVAS marks a weakness OpenVAS found.
 const SourceOpenVAS = "openvas"

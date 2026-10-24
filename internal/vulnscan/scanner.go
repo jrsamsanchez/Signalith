@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -740,6 +741,40 @@ func serviceCPEs(svc Service) []CPE {
 	return out
 }
 
+// distros are Linux distributions as service banners name them, in
+// Nmap's version or extra info ("8.9p1 Ubuntu 3ubuntu0.10", "Debian
+// 5+deb11u3", "(Ubuntu)"). They backport fixes and keep the upstream
+// version.
+var distros = []struct {
+	name string
+	re   *regexp.Regexp
+}{
+	{"Ubuntu", regexp.MustCompile(`(?i)\bubuntu`)},
+	{"Debian", regexp.MustCompile(`(?i)\bdebian\b|\+deb\d|\bdeb\d+u\d`)},
+	{"Raspbian", regexp.MustCompile(`(?i)\braspbian\b`)},
+	{"Red Hat", regexp.MustCompile(`(?i)\bred ?hat\b|\brhel\b|\.el[5-9]\b|\bel[5-9]_`)},
+	{"CentOS", regexp.MustCompile(`(?i)\bcentos\b`)},
+	{"Rocky Linux", regexp.MustCompile(`(?i)\brocky\b`)},
+	{"AlmaLinux", regexp.MustCompile(`(?i)\balmalinux\b`)},
+	{"Fedora", regexp.MustCompile(`(?i)\bfedora\b|\.fc\d\d\b`)},
+	{"SUSE", regexp.MustCompile(`(?i)\bsuse\b|\bsles\b`)},
+	{"Amazon Linux", regexp.MustCompile(`(?i)\bamazon linux\b|\.amzn\d`)},
+	{"Oracle Linux", regexp.MustCompile(`(?i)\boracle linux\b`)},
+	{"FreeBSD", regexp.MustCompile(`(?i)\bfreebsd\b`)},
+}
+
+// builtBy is the distribution a service's banner says built it, "" when
+// it names none.
+func builtBy(svc Service) string {
+	text := svc.Version + " " + svc.Extra
+	for _, d := range distros {
+		if d.re.MatchString(text) {
+			return d.name
+		}
+	}
+	return ""
+}
+
 // aliases are other names the database files a product under: Nmap
 // still names nginx after its author, while CVEs since 2020 name F5.
 var aliases = map[string][]CPE{
@@ -761,6 +796,7 @@ func names(c CPE) []CPE {
 func (m *matcher) vulns(ctx context.Context, svc Service) []Vuln {
 	var out []Vuln
 	seen := map[string]bool{}
+	distro := builtBy(svc)
 	for _, found := range serviceCPEs(svc) {
 		for _, c := range names(found) {
 			cves := m.product(ctx, c)
@@ -771,7 +807,7 @@ func (m *matcher) vulns(ctx context.Context, svc Service) []Vuln {
 				}
 				seen[cve.ID] = true
 				out = append(out, Vuln{CVE: cve.ID, Description: cve.Description, CVSS: cve.CVSS, CVSSVersion: cve.CVSSVersion,
-					Severity: cve.Severity, Published: cve.Published, KEV: cve.KEVAdded != "", KEVAdded: cve.KEVAdded, CPE: found.String()})
+					Severity: cve.Severity, Published: cve.Published, KEV: cve.KEVAdded != "", KEVAdded: cve.KEVAdded, CPE: found.String(), Distro: distro})
 			}
 		}
 	}

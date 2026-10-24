@@ -109,6 +109,19 @@ that folder and prints the commands instead of running them.
   done. On the computer it is in a file only root (Linux) or SYSTEM and Administrators
   (Windows) can read; Fluent Bit's configuration does not hold it (Fluent Bit reads it
   from its environment).
+- **The agent checks what Fluent Bit is told to do.** Fluent Bit runs as root (SYSTEM
+  on Windows), so the agent runs only a configuration that reads logs (files, the systemd
+  journal, Windows event logs) and sends them to the Signalith server it was installed
+  for, over TLS that checks the certificate. It refuses one that would run a program,
+  load a plugin, open a port, read a file that holds secrets (the agent's own token,
+  password and key stores) or send anywhere else: every section, plugin and setting must
+  be one Signalith writes, and file paths must be plain (no `..`, `~`, variables, short
+  names or streams). It keeps the Fluent Bit configuration in use, still takes the rest
+  of the configuration (so an agent update that knows the new settings still arrives),
+  and shows why on the Endpoints page. At startup it checks the Fluent Bit configuration
+  on disk the same way and runs Fluent Bit only once it passes. The check reads the
+  paths as written: a link under `/var/log` that someone with root made to a secret file
+  is followed.
 - **Packages come from their publishers.** On Linux, Fluent Bit comes from Fluent Bit's
   own signed package repository; the script refuses its signing key unless its
   fingerprint is the one pinned in the script. On Windows, the script downloads the
@@ -284,6 +297,8 @@ configuration, within 5 minutes; nothing needs to be done on the computers.
 | **Audit log** | Off stops reading the Linux audit log |
 | **Linux sign-ins** | Where sign-ins are read from: where the computer writes them (the default), `auth.log` or `secure`, or the systemd journal |
 | **Automatic updates** | Off keeps the line's computers on the version they run (see [Updates](#updates)) |
+| **Update first** | The share of the line's computers a new version goes to: 1 in 10, a quarter, half or all (the default) |
+| **Alert when silent** | How long one of the line's computers may send nothing before the detection *Signalith Agent silent* fires: 1 hour (the default), 4 hours, 1 day, or off |
 
 Turning a log off hides what happens on those computers, so saving asks for your
 password again (see [Confirming it's you](users.md#confirming-its-you)), and each change
@@ -292,7 +307,17 @@ and after, so a gap in what detections see can be traced to the change. Only adm
 analysts see it in the token list. The osquery part of the same window (watched files,
 checks and how often they run) applies to every osquery host. The API is
 `PUT /api/agent-tokens/{id}/collect` with `{"osquery": "off", "linux_log": "journal"}`
-(any choice left out is on, or `auto` for `linux_log`).
+(any choice left out is on, or `auto` for `linux_log`; `update_share` is `10`, `25`, `50`
+or `100`, the default; `silent_alert` is `1h`, the default, `4h`, `24h` or `off`).
+
+An agent sends its status every 5 minutes even when the computer has nothing new to
+log, so a computer that sends nothing for longer than **Alert when silent** is off, cut
+off from Signalith, or its agent stopped. The server that runs the background jobs then
+writes a *Signalith Agent silent* event (sourcetype `agent:health`), and the built-in
+detection `agent-silent` raises a finding for it, at most once a day for each computer
+and for three days at most, so a computer you switched off for good stops alerting.
+Agents whose token was revoked are not reported. Lines for laptops or lab machines
+that are often off can wait a day, or have the alert off.
 
 ## osquery
 
@@ -413,10 +438,18 @@ How it works, and why it is safe:
    updater puts the version before back and restarts it. The computer's row on the
    **Endpoints** page then says the update failed, with the reason.
 
-To hold a group of computers at the version they run, turn **Automatic updates** off for
-their install line in **Endpoints > What hosts collect**. That is also how to roll a
-release out in stages: leave updates on for a small test line first, and turn them on for
-the others once it looks good. Turning updates back on lets the line catch up.
+An update that was undone is tried again a day later, since what made it fail (a full
+disk, a server that was down) may have passed; a version that does not work on the
+computer is undone again.
+
+To roll a new version out in stages, set **Update first** for an install line in
+**Endpoints > What hosts collect** to 1 in 10, a quarter or half: only that share of the
+line's computers takes it. Which computers are in the share depends only on the line and
+the computer's name, so they are the same ones each time, and raising the share adds
+computers without taking any back. Check the first ones on the **Endpoints** page, then
+raise it to all. To hold a group of computers at the version they run, turn
+**Automatic updates** off for their install line; turning it back on lets the line catch
+up.
 
 Agents installed before signed updates, and builds made from source (which have no
 release key), do not update themselves; run the install line again to upgrade them.

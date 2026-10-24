@@ -101,6 +101,11 @@ var (
 	// updaterWait is how long a waiting update may sit before the agent
 	// says the updater did not pick it up.
 	updaterWait = 10 * time.Minute
+	// failedRetry is how long after an update to a version was undone
+	// the agent tries that version again (ASI-07): a fault on the
+	// computer, such as a full disk or a server that was down, may have
+	// passed, and a release that does not work there is undone again.
+	failedRetry = 24 * time.Hour
 	// healthWait is how long the new version has to report after the
 	// updater restarts the agent, and stableWait how long it must then
 	// keep running.
@@ -125,7 +130,7 @@ func (a *Agent) checkUpdate(ctx context.Context) {
 		a.setUpdate(nil)
 		return
 	}
-	if res != nil && !res.OK && res.Version == u.Version {
+	if res != nil && !res.OK && res.Version == u.Version && a.now().Sub(res.At) < failedRetry {
 		a.setUpdate(&agentproto.Component{Name: "update", Version: u.Version, State: agentproto.StateFailed,
 			Since: res.At.UTC().Format(time.RFC3339), Error: "the update to " + u.Version + " was undone: " + res.Error})
 		return

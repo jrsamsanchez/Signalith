@@ -34,6 +34,31 @@ type Collect struct {
 	// Updates is "" (the agents update themselves to the signed release
 	// programs the server hands out) or "off" (paused).
 	Updates string `json:"updates,omitempty"`
+	// UpdateShare is the share of the line's computers, in percent,
+	// that take an update while it rolls out: "" (all of them), or
+	// "10", "25" or "50". Which computers are in it depends only on
+	// the token and the computer's name, so raising it adds computers
+	// and keeps those that have it (ASI-07).
+	UpdateShare string `json:"update_share,omitempty"`
+	// SilentAlert is how long one of the line's agents may send nothing
+	// before Signalith writes a "Signalith Agent silent" event, which
+	// the built-in detection agent-silent reads: "" (an hour), "4h",
+	// "24h" or "off" (ASI-14).
+	SilentAlert string `json:"silent_alert,omitempty"`
+}
+
+// SilentAfter is how long one of the line's agents may send nothing
+// before it is reported silent; 0 when that is off.
+func (c Collect) SilentAfter() time.Duration {
+	switch c.SilentAlert {
+	case CollectOff:
+		return 0
+	case "4h":
+		return 4 * time.Hour
+	case "24h":
+		return 24 * time.Hour
+	}
+	return time.Hour
 }
 
 // Off values.
@@ -70,6 +95,22 @@ func CleanCollect(c Collect) (Collect, string, bool) {
 			return Collect{}, f.name, false
 		}
 	}
+	switch v := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(c.UpdateShare), "%")); v {
+	case "", "100", "all":
+		c.UpdateShare = ""
+	case "10", "25", "50":
+		c.UpdateShare = v
+	default:
+		return Collect{}, "update_share", false
+	}
+	switch v := strings.ToLower(strings.TrimSpace(c.SilentAlert)); v {
+	case "", "1h", "on":
+		c.SilentAlert = ""
+	case "4h", "24h", CollectOff:
+		c.SilentAlert = v
+	default:
+		return Collect{}, "silent_alert", false
+	}
 	switch v := strings.ToLower(strings.TrimSpace(c.LinuxLog)); v {
 	case "", "auto":
 		c.LinuxLog = ""
@@ -83,8 +124,13 @@ func CleanCollect(c Collect) (Collect, string, bool) {
 
 func errCollectInvalid(field string) *Error {
 	msg := "Use on or off."
-	if field == "linux_log" {
+	switch field {
+	case "linux_log":
 		msg = "Use auto, file or journal."
+	case "update_share":
+		msg = "Use 10, 25, 50 or 100 (percent of the line's computers)."
+	case "silent_alert":
+		msg = "Use 1h, 4h, 24h or off."
 	}
 	return &Error{Status: http.StatusBadRequest, Code: CodeCollectInvalid, Field: field, Msg: msg}
 }

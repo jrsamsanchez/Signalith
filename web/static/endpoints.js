@@ -812,14 +812,17 @@ window.sensorText = (function () {
     ['audit_log', 'Audit log', 'Linux: auditd’s records'],
   ];
 
-  // updatesSwitch pauses automatic updates for one install line, which is
-  // also how to roll a release out to a few computers first.
+  // updatesSwitch pauses automatic updates for one install line, or rolls
+  // a new version out to a share of its computers first.
   function updatesSwitch(c, change) {
     const sw = el('input', { type: 'checkbox', onchange: () => change('updates', sw.checked ? '' : 'off') });
     sw.checked = c.updates !== 'off';
     return el('div', { class: 'ep-set__switches ep-set__updates' },
       el('label', { class: 'switch ep-set__switch' }, sw, el('span', {}, el('b', {}, 'Automatic updates'),
-        el('span', { class: 'hint' }, 'Install new versions this server has, signed by the Signalith release key. Turn off to keep these computers where they are, for example to try a release on another line first.'))));
+        el('span', { class: 'hint' }, 'Install new versions this server has, signed by the Signalith release key. Turn off to keep these computers where they are, for example to try a release on another line first.'))),
+      c.updates !== 'off' ? el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Update first'),
+        seg([['10', '1 in 10'], ['25', 'A quarter'], ['50', 'Half'], ['', 'All']], c.update_share || '', (v) => change('update_share', v), 'Update first'),
+        el('span', { class: 'hint' }, 'A new version goes to this share of the line’s computers, always the same ones. Raise it once they look good.')) : null);
   }
 
   function agentCollectSection(lines, edits) {
@@ -849,6 +852,9 @@ window.sensorText = (function () {
         })),
         el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Linux sign-ins'),
           seg([['', 'Where the computer writes them'], ['file', 'auth.log or secure'], ['journal', 'systemd journal']], c.linux_log || '', (v) => change('linux_log', v), 'Linux sign-ins')),
+        el('div', { class: 'ep-set__row' }, el('span', { class: 'label' }, 'Alert when silent'),
+          seg([['', 'After 1 hour'], ['4h', '4 hours'], ['24h', '1 day'], ['off', 'Off']], c.silent_alert || '', (v) => change('silent_alert', v), 'Alert when silent'),
+          el('span', { class: 'hint' }, 'The detection Signalith Agent silent fires when one of these computers sends nothing for this long.')),
         updatesSwitch(c, change));
     };
     pick.addEventListener('change', () => { cur = pick.value; draw(); });

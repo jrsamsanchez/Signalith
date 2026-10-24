@@ -525,6 +525,7 @@
   // ransomware note and the EPSS chance, for the row's summary line.
   function exploitBadges(v) {
     const out = [];
+    if (v.distro) out.push(el('span', { class: 'badge', title: 'Matched by version alone. ' + v.distro + ' fixes CVEs in its own builds without changing the version, so this may be fixed already: check the package’s changelog or run a signed-in OpenVAS scan.' }, 'Version only (' + v.distro + ')'));
     if (v.kev) {
       out.push(el('span', { class: 'badge vs-kev', title: 'Added to CISA’s Known Exploited Vulnerabilities catalog on ' + v.kev_added + (v.kev_due ? '; US federal agencies must fix it by ' + v.kev_due : '') }, icon('flag'), 'Exploited'));
       if (v.ransomware) out.push(el('span', { class: 'badge vs-kev', title: 'CISA knows of ransomware campaigns using this vulnerability' }, 'Ransomware'));

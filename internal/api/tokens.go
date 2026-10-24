@@ -325,8 +325,17 @@ func collectSummary(c agenttokens.Collect) string {
 	if linux == "" {
 		linux = "auto"
 	}
+	share := c.UpdateShare
+	if share == "" {
+		share = "100"
+	}
+	silent := c.SilentAlert
+	if silent == "" {
+		silent = "1h"
+	}
 	return "osquery=" + onOff(c.Osquery) + " sysmon=" + onOff(c.Sysmon) + " powershell=" + onOff(c.PowerShell) +
-		" linux_log=" + linux + " web_logs=" + onOff(c.WebLogs) + " audit_log=" + onOff(c.AuditLog) + " updates=" + onOff(c.Updates)
+		" linux_log=" + linux + " web_logs=" + onOff(c.WebLogs) + " audit_log=" + onOff(c.AuditLog) + " updates=" + onOff(c.Updates) +
+		" update_share=" + share + " silent_alert=" + silent
 }
 
 // readStrictTokenBody is readTokenBody refusing fields v does not have,
