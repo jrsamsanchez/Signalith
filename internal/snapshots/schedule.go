@@ -11,6 +11,7 @@
 package snapshots
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -87,19 +88,21 @@ func (s Settings) Normal() Settings {
 var repoName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,99}$`)
 
 // Problems lists what is wrong with s, naming each setting by its key.
+// The values themselves are not repeated: the problems are answers to
+// whoever saved them.
 func (s Settings) Problems() []string {
 	var p []string
 	if r := strings.TrimSpace(s.Repository); r != "" && !repoName.MatchString(r) {
-		p = append(p, fmt.Sprintf("backup.snapshot_repository %q must be a repository name: lower-case letters, digits, '.', '_' and '-'", r))
+		p = append(p, "backup.snapshot_repository must be a repository name: lower-case letters, digits, '.', '_' and '-'")
 	}
 	if e := strings.ToLower(strings.TrimSpace(s.Every)); e != "" {
 		if _, ok := Everies[e]; !ok {
-			p = append(p, fmt.Sprintf("backup.snapshot_every %q must be 1h, 6h, 12h or 1d (empty: 1d)", s.Every))
+			p = append(p, "backup.snapshot_every must be 1h, 6h, 12h or 1d (empty: 1d)")
 		}
 	}
 	if a := strings.TrimSpace(s.At); a != "" {
 		if _, _, ok := clock(a); !ok {
-			p = append(p, fmt.Sprintf("backup.snapshot_at %q must be a time of day such as 02:30 (empty: %s)", s.At, DefaultAt))
+			p = append(p, "backup.snapshot_at must be a time of day such as 02:30 (empty: "+DefaultAt+")")
 		}
 	}
 	if err := CheckTimeZone(s.TimeZone); err != nil {
@@ -119,12 +122,12 @@ func CheckTimeZone(name string) error {
 		return nil
 	}
 	if len(name) > 64 {
-		return fmt.Errorf("time zone %.64q... is too long", name)
+		return errors.New("the time zone name is too long")
 	}
 	// Local and Factory load too, but mean the server's own zone or
 	// nothing; OpenSearch would read them differently.
 	if _, err := time.LoadLocation(name); err != nil || !strings.Contains(name, "/") {
-		return fmt.Errorf("unknown time zone %q; use an IANA name such as Europe/Berlin or America/New_York (empty: UTC)", name)
+		return errors.New("unknown time zone; use an IANA name such as Europe/Berlin or America/New_York (empty: UTC)")
 	}
 	return nil
 }
