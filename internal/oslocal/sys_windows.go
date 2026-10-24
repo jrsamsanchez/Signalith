@@ -15,16 +15,17 @@ import (
 
 var osStat = os.Stat
 
-func freeBytes(dir string) (int64, error) {
+// diskSpace returns the bytes free to this user and the disk's size.
+func diskSpace(dir string) (free, total int64, err error) {
 	p, err := windows.UTF16PtrFromString(dir)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
-	var free, total, totalFree uint64
-	if err := windows.GetDiskFreeSpaceEx(p, &free, &total, &totalFree); err != nil {
-		return 0, err
+	var f, t, totalFree uint64
+	if err := windows.GetDiskFreeSpaceEx(p, &f, &t, &totalFree); err != nil {
+		return 0, 0, err
 	}
-	return int64(free), nil
+	return int64(f), int64(t), nil
 }
 
 // winHTTPProxyInfo is WINHTTP_PROXY_INFO.
