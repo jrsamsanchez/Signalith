@@ -369,7 +369,7 @@ func revisionSum(b []byte) string {
 
 // Platforms are the computers the agent program is built for, as
 // os-arch.
-var Platforms = []string{"linux-amd64", "linux-arm64", "windows-amd64", "darwin-amd64", "darwin-arm64"}
+var Platforms = []string{"linux-amd64", "linux-arm64", "windows-amd64", "windows-arm64", "darwin-amd64", "darwin-arm64"}
 
 // ProgramName is the agent program's file name for a platform, as the
 // server keeps them (signalith-agent-linux-amd64,

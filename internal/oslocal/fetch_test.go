@@ -4,6 +4,7 @@
 package oslocal
 
 import (
+	"errors"
 	"net/http"
 	"path/filepath"
 	"strings"
@@ -100,5 +101,39 @@ func TestCheckRoom(t *testing.T) {
 	}
 	if got := existing(filepath.Join(l.Data, "a", "b")); got != filepath.Dir(l.Data) {
 		t.Fatalf("existing = %s", got)
+	}
+}
+
+func TestDiskWarning(t *testing.T) {
+	d := t.TempDir()
+	l := Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data")}
+	space := diskSpaceOf
+	t.Cleanup(func() { diskSpaceOf = space })
+	const gb = 1 << 30
+	for _, c := range []struct {
+		free, total int64
+		want        string
+	}{
+		{100 * gb, 200 * gb, ""},
+		// 8.4 GB free of 118 GB, less the program: 12 GB short of 85%.
+		{8*gb + 400<<20, 118 * gb, "will be 95% full"},
+		// 82% full once the program is in: under the low watermark.
+		{20 * gb, 100 * gb, ""},
+	} {
+		diskSpaceOf = func(string) (int64, int64, error) { return c.free, c.total, nil }
+		got := DiskWarning(l)
+		if c.want == "" {
+			if got != "" {
+				t.Errorf("%d of %d free: %q", c.free, c.total, got)
+			}
+			continue
+		}
+		if !strings.Contains(got, c.want) || !strings.Contains(got, "Free about 12 GB") {
+			t.Errorf("%d of %d free: %q", c.free, c.total, got)
+		}
+	}
+	diskSpaceOf = func(string) (int64, int64, error) { return 0, 0, errors.New("no") }
+	if got := DiskWarning(l); got != "" {
+		t.Errorf("unreadable disk: %q", got)
 	}
 }

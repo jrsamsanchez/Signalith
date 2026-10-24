@@ -36,10 +36,15 @@ ARM (arm64):
 The computer needs systemd, `curl`, and outbound HTTPS to Signalith's agent port (7779 by
 default), to `packages.fluentbit.io` and, for osquery, to `pkg.osquery.io`.
 
-On **Windows**: Windows 10 or 11 and Windows Server 2016 or later, 64-bit x86, with
+On **Windows**: Windows 10 or 11 and Windows Server 2016 or later on 64-bit x86, or
+Windows 11 on ARM, with
 outbound HTTPS to Signalith's agent port, to `packages.fluentbit.io`, for osquery to
 `pkg.osquery.io`, and for Sysmon to `download.sysinternals.com`. The line runs in Windows PowerShell 5.1 (part of Windows) or
 PowerShell 7, opened with **Run as administrator**.
+
+On Windows on ARM the agent itself is an ARM program, while Fluent Bit and osquery are
+their x86 builds, which Windows 11 runs on ARM: Fluent Bit's own ARM build 5.1.3 crashes
+as it starts sending. Windows 10 on ARM cannot run them, so the line stops there.
 
 On **macOS**: macOS 12 or later, on Apple silicon or Intel, with outbound HTTPS to
 Signalith's agent port and to `pkg.osquery.io`. On a Mac the agent runs osquery, which
@@ -396,7 +401,7 @@ not carry it. Tick **Also install Sysmon** on **Add data** (the line then ends w
 `-Sysmon`) and the script:
 
 - downloads Sysmon from Microsoft (`download.sysinternals.com`) and installs it only
-  when Microsoft's signature on `Sysmon64.exe` is valid;
+  when Microsoft's signature on `Sysmon64.exe` (`Sysmon64a.exe` on ARM) is valid;
 - installs it with a configuration made for Signalith's detections: every process
   start, DNS query, driver, remote thread, named pipe and WMI subscription, network
   connections except web browsers', unsigned modules loaded, access to LSASS, programs
