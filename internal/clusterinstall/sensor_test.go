@@ -33,7 +33,7 @@ func TestSensorLines(t *testing.T) {
 			t.Errorf("line has no %q:\n%s", want, c.Linux)
 		}
 	}
-	for _, not := range []string{"--next-ca-sha256", "--no-zeek", "--no-suricata", "--suricata-protocols", "--docker", "8080//"} {
+	for _, not := range []string{"--next-ca-sha256", "--no-zeek", "--no-suricata", "--suricata-protocols", "--docker", "--ot", "8080//"} {
 		if strings.Contains(c.Linux, not) {
 			t.Errorf("line has %q:\n%s", not, c.Linux)
 		}
@@ -63,6 +63,10 @@ func TestSensorLines(t *testing.T) {
 	c, _ = SensorLines(SensorLine{URL: "https://siem:8080", Version: "1.6.0", Zeek: true, Suricata: true, Protocols: true})
 	if !strings.HasSuffix(c.Linux, "--suricata-protocols") {
 		t.Errorf("protocols: %s", c.Linux)
+	}
+	c, _ = SensorLines(SensorLine{URL: "https://siem:8080", Version: "1.6.0", Zeek: true, Suricata: true, OT: true, Docker: true})
+	if !strings.HasSuffix(c.Linux, "--token - --ot --docker") {
+		t.Errorf("industrial protocols: %s", c.Linux)
 	}
 }
 
