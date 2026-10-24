@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"crypto/ed25519"
 	"errors"
 	"fmt"
@@ -39,7 +40,7 @@ func (s *Server) routeCaseReport(api *router) {
 // reportKey is the key to sign a report with, recorded in the list of
 // keys first, so no report is signed with a key the list lacks. nil
 // (with the reason) exports the report unsigned.
-func (s *Server) reportKey(r *http.Request) (ed25519.PrivateKey, string) {
+func (s *Server) reportKey(ctx context.Context) (ed25519.PrivateKey, string) {
 	if s.ReportSigner == nil || s.ReportKeys == nil {
 		return nil, "this server has no report key"
 	}
@@ -48,13 +49,13 @@ func (s *Server) reportKey(r *http.Request) (ed25519.PrivateKey, string) {
 		err = errors.New("no key")
 	}
 	if err == nil {
-		err = s.ReportKeys.Use(r.Context(), key.Public().(ed25519.PublicKey), source, time.Now())
+		err = s.ReportKeys.Use(ctx, key.Public().(ed25519.PublicKey), source, time.Now())
 	}
 	if err == nil {
 		// A key revoked as leaked never signs again, even before the key
 		// it comes from was changed.
 		var ks []reportkeys.Key
-		if ks, err = s.ReportKeys.List(r.Context()); err == nil {
+		if ks, err = s.ReportKeys.List(ctx); err == nil {
 			id := reportkeys.KeyID(key.Public().(ed25519.PublicKey))
 			if k, ok := reportkeys.Lookup(ks)(id); !ok {
 				err = errors.New("the report key is not in the list of keys")
@@ -104,7 +105,7 @@ func (s *Server) handleCaseReport(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	key, why := s.reportKey(r)
+	key, why := s.reportKey(r.Context())
 	signed, err := rep.Sign(key)
 	var body []byte
 	if err == nil {

@@ -25,11 +25,20 @@ import (
 )
 
 func TestPin(t *testing.T) {
-	if !regexp.MustCompile(`^[0-9a-f]{128}$`).MatchString(SHA512) || SHA512 == strings.Repeat("0", 128) {
-		t.Fatalf("SHA512 must be 128 lower-case hex digits, got %q", SHA512)
+	if !versionRE.MatchString(Version) {
+		t.Fatalf("Version %q", Version)
 	}
-	if !versionRE.MatchString(Version) || !strings.Contains(URL(), "/"+Version+"/opensearch-"+Version+"-windows-x64.zip") {
-		t.Fatalf("Version %q, URL %q", Version, URL())
+	for system, r := range Releases {
+		if !regexp.MustCompile(`^[0-9a-f]{128}$`).MatchString(r.SHA512) || r.SHA512 == strings.Repeat("0", 128) {
+			t.Errorf("%s: SHA512 must be 128 lower-case hex digits, got %q", system, r.SHA512)
+		}
+		if !strings.HasPrefix(r.File, "opensearch-"+Version+"-") || !strings.HasSuffix(ReleaseURL(r.File), "/"+Version+"/"+r.File) {
+			t.Errorf("%s: file %q, URL %q", system, r.File, ReleaseURL(r.File))
+		}
+	}
+	if !strings.HasSuffix(Releases["windows/amd64"].File, "-windows-x64.zip") || !strings.HasSuffix(Releases["linux/amd64"].File, "-linux-x64.tar.gz") ||
+		!strings.HasSuffix(Releases["linux/arm64"].File, "-linux-arm64.tar.gz") {
+		t.Errorf("releases %v", Releases)
 	}
 }
 
@@ -345,6 +354,14 @@ func TestMakeCertsRemakesClient(t *testing.T) {
 	if client.Cert.CheckSignatureFrom(ca.Cert) != nil || client.Cert.Subject.CommonName != ospki.ClientName {
 		t.Fatalf("client certificate %v is not Signalith's from the kept CA", client.Cert.Subject)
 	}
+
+	// With the CA kept, OpenSearch's own certificates are never made
+	// anew: they were lost, or someone took them away.
+	os.Rename(filepath.Join(l.Certs(), ospki.NodeCertFile), filepath.Join(d, "node"))
+	if err := MakeCerts(l, time.Now()); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("no node certificate = %v", err)
+	}
+	os.Rename(filepath.Join(d, "node"), filepath.Join(l.Certs(), ospki.NodeCertFile))
 
 	// Without the CA's key, it says what is missing.
 	os.Remove(filepath.Join(l.CA(), ospki.RootCAKeyFile))
