@@ -126,7 +126,8 @@ func TestUDP(t *testing.T) {
 	// A recent timestamp: one older than DefaultMaxAge is filed under the day it arrived.
 	sent := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
 	sendUDP(t, addr(t, r, "udp"), "<38>1 "+sent.Format(time.RFC3339)+" web1 sshd 811 - - Failed password for root from 192.0.2.4 port 40122 ssh2\n")
-	waitFor(t, "the event", func() bool { return bulk.count() == 1 })
+	// The pipeline counts the event as indexed after the write returns.
+	waitFor(t, "the event", func() bool { return bulk.count() == 1 && p.Stats().Indexed == 1 })
 	d := bulk.all()[0]
 	if d.Index != "sig-authentication-"+sent.Format("2006.01.02") {
 		t.Errorf("index = %s", d.Index)
