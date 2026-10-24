@@ -35,6 +35,9 @@ type fakeOpenSearch struct {
 	// loaded is whether the security settings are loaded.
 	loaded    atomic.Bool
 	adminRuns int
+	// stoppedYML is opensearch.yml as it was when the service was last
+	// stopped.
+	stoppedYML string
 	// failHome is a program the service does not start with.
 	failHome string
 }
@@ -44,6 +47,8 @@ func (f *fakeOpenSearch) prepare(l oslocal.Layout, home string) error {
 }
 func (f *fakeOpenSearch) exists() bool { return f.installed != "" }
 func (f *fakeOpenSearch) stop() error {
+	b, _ := os.ReadFile(filepath.Join(f.l.Config(), "opensearch.yml"))
+	f.stoppedYML = string(b)
 	if f.srv != nil {
 		f.srv.Close()
 		f.srv = nil
@@ -122,6 +127,21 @@ func fakeRelease(t *testing.T, l oslocal.Layout, version string) {
 	}
 }
 
+// fakeUnpack makes the release in home in place of downloading it, and
+// counts how many times it did.
+func fakeUnpack(t *testing.T, l oslocal.Layout) *int {
+	n := new(int)
+	keep := unpackRelease
+	unpackRelease = func(_ context.Context, _ io.Writer, _ oslocal.Layout, _ string, _ *http.Client, home string) error {
+		*n++
+		os.RemoveAll(home)
+		fakeRelease(t, l, filepath.Base(home))
+		return nil
+	}
+	t.Cleanup(func() { unpackRelease = keep })
+	return n
+}
+
 func shortWaits(t *testing.T) {
 	a, s, p := osAnswerWait, osSecurityWait, osPoll
 	osAnswerWait, osSecurityWait, osPoll = 5*time.Second, 300*time.Millisecond, 50*time.Millisecond
@@ -135,7 +155,11 @@ func TestInstallOpenSearch(t *testing.T) {
 	t.Cleanup(func() { ospki.KeyBits = bits })
 	d := t.TempDir()
 	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
-	fakeRelease(t, l, oslocal.Version)
+	unpacked := fakeUnpack(t, l)
+	// A program left in Home is not run: a new install unpacks the release.
+	planted := filepath.Join(l.VersionHome(oslocal.Version), "bin", "planted")
+	os.MkdirAll(filepath.Dir(planted), 0o755)
+	os.WriteFile(planted, []byte("x"), 0o755)
 	sys := &fakeOpenSearch{t: t, l: l}
 	var out strings.Builder
 	// OpenSearch does not load its security settings by itself: they are
@@ -145,6 +169,9 @@ func TestInstallOpenSearch(t *testing.T) {
 	}
 	if sys.adminRuns != 1 || sys.installed != l.VersionHome(oslocal.Version) {
 		t.Fatalf("securityadmin ran %d times, service runs %q", sys.adminRuns, sys.installed)
+	}
+	if _, err := os.Stat(planted); err == nil || *unpacked != 1 {
+		t.Fatalf("a new install ran what was in Home (unpacked %d times)", *unpacked)
 	}
 	st, err := oslocal.LoadState(l)
 	if err != nil || st == nil || st.Version != oslocal.Version {
@@ -175,11 +202,19 @@ func TestInstallOpenSearch(t *testing.T) {
 	oslocal.SaveState(l, oslocal.State{Version: "3.0.0", Port: st.Port})
 	sys.installed = l.VersionHome("3.0.0")
 	os.RemoveAll(l.VersionHome(oslocal.Version))
-	fakeRelease(t, l, oslocal.Version)
 	sys.stop()
+	// It is stopped before its settings are written.
+	yml = append(yml, "# before\n"...)
+	os.WriteFile(filepath.Join(l.Config(), "opensearch.yml"), yml, 0o600)
 	out.Reset()
 	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if !strings.Contains(sys.stoppedYML, "# before") {
+		t.Fatal("the settings were written while OpenSearch ran")
+	}
+	if b, _ := os.ReadFile(filepath.Join(l.Config(), "opensearch.yml")); strings.Contains(string(b), "# before") {
+		t.Fatal("the settings were not written again")
 	}
 	if sys.installed != l.VersionHome(oslocal.Version) {
 		t.Fatalf("the service runs %s after the upgrade", sys.installed)
@@ -280,7 +315,7 @@ func TestAdoptOpenSearch(t *testing.T) {
 		return c
 	}
 	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
-	fakeRelease(t, l, oslocal.Version)
+	fakeUnpack(t, l)
 	sys := &fakeOpenSearch{t: t, l: l}
 	nothing := func(string) bool { return false }
 

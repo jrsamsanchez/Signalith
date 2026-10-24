@@ -1110,7 +1110,8 @@ request, so a server that has not yet read that change reads it first (see
 `GET /api/notebooks/{id}`, `GET /api/notebooks/{id}/markdown`, `POST /api/notebooks/{id}/run`
 ([hunting notebooks](hunting-notebooks.md) shared with everyone and the starter hunts; a
 viewer's run is not saved), `GET /api/compliance`,
-`GET /api/compliance/export` (the [Compliance page](compliance.md) and its evidence reports,
+`GET /api/compliance/export`, `GET /api/compliance/history`, `GET /api/compliance/history/{id}`
+(the [Compliance page](compliance.md), its evidence reports and their signed history,
 so an auditor can work with a Viewer account), `GET /api/cluster/features`
 (which features wait until every server runs a newer version; only admins see which servers
 they wait for), `GET /api/tenants` (the tenants of a [multi-tenant](multi-tenant.md)
@@ -1176,7 +1177,8 @@ server, which can only read and expire after `expires_in_days`, 90 unless set), 
 `POST /api/vulns/scans/{id}/stop`, `GET /api/vulns/logins`, `PUT /api/vulns/logins/{id}`, `DELETE /api/vulns/logins/{id}`
 (setting up and running [vulnerability scans](vulnerabilities.md), and their scan logins),
 `PUT /api/compliance/notes` (marking a [compliance](compliance.md) control as handled outside
-Signalith or not applicable), `GET /api/baselines`, `PUT /api/baselines`,
+Signalith or not applicable), `POST /api/compliance/history` (taking a record of the
+compliance evidence now), `GET /api/baselines`, `PUT /api/baselines`,
 `POST /api/baselines/{check}/reset`, `POST /api/baselines/{check}/unlearn` (the [behavior baselines](baselines.md) and their exceptions),
 `GET /api/summaries` (how far each data model's [summaries](summaries.md) reach, for every tenant),
 `GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
