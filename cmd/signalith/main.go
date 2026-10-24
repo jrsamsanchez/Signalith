@@ -1713,8 +1713,16 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	in.jobs.Go(func() { agentsInv.Run(ctx) })
 	// A network sensor gone silent cannot be searched for: the server
 	// that runs the background jobs writes an event for it, which the
-	// built-in detection network-sensor-unhealthy reads.
-	sensorWatch := &agentinv.SensorWatch{Agents: agentsInv, Events: pipeline, Log: log}
+	// built-in detection network-sensor-unhealthy reads. A host's
+	// Signalith Agent gone silent gets one too, which agent-silent reads,
+	// unless its token was revoked or its line has the alert off.
+	sensorWatch := &agentinv.SensorWatch{Agents: agentsInv, Events: pipeline, Log: log,
+		HostSilentAfter: func(token string) time.Duration {
+			if token == "" || !tokens.Active(token) {
+				return 0
+			}
+			return tokens.Collect(token).SilentAfter()
+		}}
 	if r.node != nil {
 		sensorWatch.Leader = r.node.RunsJobs
 	}

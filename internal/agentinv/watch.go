@@ -34,6 +34,12 @@ type SensorWatch struct {
 	Now    func() time.Time
 	// Every is how often sensors are checked (5 minutes when zero).
 	Every time.Duration
+	// HostSilentAfter is how long a Signalith Agent on a host (not a
+	// sensor) that came with the agent token may send nothing before a
+	// "Signalith Agent silent" event (sourcetype agent:health) is
+	// written for it; 0 writes none, as for a revoked token or a line
+	// with the alert off. Nil watches sensors only (ASI-14).
+	HostSilentAfter func(token string) time.Duration
 
 	mu sync.Mutex
 	// written is, by agent key, the silence an event was written for: the
@@ -50,9 +56,17 @@ type silence struct {
 // writes.
 const SensorHealthSourcetype = "sensor:health"
 
+// AgentHealthSourcetype is the sourcetype of the events SensorWatch
+// writes for silent host agents.
+const AgentHealthSourcetype = "agent:health"
+
 // sensorRepeat is how often an event is written again while a sensor
 // stays silent.
 const sensorRepeat = 24 * time.Hour
+
+// hostDays is how many daily events a silent host agent gets: a
+// computer that was switched off for good stops alerting.
+const hostDays = 3
 
 func (w *SensorWatch) now() time.Time {
 	if w.Now != nil {
@@ -104,11 +118,25 @@ func (w *SensorWatch) Check(ctx context.Context) error {
 	var keys []string
 	var marks []silence
 	for _, a := range list {
-		if a.Sensor == nil || a.Refusing {
+		if a.Refusing {
+			continue
+		}
+		var silent bool
+		var event func(Agent, silence, time.Time) ingest.Event
+		switch {
+		case a.Sensor != nil:
+			silent, event = Silent(a, now), silentEvent
+		case a.Managed != nil && w.HostSilentAfter != nil:
+			after := w.HostSilentAfter(a.Managed.Token)
+			if after <= 0 {
+				continue
+			}
+			silent, event = now.Sub(a.LastSeen) > after, hostSilentEvent
+		default:
 			continue
 		}
 		seen[a.Key] = true
-		if !Silent(a, now) {
+		if !silent {
 			delete(w.written, a.Key)
 			continue
 		}
@@ -116,7 +144,10 @@ func (w *SensorWatch) Check(ctx context.Context) error {
 		if prev, ok := w.written[a.Key]; ok && prev == s {
 			continue
 		}
-		evs = append(evs, silentEvent(a, s, now))
+		if a.Sensor == nil && s.day >= hostDays {
+			continue
+		}
+		evs = append(evs, event(a, s, now))
 		keys = append(keys, a.Key)
 		marks = append(marks, s)
 	}
@@ -160,13 +191,42 @@ func silentEvent(a Agent, s silence, now time.Time) ingest.Event {
 		ID: "sensor-health-" + hash16("silent", a.Key, a.LastSeen.UTC().Format(time.RFC3339Nano), fmt.Sprint(s.day))}
 }
 
+// hostSilentEvent is the event for the host agent a, silent since it
+// last sent.
+func hostSilentEvent(a Agent, s silence, now time.Time) ingest.Event {
+	name := a.Name
+	if name == "" && len(a.Addresses) > 0 {
+		name = a.Addresses[0]
+	}
+	quiet := now.Sub(a.LastSeen).Truncate(time.Minute)
+	f := map[string]any{
+		"sourcetype":     AgentHealthSourcetype,
+		"vendor_product": "Signalith Agent",
+		"signature":      "Signalith Agent silent",
+		// The agent itself, so two computers with one name are told
+		// apart and neither's alert holds back the other's.
+		"signature_id": a.Key,
+		"message": fmt.Sprintf("The Signalith Agent on %s has sent nothing for %s (last heard %s UTC): the computer is off, the agent stopped, or its token was refused",
+			name, quietFor(quiet), a.LastSeen.UTC().Format("2006-01-02 15:04")),
+	}
+	if name != "" {
+		f["host"], f["dvc"] = name, name
+	}
+	return ingest.Event{Time: now, Model: "Other", Fields: f,
+		ID: "agent-health-" + hash16("silent", a.Key, a.LastSeen.UTC().Format(time.RFC3339Nano), fmt.Sprint(s.day))}
+}
+
 // quietFor writes a silence in minutes, hours or days.
 func quietFor(d time.Duration) string {
+	n, unit := int(d.Hours()/24), "day"
 	switch {
 	case d < time.Hour:
-		return fmt.Sprintf("%d minutes", int(d.Minutes()))
+		n, unit = int(d.Minutes()), "minute"
 	case d < 48*time.Hour:
-		return fmt.Sprintf("%d hours", int(d.Hours()))
+		n, unit = int(d.Hours()), "hour"
 	}
-	return fmt.Sprintf("%d days", int(d.Hours()/24))
+	if n == 1 {
+		return "1 " + unit
+	}
+	return fmt.Sprintf("%d %ss", n, unit)
 }

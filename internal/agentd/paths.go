@@ -74,6 +74,20 @@ func (p Paths) caFile() string        { return filepath.Join(p.Conf, "ca.pem") }
 func (p Paths) fluentBitConf() string { return filepath.Join(p.Conf, "fluent-bit.conf") }
 func (p Paths) configFile() string    { return filepath.Join(p.State, "config.json") }
 
+// fluentBitStates are the folders Fluent Bit may keep its buffer and
+// databases in: its folder in the agent's state, and that folder where
+// agents keep it by default, which Signalith's configurations name.
+func (p Paths) fluentBitStates() []string {
+	return []string{filepath.Join(p.State, "fluent-bit"), filepath.Join(DefaultPaths().State, "fluent-bit")}
+}
+
+// fluentBitRules are what the agent checks Fluent Bit's configuration
+// against: its server, its folders and its certificate authority files.
+func (a *Agent) fluentBitRules() fbRules {
+	return fbRules{server: a.Settings.Server, states: a.Paths.fluentBitStates(),
+		caFile: []string{a.Paths.caFile(), DefaultPaths().caFile()}, goos: runtime.GOOS}
+}
+
 // StatusFile is the last status the agent reported, as JSON.
 func (p Paths) StatusFile() string { return filepath.Join(p.State, "status.json") }
 

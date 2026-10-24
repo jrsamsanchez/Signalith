@@ -85,6 +85,9 @@ type Agent struct {
 	update    *agentproto.Component
 	cfg       *agentproto.Config
 	configErr string
+	// fbRefused is why the agent refused the Fluent Bit configuration it
+	// was handed, "" when it runs the one it was handed.
+	fbRefused string
 	reported  bool
 	report    chan struct{}
 }
@@ -158,6 +161,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	}()
 	// The configuration it last had runs while the server is asked.
 	if cfg, err := a.loadConfig(); err == nil {
+		a.checkLoaded(cfg)
 		a.mu.Lock()
 		a.cfg = cfg
 		a.mu.Unlock()
@@ -434,12 +438,31 @@ func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
 	if same {
 		return nil
 	}
+	refused := ""
+	if cfg.FluentBit != nil {
+		// Checked before anything is written. A refused configuration
+		// leaves the one in use running, and the rest of the
+		// configuration (updates among it) still applies, so a server
+		// that hands out something this agent does not know yet cannot
+		// keep it from the update that knows it.
+		if err := checkFluentBit(cfg.FluentBit.Config, a.fluentBitRules()); err != nil {
+			refused = "refused the Fluent Bit configuration the server handed out, and kept the one in use: " + err.Error()
+			a.Log.Warn(refused, "revision", cfg.Revision)
+			a.mu.Lock()
+			if a.cfg != nil {
+				cfg.FluentBit = a.cfg.FluentBit
+			} else {
+				cfg.FluentBit = nil
+			}
+			a.mu.Unlock()
+		}
+	}
 	if cfg.CA != "" {
 		if err := a.writeCA(cfg.CA, conn); err != nil {
 			return err
 		}
 	}
-	if cfg.FluentBit != nil {
+	if cfg.FluentBit != nil && refused == "" {
 		if err := writeFile(a.Paths.fluentBitConf(), []byte(cfg.FluentBit.Config), 0o600); err != nil {
 			return fmt.Errorf("writing Fluent Bit's configuration: %w", err)
 		}
@@ -447,12 +470,19 @@ func (a *Agent) apply(cfg *agentproto.Config, conn *tls.ConnectionState) error {
 	if err := a.writeOsquery(cfg); err != nil {
 		return err
 	}
-	b, _ := json.Marshal(cfg)
+	kept := *cfg
+	if refused != "" {
+		// Kept without its revision, so after a restart the agent asks
+		// for it again and still reports the refusal.
+		kept.Revision = ""
+	}
+	b, _ := json.Marshal(&kept)
 	if err := writeFile(a.Paths.configFile(), b, 0o600); err != nil {
 		return fmt.Errorf("keeping the configuration: %w", err)
 	}
 	a.mu.Lock()
 	a.cfg = cfg
+	a.fbRefused = refused
 	a.mu.Unlock()
 	a.Log.Info("applied a new configuration", "revision", cfg.Revision)
 	if !a.idle {
@@ -538,6 +568,29 @@ func (a *Agent) loadConfig() (*agentproto.Config, error) {
 	return &cfg, nil
 }
 
+// checkLoaded checks the Fluent Bit configuration on disk before the
+// agent runs it at startup: one written by an older agent, or changed
+// since, that fails the check does not run, and the agent asks the
+// server for its configuration again (ASI-03).
+func (a *Agent) checkLoaded(cfg *agentproto.Config) {
+	if cfg.FluentBit == nil {
+		return
+	}
+	b, err := os.ReadFile(a.Paths.fluentBitConf())
+	if err == nil {
+		err = checkFluentBit(string(b), a.fluentBitRules())
+	}
+	if err == nil {
+		return
+	}
+	msg := "did not run Fluent Bit's configuration on disk, which fails the agent's check: " + err.Error()
+	a.Log.Warn(msg)
+	cfg.FluentBit, cfg.Revision = nil, ""
+	a.mu.Lock()
+	a.fbRefused = msg
+	a.mu.Unlock()
+}
+
 // runFluentBit gives Fluent Bit the configuration's spec: the agent token
 // and the computer's name in its environment, which its configuration
 // reads.
@@ -580,6 +633,9 @@ func programVersion(path string) string {
 func (a *Agent) Status() agentproto.Status {
 	a.mu.Lock()
 	rev, cerr := "", a.configErr
+	if cerr == "" {
+		cerr = a.fbRefused
+	}
 	if a.cfg != nil {
 		rev = a.cfg.Revision
 	}

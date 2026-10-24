@@ -504,6 +504,8 @@ var Models = []Model{
 			{Name: "epss", Type: "number", Description: "EPSS score from FIRST: the probability, from 0 to 1, that the CVE is exploited in the next 30 days", Examples: []string{"0.944"}},
 			{Name: "epss_percentile", Type: "number", Description: "Share of all CVEs with a lower EPSS score, from 0 to 1", Examples: []string{"0.9997"}},
 			{Name: "url", Type: "string", Description: "Where to read about the vulnerability", Examples: []string{"https://nvd.nist.gov/vuln/detail/CVE-2023-38408"}},
+			{Name: "vuln_confidence", Type: "string", Description: "version_only when the CVE was matched by version alone on software a Linux distribution built: distributions fix CVEs without changing the version, so it may be fixed already", Examples: []string{"version_only"}},
+			{Name: "vuln_distro", Type: "string", Description: "For a version_only match: the distribution the service's banner names", Examples: []string{"Ubuntu", "Debian"}},
 			{Name: "scan_id", Type: "string", Description: "Scan that found it"},
 			{Name: "scan_network", Type: "string", Description: "Network the scan covered, as named on the Vulnerabilities page", Examples: []string{"Office LAN"}},
 		},

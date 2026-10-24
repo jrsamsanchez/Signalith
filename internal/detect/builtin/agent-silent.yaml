@@ -1,0 +1,16 @@
+id: agent-silent
+title: Signalith Agent on $host$ stopped sending
+name: Signalith Agent silent
+description: A computer's Signalith Agent has sent nothing for longer than its install line allows (an hour unless set otherwise on the Endpoints page). The computer may be off or cut off from the network, the agent may have stopped, or its token was refused. Nothing from the computer is searched or detected until it sends again.
+query: |
+  sourcetype="agent:health" signalith_intake="signalith" signature="Signalith Agent silent"
+  | stats count, max(_time) as last_seen by host, signature_id
+schedule: 15m
+lookback: 30m
+severity: medium
+throttle:
+  fields: [host, signature_id]
+  window: 24h
+enabled: true
+tags: [endpoint, health, pci-dss:10.7.2, nist-800-53:SI-4, cis-v8:8.2]
+guidance: Open Endpoints and find the computer; its row says when it last sent. If the computer was retired, remove it there. To change how long agents may stay quiet, or turn this alert off for a line, use Endpoints > What hosts collect.

@@ -219,9 +219,15 @@ weak containers through Signalith: Apache 2.4.49 and Redis with no password, por
 OpenVAS did not list Apache 2.4.49's path traversal (CVE-2021-41773): the stock image does
 not expose it, and OpenVAS rates version-only Apache checks as unsure (Linux distributions
 patch without changing the version), so they fall under the 70% cut. Signalith's Nmap
-scan covers that case: it reads the version and matches it to the NVD's CVEs, which list
-CVE-2021-41773 for Apache 2.4.49. The two find different things, which is why a network
-can use both.
+scan reads the version and matches it to the NVD's CVEs, which list CVE-2021-41773 for
+Apache 2.4.49, so it flags that upstream build. It has the same limit as OpenVAS on a
+distribution's build, though: when the banner names one (`OpenSSH 8.9p1 Ubuntu-3ubuntu0.10`,
+`Apache httpd 2.4.52 (Ubuntu)`), Signalith marks its CVEs **Version only** on the
+Vulnerabilities page and `vuln_confidence=version_only` in their events, since the
+distribution may have fixed them without changing the version, and the detections for
+critical and likely exploited vulnerabilities leave them out (known exploited ones still
+raise a finding). A signed-in OpenVAS scan reads the installed packages and settles it.
+The two find different things, which is why a network can use both.
 
 ### Credentialed OpenVAS scans
 

@@ -23,7 +23,7 @@ import (
 // hashes the template says so): a server only replaces a template of a
 // lower version, so an older Signalith started next to a newer one does
 // not put its older template back.
-const TemplateVersion = 46
+const TemplateVersion = 47
 
 // totalFieldsLimit is index.mapping.total_fields.limit: the most fields one
 // daily index may have. It leaves room above the known fields, a day's
@@ -34,7 +34,7 @@ const totalFieldsLimit = 2500
 // templateHash is the SHA-256 of IndexTemplate("p", auto replicas) as
 // JSON, which TestTemplateVersionBumped compares, so a change to the
 // template cannot go out without a new TemplateVersion.
-const templateHash = "f11e168eb654bc132932addb9f80353261fe9869694de44fa8487cfa3e2f5054"
+const templateHash = "ad47ca096855ea4b772d67a046023cc2aed89f4507f96ddabcfb34f084dd0be9"
 
 // IndexTemplate returns the OpenSearch index template every Signalith index
 // uses: strings are exact-match keywords (fast filters and stats), the raw

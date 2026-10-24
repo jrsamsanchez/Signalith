@@ -81,7 +81,7 @@ func TestAgentRunsOsquery(t *testing.T) {
 	p := testPaths(t)
 	p.Osqueryd = osquerydExe(t)
 	server := "--tls_hostname=siem.example.com:7779\n--config_plugin=tls\n"
-	fs := &fakeServer{cfg: agentproto.Config{PollSeconds: 300, FluentBit: &agentproto.FluentBit{Config: "a"},
+	fs := &fakeServer{cfg: agentproto.Config{PollSeconds: 300, FluentBit: &agentproto.FluentBit{Config: testFluentBit("a")},
 		Osquery: &agentproto.Osquery{Flags: server + "--extensions_autoload=/tmp/evil\n--enroll_secret_path=/tmp/mine\n"}}}
 	srv := httptest.NewTLSServer(fs)
 	defer srv.Close()
@@ -145,7 +145,7 @@ func TestAgentRunsOsquery(t *testing.T) {
 
 	// A new configuration with the same flags leaves osquery running.
 	fs.mu.Lock()
-	fs.cfg.FluentBit = &agentproto.FluentBit{Config: "b"}
+	fs.cfg.FluentBit = &agentproto.FluentBit{Config: testFluentBit("b")}
 	fs.mu.Unlock()
 	if err := a.sync(ctx); err != nil {
 		t.Fatal(err)

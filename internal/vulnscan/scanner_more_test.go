@@ -276,3 +276,68 @@ func TestMineKey(t *testing.T) {
 		t.Errorf("not leader = %q", got)
 	}
 }
+
+// TestScanLabelsDistributionBuilds: a CVE matched by version on a
+// service a distribution built says so, since the distribution may have
+// fixed it without changing the version; one on an upstream build does
+// not (ASI-02).
+func TestScanLabelsDistributionBuilds(t *testing.T) {
+	var calls int
+	var mu sync.Mutex
+	srv := fakeNVD(t, &calls, &mu)
+	defer srv.Close()
+	var args []string
+	xml := strings.Replace(nmapXML, `product="Apache httpd" version="2.4.49"`, `product="Apache httpd" version="2.4.49" extrainfo="(Ubuntu)"`, 1)
+	s, ev := newScanner(t, srv.URL, xml, &args)
+	ctx := context.Background()
+	tg := target("192.0.2.0/24")
+	tg.Schedule = Schedule{Every: Manual}
+	set, err := s.Store.SaveSettings(ctx, Settings{Targets: []Target{tg}, CVELookup: true}, store.Version{}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Store.NewScan(ctx, set.Targets[0], TriggerManual, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Step(ctx); err != nil {
+		t.Fatal(err)
+	}
+	hosts, err := s.Store.Hosts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	web := hosts[0].Services[1]
+	if len(web.Vulns) != 2 || web.Vulns[0].Distro != "Ubuntu" || web.Vulns[1].Distro != "Ubuntu" {
+		t.Fatalf("web vulns = %+v", web.Vulns)
+	}
+	n := 0
+	for _, e := range ev.evs {
+		if e.Fields["category"] != CategoryVulnerability {
+			continue
+		}
+		n++
+		if e.Fields["vuln_confidence"] != ConfidenceVersionOnly || e.Fields["vuln_distro"] != "Ubuntu" {
+			t.Errorf("event = %v", e.Fields)
+		}
+	}
+	if n != 2 {
+		t.Errorf("%d vulnerability events", n)
+	}
+}
+
+func TestBuiltBy(t *testing.T) {
+	for _, c := range []struct{ version, extra, want string }{
+		{"8.9p1 Ubuntu 3ubuntu0.10", "Ubuntu Linux; protocol 2.0", "Ubuntu"},
+		{"8.4p1 Debian 5+deb11u3", "protocol 2.0", "Debian"},
+		{"2.4.62", "(Debian)", "Debian"},
+		{"2.4.37", "(Red Hat Enterprise Linux)", "Red Hat"},
+		{"2.4.6", "(CentOS)", "CentOS"},
+		{"7.4", "protocol 2.0", ""},
+		{"2.4.49", "", ""},
+		{"1.24.0", "", ""},
+	} {
+		if got := builtBy(Service{Version: c.version, Extra: c.extra}); got != c.want {
+			t.Errorf("%q %q: %q, want %q", c.version, c.extra, got, c.want)
+		}
+	}
+}
