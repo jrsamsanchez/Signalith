@@ -589,3 +589,63 @@ func TestAcceptRestoreOfAnotherServersDocument(t *testing.T) {
 		t.Errorf("rev %d", rev)
 	}
 }
+
+// A read while OpenSearch starts, and the index's shards are not assigned
+// yet, fails as a whole: no document is taken for deleted or changed, and
+// the copies in use stay. A read that was wrong about a document being
+// gone is forgotten once the document is read again unchanged.
+func TestDocReadWhileShardsUnassigned(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, _ := e.hub("siem-a")
+	b, logs := e.hub("siem-b")
+	da := NewDoc[testBody](a, "retention", "retention", 1)
+	db := NewDoc[testBody](b, "retention", "retention", 1)
+	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "keep 90 days"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	cycle(t, b)
+	if v, ok := db.Get(); !ok || v.Name != "keep 90 days" {
+		t.Fatalf("before: %+v %v", v, ok)
+	}
+
+	e.os.SetFault(func(method, path string) *ostest.Fault {
+		if strings.Contains(path, "_mget") || strings.Contains(path, "_search") || strings.Contains(path, "/_doc/") {
+			return &ostest.Fault{Unassigned: true}
+		}
+		return nil
+	})
+	if err := b.Cycle(ctx); err == nil || !strings.Contains(err.Error(), "no_shard_available_action_exception") {
+		t.Fatalf("cycle while unassigned: %v", err)
+	}
+	if v, ok := db.Get(); !ok || v.Name != "keep 90 days" || db.Missing() || len(b.Tamper()) != 0 || len(b.Problems()) != 0 {
+		t.Errorf("while unassigned: %+v %v, missing %v, tamper %v, problems %v", v, ok, db.Missing(), b.Tamper(), b.Problems())
+	}
+	if strings.Contains(logs.String(), "config.tamper") {
+		t.Errorf("tamper logged:\n%s", logs.String())
+	}
+	e.os.SetFault(nil)
+	cycle(t, b)
+	if v, ok := db.Get(); !ok || v.Name != "keep 90 days" || db.Missing() || len(b.Problems()) != 0 {
+		t.Errorf("once assigned: %+v %v, missing %v, problems %v", v, ok, db.Missing(), b.Problems())
+	}
+
+	// A read that took the document for deleted, then the same copy
+	// read again: the verdict is dropped.
+	uuid, err := b.indexUUID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src, ver, found, err := e.c.Get(ctx, testIndex, "retention")
+	if err != nil || !found {
+		t.Fatal(err)
+	}
+	db.apply(store.Doc{Ref: store.Ref{Index: testIndex, ID: "retention"}}, uuid, db.gen())
+	if !db.Missing() || !slices.Equal(b.Tamper(), []string{"retention"}) {
+		t.Fatalf("after a read that found nothing: missing %v, tamper %v", db.Missing(), b.Tamper())
+	}
+	db.apply(store.Doc{Ref: store.Ref{Index: testIndex, ID: "retention"}, Found: true, Version: ver, Source: src}, uuid, db.gen())
+	if v, ok := db.Get(); !ok || v.Name != "keep 90 days" || db.Missing() || len(b.Problems()) != 0 {
+		t.Errorf("the same copy read again: %+v %v, missing %v, problems %v", v, ok, db.Missing(), b.Problems())
+	}
+}

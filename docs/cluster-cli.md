@@ -96,6 +96,12 @@ afterwards.
 When the standard input is not a terminal, both read the passphrase from its first
 line, so a script can pipe it in.
 
+Keep one copy of `export-key`'s file offline, such as on a USB stick in a safe,
+with its passphrase kept apart from it. When every server loses its state folder
+the cluster key goes with it, and only that copy keeps the shared passwords and
+the cluster's certificate authority key: without it, `reset-key` empties them, and
+the servers' HTTPS certificates cannot be renewed (see [reset-key](#reset-key)).
+
 Instead of `import-key`, a key you chose before the cluster was made can be given
 in a file named in `SIGNALITH_CLUSTER_KEY_FILE`: 32 random bytes as one line of
 base64, such as `openssl rand -base64 32 > cluster-key`, readable by Signalith only.
@@ -218,6 +224,28 @@ expire, and can't renew them until `tls import` gives the key back (see
 servers the new key. Settings in a server's signalith.yaml that it already applied
 are not applied again because of the new key: each server records them afresh at
 its next start.
+
+The key of the cluster's [certificate authority](https.md) (`tls ca_key`) is sealed
+with the cluster key too, so `reset-key` empties it with the rest. Until
+[`tls import`](#tls) gives it back from a copy, no server can renew its HTTPS
+certificate or make a new one: each keeps the certificate it has until it expires (at most 397 days after it
+was issued), and from then on agents, browsers and syslog senders refuse it.
+`reset-key` says so before it changes anything, with the day each server's
+certificate expires (from this server's `tls` folder and the others' last
+heartbeats), and asks you to confirm that too; `-yes` confirms both and still prints
+the warning. Before you go on, either:
+
+- stop and find a copy of the cluster key: a file `export-key` wrote, which
+  `import-key` takes back, so nothing is lost. A folder `export --to-files` wrote
+  also holds the certificate authority's key (`ca.key` in its `tls` folder): keep
+  it, and give it back after the reset with `tls import`; or
+- plan to have agents, browsers and syslog senders trust a new certificate
+  authority before the first of those days.
+
+After such a reset, each server logs it, and the Servers page and the Security
+page's certificate check warn: "The cluster's certificate authority key was lost;
+HTTPS certificates expire on ... and cannot be renewed." The warning ends once
+`tls import` gives the key back.
 
 ## accept-restore
 

@@ -46,7 +46,7 @@ func properties() map[string]any {
 		"resolution":  map[string]any{"type": "text"},
 		"created":     map[string]any{"type": "date"},
 		"updated":     map[string]any{"type": "date"},
-		"entities":    off, "entries": off, "history": off,
+		"entities":    off, "entries": off, "history": off, "tasks": off, "template": kw,
 		"tickets": map[string]any{"type": "object", "properties": map[string]any{
 			"connection": kw, "system": kw, "key": kw, "remote_id": kw, "created_by": kw,
 			"url": map[string]any{"type": "keyword", "index": false}, "created": map[string]any{"type": "date"},

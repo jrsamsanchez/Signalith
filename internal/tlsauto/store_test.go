@@ -264,6 +264,46 @@ func TestUseStoreSameCA(t *testing.T) {
 	}
 }
 
+// CAKeyMissing: the cluster's CA without its key, as a start finds it
+// once ca.key is gone and the cluster cannot give it back.
+func TestCAKeyMissing(t *testing.T) {
+	fakeMachine(t)
+	c := &clock{time.Now()}
+	dir := t.TempDir()
+	m := newAuto(t, dir, c)
+	if m.CAKeyMissing() {
+		t.Error("a server's own CA has its key missing")
+	}
+	if err := m.UseStore(storeOf(t, m)); err != nil {
+		t.Fatal(err)
+	}
+	if m.CAKeyMissing() {
+		t.Error("the cluster's CA with its key reported missing")
+	}
+	// Started without the cluster while ca.key is still there.
+	d, err := New(Options{Dir: dir, Now: c.now, Log: quiet()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d.Store() != KindCluster || d.CAKeyMissing() {
+		t.Errorf("detached with ca.key: store %s, missing %v", d.Store(), d.CAKeyMissing())
+	}
+	if err := m.DropLocalKey(); err != nil {
+		t.Fatal(err)
+	}
+	d, err = New(Options{Dir: dir, Now: c.now, Log: quiet()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !d.CAKeyMissing() || d.Leaf() == nil || d.Fingerprint() != m.Fingerprint() {
+		t.Errorf("detached without ca.key: missing %v", d.CAKeyMissing())
+	}
+	var files *Manager
+	if files.CAKeyMissing() {
+		t.Error("nil Manager")
+	}
+}
+
 func TestUseStoreRefusesDuringChange(t *testing.T) {
 	fakeMachine(t)
 	c := &clock{time.Now()}

@@ -38,7 +38,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/baselines"
+	"github.com/jrsamsanchez/signalith/internal/casefiles"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -110,6 +112,7 @@ Usage:
   signalith agent-programs status|sign|keygen|pubkey ...  the Signalith Agent programs this server hands out, signed for agent updates
   signalith security  [-c file] [-json]   print the security report (exit 2 when something is at risk)
   signalith audit     verify [-c file] [-from date] [-to date] [-server name]  check the audit records were not changed or removed (exit 2 when they were)
+  signalith report    verify file                                              check an exported case report is intact (exit 2 when it was changed)
   signalith cluster   status|found|export|import|export-key|import-key|reset-key|accept-restore|token|approve [-c file] ...  the settings the servers share in OpenSearch
   signalith join      '<token>' [-c file] [--name] [--listen] [--agent-listen] [--node-url] [--copy-syslog] [--no-start] [--merge] [--yes]   add this server to a cluster
   signalith opensearch-check <url> [--ca file] [--cert file --key file] [--user u]   check OpenSearch is ready for several servers
@@ -200,6 +203,8 @@ func main() {
 		err = cmdSecurity(args)
 	case "audit":
 		err = cmdAudit(args)
+	case "report":
+		err = cmdReport(args)
 	case "cluster":
 		err = cmdCluster(args)
 	case "join":
@@ -215,6 +220,9 @@ func main() {
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command %q\n\n"+usage, cmd, defaultConfigPath())
 		os.Exit(2)
+	}
+	if code := reportExitCode(err); code != 0 {
+		os.Exit(code)
 	}
 	if errors.Is(err, errTampered) {
 		os.Exit(2)
@@ -1481,6 +1489,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	fstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cstore := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	cfiles := casefiles.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	cfiles.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	nstore := notebooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	nstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	// Hosts running osquery, managed from the Endpoints page. Each server
@@ -1736,6 +1746,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
 		Dashboards:        boards,
 		Cases:             cstore,
+		CaseFiles:         cfiles,
 		Notebooks:         nstore,
 		Respond:           responder,
 		Playbooks:         &api.Playbooks{Manager: pbooks, Runs: pruns},
@@ -1746,6 +1757,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		SetupGuide:        &setupguide.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		FindingViews:      &findingviews.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		ExceptionRequests: &exceptionreqs.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
+		CaseTemplates:     &casetemplates.OpenSearch{Docs: cl, Prefix: c.OpenSearch.IndexPrefix},
 		Content:           updater,
 		Revocations:       revocations,
 		Endpoints:         estore,
@@ -1780,6 +1792,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	srv.Join = r.sharedJoin(c, certs)
 	if r.shared != nil && r.sharedContent != nil {
 		srv.ComplianceNotes = r.sharedContent.comp
+		srv.ReportSigner, srv.ReportKeys = reportSigning(c, r.shared, r.sharedContent.reportKeys)
+	} else {
+		srv.ReportSigner, srv.ReportKeys = reportSigning(c, nil, nil)
 	}
 	wireFeatures(srv, r.shared)
 	if parts == nil && r.sharedContent != nil {
@@ -2500,15 +2515,18 @@ func newCertificates(c *config.Config, log *slog.Logger) (*tlsauto.Manager, erro
 // retention page and the run history live next to the asset and identity
 // lists, which every install can write.
 func newRetention(c *config.Config, cl *store.Client, log *slog.Logger) *retention.Manager {
+	files := casefiles.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	caseIndex := cases.NewOpenSearch(cl, c.OpenSearch.IndexPrefix).Index
 	return &retention.Manager{
-		Cluster:     retention.NewOpenSearch(cl),
-		Prefix:      c.OpenSearch.IndexPrefix,
-		Config:      c.RetentionPolicies(),
-		Store:       retention.NewStore(filepath.Join(c.LookupsDir(), "retention.yaml")),
-		Archive:     &retention.Archive{Dir: c.ArchiveDir()},
-		HistoryFile: filepath.Join(c.LookupsDir(), "retention_history.json"),
-		Interval:    c.RetentionInterval(),
-		Log:         log,
+		PruneCaseFiles: func(ctx context.Context) (int64, error) { return files.Prune(ctx, caseIndex, time.Now()) },
+		Cluster:        retention.NewOpenSearch(cl),
+		Prefix:         c.OpenSearch.IndexPrefix,
+		Config:         c.RetentionPolicies(),
+		Store:          retention.NewStore(filepath.Join(c.LookupsDir(), "retention.yaml")),
+		Archive:        &retention.Archive{Dir: c.ArchiveDir()},
+		HistoryFile:    filepath.Join(c.LookupsDir(), "retention_history.json"),
+		Interval:       c.RetentionInterval(),
+		Log:            log,
 		// Retention runs on one of the servers that share an OpenSearch,
 		// never on one with detections.scheduler off.
 		ReadOnly: !c.Detections.Scheduler,

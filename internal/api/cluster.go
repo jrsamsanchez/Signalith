@@ -209,6 +209,7 @@ func (s *Server) handleCluster(w http.ResponseWriter, r *http.Request) {
 		st.Warnings = append(st.Warnings, cluster.Warning{Level: "amber", Text: text})
 	}
 	st.Warnings = append(st.Warnings, agentTrafficClusterWarnings(st)...)
+	st.Warnings = append(st.Warnings, caKeyLostWarnings(st)...)
 	out := map[string]any{"self": st.Self, "servers": servers, "lease": lease, "warnings": st.Warnings,
 		"writes_refused": st.WritesRefused, "opensearch": osOut}
 	if s.DetectionSpread != nil {

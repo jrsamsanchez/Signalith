@@ -140,6 +140,12 @@ func (c *Client) mget(ctx context.Context, refs []Ref, source bool) ([]Doc, erro
 			PrimaryTerm int64           `json:"_primary_term"`
 			Version     int64           `json:"_version"`
 			Source      json.RawMessage `json:"_source"`
+			// Error, when set, is why this document could not be read;
+			// the answer is 200 even then.
+			Error *struct {
+				Type   string `json:"type"`
+				Reason string `json:"reason"`
+			} `json:"error"`
 		} `json:"docs"`
 	}
 	path := "/_mget?realtime=true&_source=" + strconv.FormatBool(source)
@@ -152,8 +158,19 @@ func (c *Client) mget(ctx context.Context, refs []Ref, source bool) ([]Doc, erro
 		if i >= len(out.Docs) {
 			continue
 		}
-		// A document in a missing index comes back with an error instead.
 		d := out.Docs[i]
+		if d.Error != nil {
+			// A document in a missing index comes back with an error
+			// instead: not found. Any other error, such as no shard
+			// available while OpenSearch starts, is a read that failed,
+			// as a get of that one document would with 503: the document
+			// may well be there.
+			if d.Error.Type == "index_not_found_exception" {
+				continue
+			}
+			body, _ := json.Marshal(map[string]any{"error": d.Error, "status": http.StatusServiceUnavailable})
+			return nil, &Error{Status: http.StatusServiceUnavailable, Body: string(body)}
+		}
 		if d.Found && d.SeqNo != nil {
 			docs[i].Found = true
 			docs[i].Version = Version{SeqNo: *d.SeqNo, PrimaryTerm: d.PrimaryTerm, Version: d.Version}

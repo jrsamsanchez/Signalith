@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"crypto/ed25519"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,7 +30,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/auth"
 	"github.com/jrsamsanchez/signalith/internal/baselines"
+	"github.com/jrsamsanchez/signalith/internal/casefiles"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/clusterinstall"
@@ -53,6 +56,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/onboard"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/redact"
+	"github.com/jrsamsanchez/signalith/internal/reportkeys"
 	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/saml"
@@ -156,6 +160,17 @@ type Server struct {
 	// ExceptionRequests keeps the exceptions analysts propose until an
 	// admin decides; nil keeps them in memory.
 	ExceptionRequests exceptionreqs.Store
+	// CaseTemplates keeps the admins' case templates; nil keeps them in
+	// memory.
+	CaseTemplates casetemplates.Store
+	// ReportSigner returns the key that signs case reports and where it
+	// comes from (reportkeys.FromCluster or FromMaster); nil, or an
+	// error, exports reports unsigned. ReportKeys keeps the public keys
+	// that ever signed one, so a report verifies after its key changed.
+	ReportSigner func() (ed25519.PrivateKey, string, error)
+	ReportKeys   reportkeys.Registry
+	// CaseFiles keeps the files attached to cases; nil refuses files.
+	CaseFiles casefiles.Store
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -334,6 +349,7 @@ type Server struct {
 	setupGuideMem        setupguide.Memory
 	findingViewsMem      findingviews.Memory
 	exceptionRequestsMem exceptionreqs.Memory
+	caseTemplatesMem     casetemplates.Memory
 	pageCache            pages // index.html and login.html, rendered
 
 	// refused is when this server last logged the use of each revoked or
@@ -478,6 +494,9 @@ func (s *Server) Handler() http.Handler {
 	s.routeSetupGuide(api)
 	s.routeFindingViews(api)
 	s.routeExceptionRequests(api)
+	s.routeCaseTasks(api)
+	s.routeCaseReport(api)
+	s.routeCaseFiles(api)
 	s.routeEndpoints(api)
 	s.routeVulns(api)
 	s.routeVulnLogins(api)
