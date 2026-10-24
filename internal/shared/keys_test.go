@@ -334,3 +334,32 @@ func TestEnvelopeCanonical(t *testing.T) {
 		t.Errorf("%s", out)
 	}
 }
+
+// The cluster's report key and a server's own, made from the same 32
+// bytes, differ: each source has its own HKDF info.
+func TestReportKeysAreSeparate(t *testing.T) {
+	raw := bytes.Repeat([]byte{7}, 32)
+	ck, err := ClusterKeyFrom(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CREDENTIALS_DIRECTORY", "")
+	t.Setenv("SIGNALITH_MASTER_KEY_FILE", "")
+	t.Setenv("SIGNALITH_MASTER_KEY", base64.StdEncoding.EncodeToString(raw))
+	mk, err := secrets.NewKeyring(t.TempDir()).ReportKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1, c2 := ck.ReportKey(), ck.ReportKey()
+	if !c1.Equal(c2) {
+		t.Error("the cluster's report key changes from one call to the next")
+	}
+	if c1.Equal(mk) {
+		t.Error("the cluster key and a master key of the same bytes make the same report key")
+	}
+	for _, sub := range [][]byte{ck.MACKey(), ck.AuditKey(), ck.CookieKey()} {
+		if bytes.Equal(sub, c1.Seed()) {
+			t.Error("the report key's seed is another sub-key")
+		}
+	}
+}
