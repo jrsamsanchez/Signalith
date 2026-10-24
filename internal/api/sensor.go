@@ -107,6 +107,7 @@ func (s *Server) handleSensorInstall(w http.ResponseWriter, r *http.Request) {
 		Suricata:  v.Get("suricata") != "false",
 		Protocols: v.Get("protocols") == "true",
 		Docker:    v.Get("docker") == "true",
+		OT:        v.Get("ot") == "true",
 	}
 	if line.Version == "" {
 		line.Version = "dev"

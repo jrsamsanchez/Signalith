@@ -7,6 +7,11 @@ description: Group the findings of one incident in a case, with its entities, a 
 A **case** groups the findings that belong to one incident with the work done on it.
 Open the **Investigations** tab to see open cases.
 
+!!! note "Arriving with the next release"
+    [Attaching files](#attaching-files), [templates and tasks](#templates-and-tasks),
+    [exporting a report](#exporting-a-report) and [report keys](#report-keys) are on
+    `main` and come with the release after 0.3.2.
+
 ## Starting a case
 
 - Start a case with **New case**, or select findings on the **Findings** page and
