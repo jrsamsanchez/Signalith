@@ -759,3 +759,44 @@ func TestImportHoldCoversNothingToImport(t *testing.T) {
 		}
 	}
 }
+
+// A member whose OpenSearch restarts with it reads the shared settings
+// while the index's shards are not assigned yet: that is OpenSearch not
+// answering, not the settings gone. It is degraded after a while, and a
+// member again, with no tamper, once the shards are assigned.
+func TestMemberWhileOpenSearchStarts(t *testing.T) {
+	e := newEnv(t)
+	a := e.server("siem-a", nil)
+	a.holds.Store(true)
+	a.step()
+	a.wantMode(ModeMember)
+	e.os.SetFault(func(method, path string) *ostest.Fault {
+		if strings.Contains(path, "_mget") || strings.Contains(path, "_search") || strings.Contains(path, "/_doc/") || strings.Contains(path, "_count") {
+			return &ostest.Fault{Unassigned: true}
+		}
+		return nil
+	})
+	a.step()
+	a.wantMode(ModeMember)
+	e.clock.Advance(16 * time.Second)
+	a.step()
+	a.wantMode(ModeDegraded)
+	if tamper := a.rt.Hub().Tamper(); len(tamper) != 0 {
+		t.Errorf("tamper while OpenSearch starts: %v", tamper)
+	}
+	if _, ok := a.rt.Cluster().Get(); !ok {
+		t.Error("the cluster document is not in use")
+	}
+	if logs := a.logs.String(); strings.Contains(logs, "config.tamper") || strings.Contains(logs, "are gone") {
+		t.Errorf("logged:\n%s", logs)
+	}
+	e.os.SetFault(nil)
+	a.step()
+	a.wantMode(ModeMember)
+	if ok, why := a.rt.Ready(); !ok {
+		t.Errorf("not ready once OpenSearch answers: %s", why)
+	}
+	if p := a.rt.Hub().Problems(); len(p) != 0 {
+		t.Errorf("problems: %+v", p)
+	}
+}

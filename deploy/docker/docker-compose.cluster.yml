@@ -24,7 +24,7 @@
 #   docker compose -f deploy/docker/docker-compose.cluster.yml down -v
 
 x-signalith: &signalith
-  image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:0.3.1}
+  image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:0.3.2}
   restart: unless-stopped
   depends_on:
     setup: { condition: service_completed_successfully }
@@ -47,7 +47,7 @@ x-signalith: &signalith
 
 services:
   setup:
-    image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:0.3.1}
+    image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:0.3.2}
     user: "0:0"
     cap_drop: [ALL]
     cap_add: [CHOWN, DAC_OVERRIDE, FOWNER]
@@ -63,7 +63,7 @@ services:
   # The cluster key both servers share their settings with: 32 random bytes,
   # made once, readable by Signalith only (docs/cluster-cli.md).
   cluster-key:
-    image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:0.3.1}
+    image: ${SIGNALITH_IMAGE:-ghcr.io/jrsamsanchez/signalith:0.3.2}
     user: "0:0"
     cap_drop: [ALL]
     cap_add: [CHOWN, FOWNER]
