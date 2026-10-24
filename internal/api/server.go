@@ -397,6 +397,12 @@ type Server struct {
 	demoOnce   sync.Once
 	demoSess   *auth.Sessions
 	demoLimits tokenRate
+	// metricsRate limits scrapes of GET /metrics by address,
+	// metricsRefused the log of refused scrape tokens, and metricsSlow
+	// keeps what scrapes ask OpenSearch for a little while (metrics.go).
+	metricsRate    tokenRate
+	metricsRefused scimRefusals
+	metricsSlow    metricsCache
 }
 
 // EventAge is what keeps the age of events the server accepts in step
@@ -520,6 +526,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSensors(api)
 	s.routeTokens(api)
 	s.routeAPITokens(api)
+	s.routeMetrics(mux, api)
 	s.routeAgents(api)
 	s.routeTenants(api)
 	if s.UI != nil {
