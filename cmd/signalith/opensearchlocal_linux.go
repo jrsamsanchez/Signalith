@@ -556,6 +556,10 @@ func connectSignalith(out io.Writer, l oslocal.Layout) error {
 	if err != nil || st == nil {
 		return err
 	}
+	// The service's folders, so the settings go to the file it reads
+	// (its state folder holds it) rather than the one this command would
+	// find on its own.
+	useServiceEnv(signalithConfigFile, out)
 	pf := config.PageFile{Config: signalithConfigFile}
 	p, err := pf.Read()
 	if err != nil {

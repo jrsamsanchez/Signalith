@@ -1292,7 +1292,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// The ingest slots and the memory for batches arriving are the whole
 	// server's: every tenant's pipeline shares them (see ingest.Limits).
 	ingestLimits := ingest.NewLimits(c.Ingest.MaxConcurrent, ingest.DefaultMaxReceiving)
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Limits: ingestLimits, Log: log,
+	pipeline := &ingest.Pipeline{Store: store.NewBulkGroup(cl, 0), Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Limits: ingestLimits, Log: log,
 		Rollover: &ingest.Rollover{Client: cl, Prefix: c.OpenSearch.IndexPrefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log}}
 	in.jobs.Go(func() { pipeline.Rollover.Run(ctx) })
 	pipeline.SetURLQuery(c.URLQueryMode())
