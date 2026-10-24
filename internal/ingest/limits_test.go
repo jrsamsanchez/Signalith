@@ -327,7 +327,11 @@ func TestAdmitSharesSlotsBetweenTokens(t *testing.T) {
 	// The busy token queues first, then another token: a freed slot goes
 	// to the other token, which holds less than its share.
 	got := make(chan string, 2)
+	// done tells the test this sender's release has finished, so the
+	// final look at the slots does not race a release still running.
+	done := make(chan struct{}, 2)
 	wait := func(sender string) {
+		defer func() { done <- struct{}{} }()
 		r, err := p.Admit(ctx, 5*time.Second, sender)
 		if err != nil {
 			got <- "error " + err.Error()
@@ -347,6 +351,8 @@ func TestAdmitSharesSlotsBetweenTokens(t *testing.T) {
 	if second := <-got; second != "busy" {
 		t.Errorf("then %q", second)
 	}
+	<-done
+	<-done
 	for _, r := range busy[1:] {
 		r()
 	}

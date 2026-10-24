@@ -1325,12 +1325,16 @@ func TestDrainAndResume(t *testing.T) {
 	waitReady(t, a, 5*time.Second)
 	b := testNode(t, t.TempDir(), c, true)
 	waitReady(t, b, 5*time.Second)
+	// Either server may win the job lease: drain the one that holds it.
 	deadline := time.Now().Add(5 * time.Second)
-	for !a.RunsJobs() {
+	for !a.RunsJobs() && !b.RunsJobs() {
 		if time.Now().After(deadline) {
-			t.Fatal("a never ran the jobs")
+			t.Fatal("neither server ran the jobs")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+	if b.RunsJobs() {
+		a, b = b, a
 	}
 	a.Drain("")
 	if !a.Drained() {
@@ -1342,7 +1346,7 @@ func TestDrainAndResume(t *testing.T) {
 	deadline = time.Now().Add(10 * time.Second)
 	for a.RunsJobs() || !b.RunsJobs() || heartbeatOf(t, fos, a.ID()).State != StateDraining {
 		if time.Now().After(deadline) {
-			t.Fatalf("a runs jobs %v, b %v, a's state %q", a.RunsJobs(), b.RunsJobs(), heartbeatOf(t, fos, a.ID()).State)
+			t.Fatalf("drained runs jobs %v, other %v, drained state %q", a.RunsJobs(), b.RunsJobs(), heartbeatOf(t, fos, a.ID()).State)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
