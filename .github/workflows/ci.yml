@@ -61,6 +61,18 @@ jobs:
         shell: pwsh
         run: .github/scripts/check-install-ps1.ps1
 
+  # The Signalith Agent on Windows on ARM: its packages' tests on an ARM
+  # Windows runner, so what only breaks on windows/arm64 shows here.
+  agent-windows-arm:
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./cmd/signalith-agent/ ./internal/agentd/ ./internal/agentproto/
+      - run: go test -timeout 20m ./cmd/signalith-agent/ ./internal/agentd/ ./internal/agentproto/ ./deploy/
+
   race:
     runs-on: ubuntu-latest
     steps:
