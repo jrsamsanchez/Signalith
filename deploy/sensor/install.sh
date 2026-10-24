@@ -1015,12 +1015,21 @@ REPO
 # only warns when a repository cannot be read (a mirror answering 503),
 # and would then install the system's own, older packages instead: on
 # Ubuntu, Suricata 7 without suricata-update, so no rules ever load. So it
-# tries three times until OISF's PPA offers Suricata, then stops.
+# tries three times until OISF's PPA offers Suricata, then stops. A
+# repository that is mid-sync ("File has unexpected size") makes apt-get
+# update fail outright for a minute or so, so that is tried three times too.
 apt_update_repos() {
   tries=0
   while :; do
     tries=$((tries + 1))
-    quiet env DEBIAN_FRONTEND=noninteractive apt-get update || fail "apt-get update failed with the new repositories (see above)." "Check that this machine reaches download.opensuse.org, ppa.launchpadcontent.net and packages.fluentbit.io."
+    if ! quiet env DEBIAN_FRONTEND=noninteractive apt-get update; then
+      if [ "$tries" -ge 3 ]; then
+        fail "apt-get update failed with the new repositories (see above)." "Check that this machine reaches download.opensuse.org, ppa.launchpadcontent.net and packages.fluentbit.io."
+      fi
+      printf '    apt-get update failed (a repository may be updating its mirror); trying again.\n'
+      sleep $((tries * 10))
+      continue
+    fi
     if [ -n "$dryrun" ] || [ "$suricata" != yes ] || [ "$os_id" != ubuntu ] || suricata_from_ppa; then
       return 0
     fi
