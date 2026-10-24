@@ -320,6 +320,15 @@ settings or security configuration (`include_global_state: false`), and only cop
 what changed since the one before. The policy is Signalith's: a change made to it in
 OpenSearch is put back within a minute, so change the settings instead.
 
+Days in [cold storage](cold-storage.md) are left out. They are mounted from their own
+snapshots in the cold storage repository (`signalith-cold`, and each tenant's own), so
+a scheduled snapshot would copy nothing of them, and restoring one would mount them
+again from a cold snapshot that retention may have deleted since, which leaves the
+cluster red. Signalith adds a `-<index>` exclusion to the policy's indices for each
+mounted day, or a whole month or year at a time when they are many, and updates it as
+days go cold. To back up cold days, keep those repositories (or copies of them); after
+a restore, retention mounts the cold days it finds missing there by itself.
+
 The **Backups** card of the **Health** page shows the last snapshot and the last
 successful one, when the next is due and how many are kept, with the last
 `signalith backup` of that server's own files. It turns red when the last successful

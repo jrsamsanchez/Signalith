@@ -143,7 +143,12 @@ func (m *Manager) read(ctx context.Context) *Status {
 	if err != nil {
 		return fail(err)
 	}
-	want := desiredDoc(m.Prefix, s)
+	indices, err := m.indices(ctx)
+	if err != nil {
+		// Unknown for now: the policy's own say.
+		indices = cur.SnapshotConfig.Indices
+	}
+	want := desiredDoc(indices, s)
 	st.Pending = !found || cur.key() != want.key()
 	if found && !cur.ours() {
 		st.State = StateProblem

@@ -6,6 +6,7 @@ package snapshots
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
@@ -382,5 +383,121 @@ func TestFilesBackupRecord(t *testing.T) {
 	r := ReadFilesBackup(dir)
 	if r == nil || !r.At.Equal(at) || r.File != "signalith-backup.zip" || r.Files != 12 || owned == "" {
 		t.Fatalf("%+v, %q", r, owned)
+	}
+}
+
+// day is the daily index of kind for the day n days ago.
+func day(kind string, n int) string {
+	return "signalith-" + kind + "-" + time.Now().UTC().AddDate(0, 0, -n).Format("2006.01.02")
+}
+
+func TestSyncLeavesColdIndicesOut(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	e.os.AddRepository("signalith", "fs")
+	hot, cold1, cold2 := day("events", 0), day("events", 40), day("events", 41)
+	e.os.Put(hot, "1", map[string]any{"message": "hot"})
+	e.os.Mount(cold1)
+	// Hot indices have no store.type, and are still known as hot.
+	if c, h, err := e.m.coldIndices(ctx); err != nil || len(c) != 1 || c[0] != cold1 || len(h) != 1 || h[0] != hot {
+		t.Fatalf("cold %q, hot %q, %v", c, h, err)
+	}
+	if res, err := e.m.Sync(ctx); err != nil || res.Action != "created" {
+		t.Fatalf("first sync: %+v, %v", res, err)
+	}
+	indices := func() string {
+		return e.os.SMPolicy("signalith-daily")["snapshot_config"].(map[string]any)["indices"].(string)
+	}
+	if got, want := indices(), "signalith-*,signalith_*,signalith.t.*,-"+cold1; got != want {
+		t.Fatalf("indices %q, want %q", got, want)
+	}
+	if st := e.m.Status(ctx, true); st.Pending {
+		t.Errorf("pending right after a sync: %+v", st)
+	}
+
+	// The same cold set: nothing to write.
+	before := e.fenced.Load()
+	if res, err := e.m.Sync(ctx); err != nil || res.Action != "" || e.fenced.Load() != before {
+		t.Fatalf("sync with nothing new: %+v, %v", res, err)
+	}
+
+	// Another day goes cold: Status says the policy is behind, a server
+	// without the lease leaves it, and the one with it updates it.
+	e.os.Mount(cold2)
+	if st := e.m.Status(ctx, true); !st.Pending {
+		t.Error("a new cold day is not pending")
+	}
+	e.deny.Store(true)
+	if _, err := e.m.Sync(ctx); err == nil || strings.Contains(indices(), cold2) {
+		t.Fatalf("written without the lease: %q, %v", indices(), err)
+	}
+	e.deny.Store(false)
+	if res, err := e.m.Sync(ctx); err != nil || res.Action != "updated" {
+		t.Fatalf("sync after a new cold day: %+v, %v", res, err)
+	}
+	// In order of name: the older day first.
+	want := "signalith-*,signalith_*,signalith.t.*,-" + cold2 + ",-" + cold1
+	if got := indices(); got != want {
+		t.Errorf("indices %q, want %q", got, want)
+	}
+}
+
+func TestIndicesLeavingOut(t *testing.T) {
+	base := Indices("signalith")
+	if got, all := IndicesLeavingOut("signalith", nil, []string{day("events", 0)}); got != base || !all {
+		t.Errorf("no cold: %q %v", got, all)
+	}
+
+	// A year and more of cold days for many tenants: too long one by one,
+	// so whole months go, but not a month that still has a hot day.
+	now := time.Now().UTC()
+	var cold, hot []string
+	for tenant := 0; tenant < 40; tenant++ {
+		name := fmt.Sprintf("signalith.t.tenant%02d-events-", tenant)
+		for d := 0; d < 400; d++ {
+			idx := name + now.AddDate(0, 0, -d).Format("2006.01.02")
+			if d < 7 {
+				hot = append(hot, idx)
+			} else {
+				cold = append(cold, idx)
+			}
+		}
+	}
+	got, all := IndicesLeavingOut("signalith", cold, hot)
+	if !all || len(got) > MaxIndices || !strings.HasPrefix(got, base+",-") {
+		t.Fatalf("%d bytes, all %v", len(got), all)
+	}
+	for _, h := range hot {
+		if strings.Contains(got, ","+"-"+h) || strings.Contains(got, "-"+h[:len(h)-3]+".*") {
+			t.Fatalf("leaves out the hot %s", h)
+		}
+	}
+	if !strings.Contains(got, ",-signalith.t.tenant00-events-"+now.AddDate(0, -3, 0).Format("2006.01")+".*") {
+		t.Error("months are not left out whole")
+	}
+	// Every cold day is left out, by name or by its month.
+	for _, c := range cold {
+		if !strings.Contains(got, ",-"+c) && !strings.Contains(got, ",-"+c[:len(c)-3]+".*") {
+			t.Fatalf("keeps the cold %s", c)
+		}
+	}
+	// The month that holds the hot week's first day lists its cold days by
+	// name.
+	if c := hot[6]; now.AddDate(0, 0, -7).Month() == now.AddDate(0, 0, -6).Month() {
+		if old := c[:len(c)-2] + now.AddDate(0, 0, -7).Format("02"); !strings.Contains(got, ",-"+old) {
+			t.Errorf("%s is not listed by name", old)
+		}
+	}
+	if again, _ := IndicesLeavingOut("signalith", append([]string(nil), cold...), hot); again != got {
+		t.Error("not the same expression for the same indices")
+	}
+
+	// Too many even by year: none left out.
+	var many []string
+	for i := 0; i < 4000; i++ {
+		many = append(many, fmt.Sprintf("signalith-restored-%04d", i))
+	}
+	if got, all := IndicesLeavingOut("signalith", many, nil); got != base || all {
+		t.Errorf("over the limit: %d bytes, all %v", len(got), all)
 	}
 }

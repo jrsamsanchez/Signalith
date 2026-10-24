@@ -22,7 +22,9 @@ import (
 //   - GET, POST, PUT (with if_seq_no and if_primary_term) and DELETE
 //     /_plugins/_sm/policies/<name>, and GET .../_explain, with
 //     OpenSearch's answers, its 404 before any policy exists and its 409
-//     on a stale update.
+//     on a stale update;
+//   - GET /<pattern>/_settings/<names>?flat_settings=true, the settings
+//     named of the open indices that match (Mount marks one mounted).
 //
 // Nothing runs a policy: SMRan records a run as OpenSearch would.
 
@@ -104,6 +106,15 @@ func (s *Server) SMRan(name, state string, start time.Time, took time.Duration, 
 	return snap.name
 }
 
+// Mount makes index name (anew if missing) a searchable snapshot, as
+// cold storage mounts one: its index.store.type is remote_snapshot.
+func (s *Server) Mount(name string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ensure(name)
+	s.settings[name] = append(s.settings[name], json.RawMessage(`{"index":{"store.type":"remote_snapshot"}}`))
+}
+
 // serveSM answers the requests above, and reports whether it did.
 func (s *Server) serveSM(w http.ResponseWriter, r *http.Request, parts []string, body []byte) bool {
 	switch {
@@ -111,6 +122,8 @@ func (s *Server) serveSM(w http.ResponseWriter, r *http.Request, parts []string,
 		s.smSnapshotGet(w, r, parts)
 	case len(parts) >= 3 && parts[0] == "_plugins" && parts[1] == "_sm" && parts[2] == "policies":
 		s.smPolicies(w, r, parts[3:], body)
+	case len(parts) == 3 && parts[1] == "_settings" && r.Method == http.MethodGet:
+		s.namedSettings(w, parts[0], parts[2])
 	default:
 		return false
 	}
@@ -267,4 +280,30 @@ func (p *smPolicy) view(name string) map[string]any {
 		}
 	}
 	return v
+}
+
+// namedSettings answers GET /<pattern>/_settings/<names> with flat
+// settings: each matching index, with those of its settings whose names
+// match one of names (which may hold * wildcards); index.uuid is one.
+func (s *Server) namedSettings(w http.ResponseWriter, pattern, names string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]any{}
+	for _, ix := range s.match(pattern) {
+		flat := map[string]any{}
+		all := indexSettings(ix.body, s.settings[ix.name])
+		all["uuid"] = ix.uuid
+		for k, v := range all {
+			for _, n := range strings.Split(names, ",") {
+				if ok, _ := path.Match(n, "index."+k); ok {
+					flat["index."+k] = v
+				}
+			}
+		}
+		// As OpenSearch, an index with none of them is left out.
+		if len(flat) > 0 {
+			out[ix.name] = map[string]any{"settings": flat}
+		}
+	}
+	writeJSON(w, 200, out)
 }

@@ -56,8 +56,9 @@ func Indices(prefix string) string {
 	return prefix + "-*," + prefix + "_*," + prefix + ".t.*"
 }
 
-// Body is the policy for prefix and s, as it is sent to OpenSearch.
-func Body(prefix string, s Settings) map[string]any {
+// Body is the policy for s that snapshots indices (see Indices and
+// IndicesLeavingOut), as it is sent to OpenSearch.
+func Body(indices string, s Settings) map[string]any {
 	n := s.Normal()
 	return map[string]any{
 		"description": "Signalith's scheduled snapshots of its own indices. Signalith keeps this policy in step with its backup settings: a change made here is replaced.",
@@ -73,7 +74,7 @@ func Body(prefix string, s Settings) map[string]any {
 		},
 		"snapshot_config": map[string]any{
 			"repository": n.Repository,
-			"indices":    Indices(prefix),
+			"indices":    indices,
 			// OpenSearch's own settings and its security configuration stay
 			// with OpenSearch, as in docs/backup.md.
 			"include_global_state": "false",
@@ -124,9 +125,9 @@ func (p *policyDoc) key() [8]any {
 }
 
 // desiredDoc is Body read back as OpenSearch answers it.
-func desiredDoc(prefix string, s Settings) policyDoc {
+func desiredDoc(indices string, s Settings) policyDoc {
 	var d policyDoc
-	b, _ := json.Marshal(Body(prefix, s))
+	b, _ := json.Marshal(Body(indices, s))
 	_ = json.Unmarshal(b, &d)
 	return d
 }
@@ -165,6 +166,8 @@ type Manager struct {
 	// being read is done.
 	cached     *Status
 	refreshing chan struct{}
+	// tooMany is set while the cold indices are too many to leave out.
+	tooMany bool
 }
 
 // Synced is what the last Sync did.
@@ -282,7 +285,11 @@ func (m *Manager) sync(ctx context.Context) (Synced, error) {
 	if found && !cur.ours() {
 		return Synced{Problem: fmt.Sprintf("OpenSearch already has a snapshot policy named %s that Signalith did not make. Delete it (DELETE _plugins/_sm/policies/%s) or give Signalith another opensearch.index_prefix.", name, name)}, nil
 	}
-	want := desiredDoc(m.Prefix, s)
+	indices, err := m.indices(ctx)
+	if err != nil {
+		return Synced{}, err
+	}
+	want := desiredDoc(indices, s)
 	if found && cur.key() == want.key() {
 		return Synced{}, nil
 	}
@@ -296,7 +303,7 @@ func (m *Manager) sync(ctx context.Context) (Synced, error) {
 		action, method = "updated", http.MethodPut
 		path += fmt.Sprintf("?if_seq_no=%d&if_primary_term=%d", ver.SeqNo, ver.PrimaryTerm)
 	}
-	if err := m.Client.Do(ctx, method, path, Body(m.Prefix, s), nil); err != nil {
+	if err := m.Client.Do(ctx, method, path, Body(indices, s), nil); err != nil {
 		if p := m.problem(err); p != "" {
 			return Synced{Problem: p}, nil
 		}
