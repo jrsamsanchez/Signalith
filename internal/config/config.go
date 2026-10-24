@@ -37,6 +37,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/snapshots"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -69,6 +70,7 @@ type Config struct {
 	Demo       Demo       `yaml:"demo,omitempty"`
 	// Metrics is the scrape endpoint GET /metrics (see metrics.go).
 	Metrics Metrics `yaml:"metrics,omitempty"`
+	Backup  Backup  `yaml:"backup,omitempty"`
 
 	// path is where the file was loaded from.
 	path string
@@ -1387,6 +1389,36 @@ func (c *Config) AssistantClient() *assistant.Client {
 		cl.HTTP.Timeout = c.AssistantRequestTimeout()
 	}
 	return cl
+}
+
+// Backup turns on OpenSearch snapshots of Signalith's indices on a
+// schedule: the server that runs the background jobs keeps an OpenSearch
+// Snapshot Management policy for them (internal/snapshots, and Scheduled
+// snapshots in docs/backup.md). Every server shares these settings.
+type Backup struct {
+	// Snapshots turns the scheduled snapshots on.
+	Snapshots bool `yaml:"snapshots,omitempty"`
+	// SnapshotRepository is the snapshot repository registered in
+	// OpenSearch that they go to; empty is "signalith", the Docker quick
+	// start's.
+	SnapshotRepository string `yaml:"snapshot_repository,omitempty"`
+	// SnapshotEvery is how often: 1h, 6h, 12h or 1d (the default).
+	SnapshotEvery string `yaml:"snapshot_every,omitempty"`
+	// SnapshotAt is the time of day (HH:MM) of the first snapshot of each
+	// day; empty is 02:30.
+	SnapshotAt string `yaml:"snapshot_at,omitempty"`
+	// SnapshotTimeZone is the IANA time zone of SnapshotAt; empty is UTC.
+	SnapshotTimeZone string `yaml:"snapshot_timezone,omitempty"`
+	// SnapshotKeep is how many snapshots OpenSearch keeps before it deletes
+	// the oldest; 0 is 14.
+	SnapshotKeep int `yaml:"snapshot_keep,omitempty"`
+}
+
+// SnapshotSettings returns the backup.* settings for internal/snapshots.
+func (c *Config) SnapshotSettings() snapshots.Settings {
+	b := c.Backup
+	return snapshots.Settings{On: b.Snapshots, Repository: b.SnapshotRepository, Every: b.SnapshotEvery,
+		At: b.SnapshotAt, TimeZone: b.SnapshotTimeZone, Keep: b.SnapshotKeep}
 }
 
 // M365 reads Microsoft 365's audit log from the Office 365 Management
@@ -2901,6 +2933,7 @@ func (c *Config) Validate() error {
 	default:
 		p = append(p, fmt.Sprintf("ingest.url_query %q must be keep, redact or drop (empty: keep)", c.Ingest.URLQuery))
 	}
+	p = append(p, c.SnapshotSettings().Problems()...)
 	p = append(p, c.Syslog.problems(c.Server)...)
 	if len(p) > 0 {
 		return &ValidationError{Problems: p}

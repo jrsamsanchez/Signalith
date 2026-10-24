@@ -980,7 +980,7 @@ let docsRef = 'main';
 // withCode sets the commands and file names in a message from the server
 // as code, so it is plain what to type, and links the docs it names: a
 // list of text, <code> and <a> parts.
-const CODE_IN_TEXT = /docker compose -f deploy\/docker\/docker-compose\.yml (?:up -d|logs opensearch(?:-security)?)|securityadmin\.sh|\/var\/log\/opensearch|cluster\.blocks\.read_only|docs\/[a-z-]+\.md(?:#[a-z0-9-]+)?/g;
+const CODE_IN_TEXT = /docker compose -f deploy\/docker\/docker-compose\.yml (?:up -d|logs opensearch(?:-security)?|exec opensearch sh snapshot\.sh [a-z]+)|securityadmin\.sh|\/var\/log\/opensearch|cluster\.blocks\.read_only|docs\/[a-z-]+\.md(?:#[a-z0-9-]+)?/g;
 function withCode(text) {
   text = String(text);
   const parts = [];
@@ -1014,7 +1014,9 @@ function renderHealthCard(h) {
     // Too busy is amber, as on the Health page, unless something is down.
     state = os.status === 'refused' && os.problem === 'busy' && !banners.length ? 'warn' : 'down';
     title = osTitle(os);
-  } else if (banners.length) {
+  } else if (banners.length || (h.backup && h.backup.alert)) {
+    // Late or failing scheduled snapshots are red too: a backup that
+    // silently stopped is found when it is needed.
     state = 'down';
     title = 'Needs attention';
   } else if (failed > 0 || warnings.length) {
@@ -1028,7 +1030,7 @@ function renderHealthCard(h) {
   if (failed) meta.push(failed.toLocaleString() + ' failed');
   $('health-meta').textContent = meta.join(' · ');
   const card = $('health-card');
-  card.title = visibleText([osTitle(os), os.error, ...banners, ...warnings].filter(Boolean).join('\n'));
+  card.title = visibleText([osTitle(os), os.error, ...banners, h.backup && h.backup.alert, ...warnings].filter(Boolean).join('\n'));
   card.setAttribute('aria-label', `Health: ${title}, ${osTitle(os)}, ${meta.join(', ')}`);
   card.classList.remove('hidden');
   if (h.version) {
@@ -4735,6 +4737,10 @@ function healthPageRender(h) {
     alerts.push(healthPageAlert('danger', 'circle-alert', b, can('admin')
       ? el('span', {}, 'The ', el('a', { href: '#servers', 'data-page': 'servers' }, 'Servers page'), ' says why and what to do.') : 'An admin needs to look.'));
   }
+  // Scheduled snapshots late or failing (admins only get h.backup).
+  if (h.backup && h.backup.alert) {
+    alerts.push(healthPageAlert('danger', 'circle-alert', 'Backups need attention.', el('span', {}, ...withCode(h.backup.alert))));
+  }
   for (const w of h.warnings || []) {
     const cut = w.indexOf('. ');
     alerts.push(cut > 0 ? healthPageAlert('warning', 'triangle-alert', w.slice(0, cut + 1), w.slice(cut + 2)) : healthPageAlert('warning', 'triangle-alert', w));
@@ -4787,7 +4793,7 @@ function healthPageRender(h) {
     el('div', { class: 'table-foot' }, el('span', { class: 'live', id: 'health-live' })));
   const box = $('health');
   box.removeAttribute('aria-busy');
-  box.replaceChildren(...(alerts.length ? [el('div', { class: 'hp-alerts' }, ...alerts)] : []), kpis, card, ...healthClusterCard(h.cluster), healthSyslogCard(sl));
+  box.replaceChildren(...(alerts.length ? [el('div', { class: 'hp-alerts' }, ...alerts)] : []), kpis, card, ...healthClusterCard(h.cluster), ...healthBackupCard(h.backup), healthSyslogCard(sl));
   healthPageFoot();
 }
 
@@ -4820,6 +4826,52 @@ function healthClusterCard(c) {
   return [el('div', { class: 'card hp-cluster' },
     el('div', { class: 'card__head' }, el('div', {}, el('h3', { class: 'card__title' }, 'All servers'), el('p', { class: 'card__sub' }, sub))),
     el('div', { class: 'table-wrap' }, el('table', { class: 'table hp-cluster__table' }, head, el('tbody', {}, ...rows, total))))];
+}
+
+// healthBackupCard shows the backups, for admins: OpenSearch's scheduled
+// snapshots (last one, next one, how many are kept) and the last
+// signalith backup of this server's own files. See docs/backup.md.
+function healthBackupCard(b) {
+  if (!b) return [];
+  const sn = b.snapshots || { state: 'off' };
+  const when = (t) => (t ? `${fmtTime(t)} (${ago(t)})` : '');
+  const settingsLink = el('a', { href: '#settings', 'data-page': 'settings' }, 'Settings > Server > Backups');
+  const STATES = {
+    off: ['idle', 'Off', ['OpenSearch takes no snapshots on a schedule. Turn them on in ', settingsLink, '.']],
+    ok: ['', 'Healthy', null],
+    waiting: ['idle', 'Waiting', null],
+    late: ['down', 'Late', null],
+    problem: ['down', 'Not working', null],
+  };
+  const [tone, label, offText] = STATES[sn.state] || ['warn', sn.state || 'Unknown', null];
+  let details;
+  if (offText) {
+    details = offText;
+  } else {
+    const parts = [];
+    if (sn.problem) parts.push(el('p', {}, ...withCode(sn.problem)));
+    const facts = [
+      ['Schedule', sn.schedule ? `${sn.schedule}, into the repository ${sn.repository}` : ''],
+      ['Last successful', sn.last_success ? when(sn.last_success) : 'None yet'],
+      ['Last snapshot', sn.last ? `${when(sn.last.end || sn.last.start)}, ${String(sn.last.state || '').toLowerCase()}` : ''],
+      ['Next', sn.next ? when(sn.next).replace(/ \(.*\)$/, '') : (sn.pending ? 'Once the server that runs the background jobs writes the policy, within a minute' : '')],
+      ['Kept', `${healthPageNum(sn.kept)} of at most ${healthPageNum(sn.keep)}`],
+    ].filter(([, v]) => v);
+    parts.push(el('dl', { class: 'hp-backup' }, ...facts.flatMap(([k, v]) => [el('dt', {}, k), el('dd', {}, v)])));
+    details = parts;
+  }
+  const f = b.files;
+  const filesRow = healthPageRow('folder', 'This server’s files', 'signalith backup', f ? '' : 'idle', f ? 'Backed up' : 'Not recorded',
+    f ? [`Last backup ${when(f.at)}: `, el('code', {}, f.file), `, ${healthPageNum(f.files)} files.`]
+      : ['No backup made with ', el('code', {}, 'signalith backup'), ' on this server since it was recorded. Back up each server’s files too.']);
+  const table = el('table', { class: 'table hp-table' },
+    el('thead', {}, el('tr', {}, el('th', { scope: 'col', 'data-col': 'name' }, 'Backup'), el('th', { scope: 'col', 'data-col': 'state' }, 'Status'), el('th', { scope: 'col' }, 'Details'))),
+    el('tbody', {}, healthPageRow('archive', 'OpenSearch snapshots', sn.policy || '', tone, label, details), filesRow));
+  const docs = el('a', { href: 'https://github.com/jrsamsanchez/signalith/blob/' + docsRef + '/docs/backup.md', target: '_blank', rel: 'noopener noreferrer' }, 'How to restore');
+  return [el('div', { class: 'card hp-backups' },
+    el('div', { class: 'card__head' }, el('div', {}, el('h3', { class: 'card__title' }, 'Backups'),
+      el('p', { class: 'card__sub' }, 'Events, findings, cases and shared settings are in OpenSearch’s snapshots; each server’s keys and files in its signalith backup. ', docs, '.'))),
+    el('div', { class: 'table-wrap' }, table))];
 }
 
 // healthSensorRow is the network sensors' row: how many send, went

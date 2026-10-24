@@ -12,9 +12,11 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/snapshots"
 )
 
 // backupInstall makes an install in a new folder: signalith.yaml with
@@ -77,6 +79,7 @@ func TestBackupAndRestore(t *testing.T) {
 		"state/tls/ca.pem":           "ca",
 		"state/node.id":              `{"node_id":"n_1","name":"siem-a"}`,
 		"state/cluster/lock":         "",
+		"state/last-backup.json":     `{"at":"2026-01-02T03:04:05Z","file":"old.zip"}`,
 		"data/lookups/users.json":    "[]",
 		"data/lookups/settings.yaml": "retention:\n  days: 30\n",
 		"data/lookups/assets.csv":    "host\nweb-01\n",
@@ -97,7 +100,7 @@ func TestBackupAndRestore(t *testing.T) {
 			t.Errorf("backup has no %s; it has %v", want, keys(got))
 		}
 	}
-	for _, not := range []string{"state/cluster/lock", "state/signalith-backup.zip", "lookups/settings.yaml", "lookups/users.json", "archive/day.ndjson.gz"} {
+	for _, not := range []string{"state/cluster/lock", "state/last-backup.json", "state/signalith-backup.zip", "lookups/settings.yaml", "lookups/users.json", "archive/day.ndjson.gz"} {
 		if _, ok := got[not]; ok {
 			t.Errorf("backup has %s", not)
 		}
@@ -118,6 +121,7 @@ func TestBackupAndRestore(t *testing.T) {
 		"data/lookups/users.json":    `[{"name":"new"}]`,
 		"data/lookups/extra.csv":     "set aside",
 		"data/archive/new-day.gz":    "kept",
+		"state/last-backup.json":     `{"at":"2026-01-02T03:04:05Z","file":"this-install.zip"}`,
 	})
 	dc := loadForBackup(t, dst)
 	if err := restoreBackup(zipFile, "", dc, true, os.Stdin, io.Discard); err != nil {
@@ -130,6 +134,7 @@ func TestBackupAndRestore(t *testing.T) {
 		"data/lookups/users.json":    "[]",
 		"data/lookups/settings.yaml": "retention:\n  days: 30\n",
 		"data/archive/new-day.gz":    "kept",
+		"state/last-backup.json":     `{"at":"2026-01-02T03:04:05Z","file":"this-install.zip"}`,
 		"data/detections/mine.yml":   "id: mine\n",
 		"etc/signalith.yaml":         got["config/signalith.yaml"],
 	} {
@@ -348,4 +353,18 @@ func keys(m map[string]string) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// TestBackupRecordsItself checks that signalith backup notes the backup
+// in the state folder, for the Health page.
+func TestBackupRecordsItself(t *testing.T) {
+	src := backupInstall(t, map[string]string{"state/keys/master.key": "the key"})
+	out := filepath.Join(t.TempDir(), "b.zip")
+	if err := cmdBackup([]string{"-c", src, "-o", out}); err != nil {
+		t.Fatal(err)
+	}
+	r := snapshots.ReadFilesBackup(loadForBackup(t, src).StateDir())
+	if r == nil || r.File != out || r.Files == 0 || time.Since(r.At) > time.Hour {
+		t.Fatalf("record: %+v", r)
+	}
 }

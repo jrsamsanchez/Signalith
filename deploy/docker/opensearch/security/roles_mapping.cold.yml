@@ -20,6 +20,13 @@ signalith_server:
     - "signalith"
     - "signalith-server-*"
 
+# For scheduled snapshots (roles.yml says what it allows, and why it is
+# mapped before they are turned on).
+signalith_snapshots:
+  users:
+    - "signalith"
+    - "signalith-server-*"
+
 signalith_cold_storage:
   users:
     - "signalith"

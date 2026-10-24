@@ -112,6 +112,8 @@ type Server struct {
 	// paths are the node's path.home and path.data (see SetPaths).
 	home string
 	data []string
+	// sm holds the snapshot repositories and policies (see sm.go).
+	sm *smState
 }
 
 // Account is the one account the fake lets in once Secure is called, and
@@ -657,6 +659,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 		if u, err := url.PathUnescape(parts[i]); err == nil {
 			parts[i] = u
 		}
+	}
+	if s.serveSM(w, r, parts, body) {
+		return
 	}
 	q := r.URL.Query()
 	switch {

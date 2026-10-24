@@ -39,11 +39,41 @@
 # With an opensearch.index_prefix other than signalith, change signalith*
 # below to match it.
 #
+# signalith_snapshots is for scheduled snapshots (Settings > Server >
+# Backups, docs/backup.md). The server that runs the background jobs keeps
+# an OpenSearch Snapshot Management policy, <prefix>-daily, which takes
+# snapshots of Signalith's indices into the repository the settings name
+# and deletes the oldest. OpenSearch runs the policy with the roles of the
+# user that wrote it, so Signalith needs these itself. Its certificates
+# get the role in roles_mapping.yml; nothing uses it until scheduled
+# snapshots are turned on. It names each action, so it cannot restore or
+# clone snapshots. OpenSearch's snapshot permissions are not limited to
+# one repository, so Signalith could delete any repository's snapshots,
+# and snapshots it can delete do not protect against someone who has
+# Signalith's credentials: copy the repository off-site or to WORM
+# (object lock) storage (docs/backup.md). On an OpenSearch shared with
+# others, remove the mapping and take snapshots another way. To stop
+# scheduled snapshots for good, also delete the policy
+# (DELETE _plugins/_sm/policies/<prefix>-daily): OpenSearch keeps running
+# it with the roles stored with it.
+#   GET    _snapshot/<repository>                  cluster:admin/repository/get
+#   GET    _snapshot/<repository>/<prefix>-daily-* cluster:admin/snapshot/get
+#   POST, PUT _plugins/_sm/policies/<prefix>-daily cluster:admin/opensearch/snapshot_management/policy/write
+#   GET    _plugins/_sm/policies/<prefix>-daily    cluster:admin/opensearch/snapshot_management/policy/get
+#   DELETE _plugins/_sm/policies/<prefix>-daily    cluster:admin/opensearch/snapshot_management/policy/delete
+#   GET    _plugins/_sm/policies/<prefix>-daily/_explain
+#                                                  cluster:admin/opensearch/snapshot_management/policy/explain
+#   and, run by OpenSearch as Signalith: take and delete snapshots
+#                                                  cluster:admin/snapshot/create
+#                                                  cluster:admin/snapshot/delete
+#
 # signalith_cold_storage is for cold storage (docs/cold-storage.md), which
-# keeps old days in a snapshot repository such as an S3 bucket. No one has
-# it until it is mapped to Signalith when cold storage is turned on,
-# because OpenSearch's snapshot permissions are not limited to one
-# repository: whoever has them can delete any repository's snapshots.
+# keeps old days in a snapshot repository such as an S3 bucket. It is
+# mapped to Signalith when cold storage is turned on
+# (roles_mapping.cold.yml); it can also restore (mount) snapshots, which
+# signalith_snapshots cannot. signalith_snapshots, mapped by default, also
+# takes and deletes snapshots, so remove both mappings to keep Signalith
+# away from snapshots.
 # Signalith itself only touches snapshots named <prefix>-* in the
 # repository <prefix>-cold.
 #   GET    _snapshot/<prefix>-cold                 cluster:admin/repository/get
@@ -70,6 +100,18 @@ signalith_server:
         - "crud"
         - "create_index"
         - "manage"
+
+signalith_snapshots:
+  description: "Signalith scheduled snapshots: its Snapshot Management policy, <prefix>-daily, and the snapshots it takes"
+  cluster_permissions:
+    - "cluster:admin/opensearch/snapshot_management/policy/write"
+    - "cluster:admin/opensearch/snapshot_management/policy/get"
+    - "cluster:admin/opensearch/snapshot_management/policy/delete"
+    - "cluster:admin/opensearch/snapshot_management/policy/explain"
+    - "cluster:admin/snapshot/create"
+    - "cluster:admin/snapshot/get"
+    - "cluster:admin/snapshot/delete"
+    - "cluster:admin/repository/get"
 
 signalith_cold_storage:
   description: "Signalith cold storage: snapshots of its own days in the <prefix>-cold repository"

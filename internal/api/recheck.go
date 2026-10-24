@@ -212,12 +212,15 @@ func (s *Server) handleRecheck(w http.ResponseWriter, r *http.Request) {
 // sign in, how traffic is protected, or where events and secrets go;
 // saving one asks for the password or code again. syslog.udp and
 // syslog.tcp are here because plain syslog takes unencrypted events that
-// can be forged. Each covers the setting
+// can be forged. backup is here because turning scheduled snapshots off,
+// or pointing them at another repository, stops OpenSearch's backups
+// (and the policy deletes the oldest snapshots). Each covers the setting
 // of that name and those under it (auth covers auth.oidc.issuer, and
 // server.tls covers server.tls_cert).
 var protectedSettings = []string{"auth", "server.tls", "server.listen", "server.trusted_proxies", "server.client_header",
 	"server.shared_addresses", "server.proxy_protocol", "opensearch", "cluster.opensearch_url", "syslog.allow",
-	"syslog.tls", "syslog.udp", "syslog.tcp", "syslog.proxy_protocol", "intel.allow_loopback_feeds", "assistant.url", "assistant.mask_fields", "okta", "m365", "metrics"}
+	"syslog.tls", "syslog.udp", "syslog.tcp", "syslog.proxy_protocol", "intel.allow_loopback_feeds", "assistant.url", "assistant.mask_fields", "okta", "m365", "metrics",
+	"backup"}
 
 func protectedSetting(key string) bool {
 	for _, p := range protectedSettings {

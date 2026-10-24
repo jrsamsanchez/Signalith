@@ -175,6 +175,9 @@ type Server struct {
 	// ComplianceHistory keeps the monthly compliance evidence records;
 	// nil keeps none.
 	ComplianceHistory compliancehist.Store
+	// Snapshots reports how the scheduled OpenSearch snapshots go, for
+	// the Health page; nil leaves them out.
+	Snapshots BackupStatus
 	// Background is the context of work a request starts that runs on
 	// after it, such as a sample-data load: it ends when the process stops
 	// (not at a restart in place), so that work can stop cleanly and say
@@ -1396,6 +1399,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	out["tls"] = s.tlsInfo()
 	if sec := s.securityHealth(); sec != nil {
 		out["security"] = sec
+	}
+	if b := s.backupHealth(ctx); b != nil {
+		out["backup"] = b
 	}
 	osOut := map[string]any{"status": status, "url": redact.URL(s.conf().OpenSearch.URL)}
 	if err != nil {

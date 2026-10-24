@@ -10,6 +10,12 @@
 #   docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh restore <name>
 #   docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh delete <name>
 #
+#   docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh register
+#
+# register only registers the folder as the repository "signalith", which
+# scheduled snapshots (Settings > Server > Backups) need once; the others
+# do that by themselves.
+#
 # create can run while Signalith runs. restore replaces the indices the
 # snapshot holds and keeps the others (days newer than the snapshot):
 # stop Signalith first. docs/backup.md has the whole procedure.
@@ -86,12 +92,16 @@ restore)
 	*) fail "The restore did not finish: $res" ;;
 	esac
 	;;
+register)
+	repository
+	say "Done: OpenSearch keeps snapshots in the repository $repo ($location). Turn on scheduled snapshots in Settings > Server > Backups."
+	;;
 delete)
 	[ -n "${2:-}" ] || fail "Name the snapshot to delete: sh snapshot.sh delete <name>"
 	repository
 	api DELETE "/_snapshot/$repo/$2" >/dev/null && say "Deleted $2."
 	;;
 *)
-	fail "Usage: sh snapshot.sh create [name] | list | restore <name> | delete <name>"
+	fail "Usage: sh snapshot.sh create [name] | list | restore <name> | delete <name> | register"
 	;;
 esac

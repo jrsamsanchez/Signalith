@@ -53,6 +53,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/findingviews"
 	"github.com/jrsamsanchez/signalith/internal/geoip"
+	"github.com/jrsamsanchez/signalith/internal/incontainer"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/intel"
 	"github.com/jrsamsanchez/signalith/internal/keytrust"
@@ -76,6 +77,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/sensortune"
 	"github.com/jrsamsanchez/signalith/internal/setupguide"
 	"github.com/jrsamsanchez/signalith/internal/shared"
+	"github.com/jrsamsanchez/signalith/internal/snapshots"
 	"github.com/jrsamsanchez/signalith/internal/store"
 	"github.com/jrsamsanchez/signalith/internal/summary"
 	"github.com/jrsamsanchez/signalith/internal/syslog"
@@ -1492,6 +1494,11 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cfiles := casefiles.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cfiles.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	// Scheduled snapshots: the server that runs the background jobs keeps
+	// OpenSearch's snapshot policy in step with the backup settings; every
+	// server reads how they go for the Health page.
+	snaps := &snapshots.Manager{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Log: log,
+		Docker: incontainer.Here() && config.DockerQuickStart(os.Getenv)}
 	chist := compliancehist.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	chist.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	nstore := notebooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
@@ -1743,6 +1750,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Cases:             cstore,
 		CaseFiles:         cfiles,
 		ComplianceHistory: chist,
+		Snapshots:         snaps,
 		Notebooks:         nstore,
 		Respond:           responder,
 		Playbooks:         &api.Playbooks{Manager: pbooks, Runs: pruns},
@@ -1785,6 +1793,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	in.jobs.Go(func() { sourceWatch.Run(ctx) })
 	srv.KnownBrowsers = r.browsers
+	snaps.Settings = func() snapshots.Settings { return srv.Running().SnapshotSettings() }
 	srv.Join = r.sharedJoin(c, certs)
 	if r.shared != nil && r.sharedContent != nil {
 		srv.ComplianceNotes = r.sharedContent.comp
@@ -1943,6 +1952,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				{ticketsOK, tlinks.Index, nil, tlinks.Replicate},
 			})
 		}},
+		// OpenSearch's snapshot policy, written by this server only.
+		{Name: "scheduled snapshots", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			snaps.Run(ctx)
+		}},
 		// The compliance evidence is recorded once a month.
 		{Name: "compliance history", Run: func(ctx context.Context) {
 			if !ready(ctx) {
@@ -2071,6 +2087,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	if r.node != nil {
 		ret.Leader = func() (bool, string) { return r.node.RunsJobs(), r.node.JobHolder() }
 		ret.Fence = r.node.Check
+		snaps.Allowed, snaps.Fence = r.node.RunsJobs, r.node.Check
 		// The scheduler, the feeds and the notifications ask before each
 		// run, download or message, so a server that lost the job lease
 		// stops at once, even before its jobs' context ends.

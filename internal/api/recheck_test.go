@@ -141,9 +141,28 @@ func TestProtectedSettings(t *testing.T) {
 		"opensearch.url": true, "opensearch.tls_skip_verify": true, "cluster.opensearch_url": true, "syslog.tls": true,
 		"intel.allow_loopback_feeds": true, "server.listen": true, "assistant.url": true, "okta.domain": true, "m365.tenant_id": true,
 		"server.public_url": false, "search.max_events": false, "authx": false, "syslog.udp": true, "syslog.tcp": true, "assistant.model": false,
+		"backup.snapshots": true, "backup.snapshot_repository": true, "backup.snapshot_keep": true, "backup.snapshot_every": true,
+		"backupx": false,
 	} {
 		if protectedSetting(key) != want {
 			t.Errorf("%s: %v", key, !want)
+		}
+	}
+}
+
+// Turning scheduled snapshots off, or changing what they keep, asks for
+// the password again, as a save from the Settings page.
+func TestBackupSettingsRecheck(t *testing.T) {
+	for body, want := range map[string]bool{
+		`{"values":{"backup.snapshots":false}}`:                   true,
+		`{"values":{"backup.snapshot_repository":"elsewhere"}}`:   true,
+		`{"values":{"backup.snapshot_keep":1}}`:                   true,
+		`{"reset":["backup.snapshot_keep"]}`:                      true,
+		`{"values":{"backup.snapshots":false},"check_only":true}`: false,
+		`{"values":{"search.max_events":500}}`:                    false,
+	} {
+		if got := settingsSaveRecheck(json.RawMessage(body)); got != want {
+			t.Errorf("%s: %v", body, got)
 		}
 	}
 }
