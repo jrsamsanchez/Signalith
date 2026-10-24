@@ -25,6 +25,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/redact"
 	"github.com/jrsamsanchez/signalith/internal/saml"
 	"github.com/jrsamsanchez/signalith/internal/secrets"
+	"github.com/jrsamsanchez/signalith/internal/snapshots"
 )
 
 // The Settings page shows the settings in Registry. Each one names its
@@ -211,6 +212,7 @@ var Sections = []Section{
 	{ID: "web", Title: "Web server", Help: "Where the web page and the API listen."},
 	{ID: "https", Title: "HTTPS", Help: "How the web page, the API, agents and syslog over TLS are kept private on the network: the certificate, and what is still accepted over plain HTTP."},
 	{ID: "opensearch", Title: "OpenSearch", Help: "Where events, findings and investigations are stored."},
+	{ID: "backup", Title: "Backups", Help: "OpenSearch snapshots of events, findings, cases and the shared settings, taken by OpenSearch on a schedule into a snapshot repository, with the oldest deleted beyond a count. The Health page shows how they go. Back up each server's own files with signalith backup too: see docs/backup.md."},
 	{ID: "search", Title: "Search", Help: "What a new search starts with, and when a quiet data source is flagged."},
 	{ID: "syslog", Title: "Syslog", Help: "Receive syslog from firewalls, switches and servers that cannot run an agent. A new install takes it over TLS only; plain syslog over UDP and TCP is unencrypted and can be forged, so it is off until an address is set."},
 	{ID: "detections", Title: "Detections", Help: "Whether detections run by themselves, how many findings one run can raise, and how soon findings of each urgency should be picked up and resolved."},
@@ -381,6 +383,31 @@ var Registry = []Setting{
 		Help: "The OpenSearch address a new server is given when it is added to these servers, when it reaches OpenSearch another way than this one does: " +
 			"each server's own Address above may be, for one, 127.0.0.1.",
 		Placeholder: "https://opensearch.example.com:9200", EmptyMeans: "this server's address", check: noSecretIn("each server keeps its own OpenSearch username and password")},
+
+	{Key: "backup.snapshots", Scope: ScopeCluster, Section: "backup", Label: "Scheduled snapshots", Type: TypeBool,
+		Help: "Has OpenSearch snapshot Signalith's indices on the schedule below, and delete the oldest snapshots beyond Snapshots to keep. " +
+			"The server that runs the background jobs keeps the snapshot policy in OpenSearch, which takes the snapshots by itself, also while Signalith is stopped. " +
+			"OpenSearch must have the repository registered, and Signalith's OpenSearch user the snapshot permissions (the signalith_snapshots role); the Health page says what is missing.",
+		Confirm: "OpenSearch stops taking snapshots on a schedule. The snapshots taken so far stay in the repository.", ConfirmWhen: "off"},
+	{Key: "backup.snapshot_repository", Scope: ScopeCluster, Section: "backup", Label: "Snapshot repository", Type: TypeText,
+		Help:        "The snapshot repository registered in OpenSearch that the snapshots go to: a shared folder (path.repo), an S3 bucket or other storage. Keep it on another disk than OpenSearch's data.",
+		Placeholder: snapshots.DefaultRepository, EmptyMeans: snapshots.DefaultRepository + ", the Docker quick start's",
+		check: func(v any) error { return firstProblem(snapshots.Settings{Repository: v.(string)}) }},
+	{Key: "backup.snapshot_every", Scope: ScopeCluster, Section: "backup", Label: "Take a snapshot", Type: TypeChoice,
+		Help:       "How often. Each snapshot only copies what changed since the one before, so frequent ones are small. The Health page turns red when the last successful snapshot is older than two of these.",
+		Choices:    []Choice{{"1d", "Every day"}, {"12h", "Every 12 hours"}, {"6h", "Every 6 hours"}, {"1h", "Every hour"}},
+		EmptyMeans: "Every day"},
+	{Key: "backup.snapshot_at", Scope: ScopeCluster, Section: "backup", Label: "Snapshot time", Type: TypeText,
+		Help:        "The time of day of the first snapshot of each day, as HH:MM in the time zone below; the others follow it. Pick a quiet hour.",
+		Placeholder: snapshots.DefaultAt, EmptyMeans: snapshots.DefaultAt,
+		check: func(v any) error { return firstProblem(snapshots.Settings{At: v.(string)}) }},
+	{Key: "backup.snapshot_timezone", Scope: ScopeCluster, Section: "backup", Label: "Snapshot time zone", Type: TypeText,
+		Help:        "The time zone of the snapshot time, as an IANA name such as Europe/Berlin or America/New_York.",
+		Placeholder: "Europe/Berlin", EmptyMeans: "UTC",
+		check: func(v any) error { return firstProblem(snapshots.Settings{TimeZone: v.(string)}) }},
+	{Key: "backup.snapshot_keep", Scope: ScopeCluster, Section: "backup", Label: "Snapshots to keep", Type: TypeNumber, Min: intp(0), Max: intp(snapshots.MaxKeep),
+		Help:        "How many snapshots OpenSearch keeps; it deletes the oldest beyond this after each new one. With one a day, 14 keep two weeks.",
+		Placeholder: "14", EmptyMeans: "14"},
 
 	{Key: "search.default_earliest", Scope: ScopeCluster, Section: "search", Label: "Default time range", Type: TypeChoice,
 		Help: "The time range the Search page starts with until someone picks another, and of a search sent without one, such as from the API.", check: checkEarliest,
@@ -1541,4 +1568,20 @@ func slaRespondHelp(urgency string) string {
 
 func slaResolveHelp(urgency string) string {
 	return "How soon a " + urgency + " finding should be resolved or closed, timed from when it was raised. 0 means no target."
+}
+
+// firstProblem is the first of s's problems, without the key it names
+// (the page shows it under the setting), or nil.
+func firstProblem(s snapshots.Settings) error {
+	p := s.Problems()
+	if len(p) == 0 {
+		return nil
+	}
+	_, why, found := strings.Cut(p[0], " ")
+	if strings.HasPrefix(p[0], "backup.snapshot_timezone:") {
+		why = strings.TrimSpace(strings.TrimPrefix(p[0], "backup.snapshot_timezone:"))
+	} else if !found {
+		why = p[0]
+	}
+	return errors.New(why)
 }

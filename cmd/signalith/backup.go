@@ -23,6 +23,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/snapshots"
 	"golang.org/x/term"
 )
 
@@ -164,14 +165,16 @@ func samePath(a, b string) bool {
 	return a == b
 }
 
-// skipInBackup reports files a backup leaves out: the state folder's lock
-// (held by the running server) and, with noKey, the master key.
+// skipInBackup reports files a backup leaves out, and a restore leaves in
+// place: the state folder's lock (held by the running server), the record
+// of the last backup (which a restore would turn back) and, with noKey,
+// the master key.
 func skipInBackup(role, rel string, noKey bool) bool {
 	rel = filepath.ToSlash(rel)
 	if role != "state" {
 		return false
 	}
-	if rel == "cluster/lock" {
+	if rel == "cluster/lock" || rel == snapshots.FilesBackupName {
 		return true
 	}
 	return noKey && masterKeyEntry(rel)
@@ -222,6 +225,15 @@ func cmdBackup(args []string) error {
 			os.Remove(keyName)
 		}
 		return err
+	}
+	// The Health page shows when this server's files were last backed up.
+	abs, aerr := filepath.Abs(name)
+	if aerr != nil {
+		abs = name
+	}
+	if err := snapshots.WriteFilesBackup(c.StateDir(), snapshots.FilesBackup{At: m.Made, File: abs, Files: m.Files, Archive: *archive, Version: version},
+		func(p string) { giveToOwnerOf(p, c.StateDir()) }); err != nil {
+		fmt.Fprintln(os.Stderr, "Could not note this backup for the Health page:", err)
 	}
 	fmt.Printf("Wrote %s: %d files from:\n", name, m.Files)
 	for _, r := range m.Roots {

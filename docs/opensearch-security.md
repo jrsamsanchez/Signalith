@@ -46,8 +46,9 @@ nothing to do, it takes a second or two.
 OpenSearch runs with its security plugin on and the demo setup skipped. Its settings are
 in `deploy/docker/opensearch/opensearch.yml`, and the users and roles in
 `deploy/docker/opensearch/security/`: `config.yml` (certificate sign-in only),
-`internal_users.yml` (empty), `roles.yml` (the `signalith_server` role) and
-`roles_mapping.yml` (Signalith's certificate gets that role). OpenSearch publishes no
+`internal_users.yml` (empty), `roles.yml` (the `signalith_server` role, and
+`signalith_snapshots` for [scheduled snapshots](backup.md#scheduled-snapshots)) and
+`roles_mapping.yml` (Signalith's certificate gets those roles). OpenSearch publishes no
 port; only Signalith reaches it, on the Docker network.
 
 To look at OpenSearch yourself, use the admin certificate from inside its container. From
@@ -454,4 +455,5 @@ On OpenSearch installed without Docker, follow OpenSearch's own upgrade steps an
   `opensearch.username` and `opensearch.password` (or `SIGNALITH_OPENSEARCH_PASSWORD`, or
   `SIGNALITH_OPENSEARCH_PASSWORD_FILE`). It sends them over `https://` only, unless the
   OpenSearch is on the same machine. Give that user the `signalith_server` role from
-  `roles.yml` rather than an admin role.
+  `roles.yml` rather than an admin role, and `signalith_snapshots` too for
+  [scheduled snapshots](backup.md#scheduled-snapshots).

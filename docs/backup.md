@@ -31,9 +31,11 @@ it no longer has.
     only restore backups you made and kept private: a backup brings back settings and
     response scripts the server runs.
 
-This page covers one server. Backing up several servers that share one OpenSearch is
-coming in a later version; until then, back up OpenSearch once and the files of each
-server.
+Signalith can have OpenSearch take the snapshots by itself, on a schedule, and shows on
+the **Health** page when the last one was taken: see
+[Scheduled snapshots](#scheduled-snapshots). Several servers that share one OpenSearch
+need one set of snapshots and a backup of each server's files; see
+[Restore drill](#restore-drill) for how to bring back one server or all of them.
 
 ## Docker quick start
 
@@ -293,19 +295,107 @@ computer, restore the backup without `-master-key`, then
 `signalith cluster import-key`, and enter the passwords again on the **Settings**,
 **Threat intel** and **Notifications** pages.
 
-## Schedule backups
+## Scheduled snapshots
 
-A nightly backup with cron on Linux, keeping two weeks of zips (`sudo crontab -e`; use
+Signalith can keep the OpenSearch half of the backup by itself: turn on **Scheduled
+snapshots** in **Settings > Server > Backups** and name a snapshot repository. The
+server that runs the background jobs then keeps an OpenSearch
+[snapshot management](https://opensearch.org/docs/latest/tuning-your-cluster/availability-and-recovery/snapshots/snapshot-management/)
+policy named `signalith-daily` (`<opensearch.index_prefix>-daily`), and OpenSearch
+takes the snapshots and deletes the oldest by itself, also while Signalith is stopped.
+It works on OpenSearch 2.17 and 3.x.
+
+| Setting | Default | What it does |
+| --- | --- | --- |
+| Scheduled snapshots (`backup.snapshots`) | off | Turns them on. Turned off, the policy is deleted and the snapshots taken so far stay |
+| Snapshot repository (`backup.snapshot_repository`) | `signalith` | A repository registered in OpenSearch: a shared folder, an S3 bucket or other storage |
+| Take a snapshot (`backup.snapshot_every`) | every day | Every day, 12 hours, 6 hours or hour |
+| Snapshot time (`backup.snapshot_at`) | `02:30` | The time of day of the first snapshot of each day, at a quiet hour |
+| Snapshot time zone (`backup.snapshot_timezone`) | UTC | An IANA name such as `Europe/Berlin` |
+| Snapshots to keep (`backup.snapshot_keep`) | 14 | OpenSearch deletes the oldest beyond this after each new snapshot |
+
+Every server shares these settings. Each snapshot holds Signalith's indices
+(`signalith-*`, `signalith_*` and the tenants' `signalith.t.*`), not OpenSearch's own
+settings or security configuration (`include_global_state: false`), and only copies
+what changed since the one before. The policy is Signalith's: a change made to it in
+OpenSearch is put back within a minute, so change the settings instead.
+
+The **Backups** card of the **Health** page shows the last snapshot and the last
+successful one, when the next is due and how many are kept, with the last
+`signalith backup` of that server's own files. It turns red when the last successful
+snapshot is older than two scheduled periods (two days, with one a day), when
+OpenSearch has no repository by that name, or when it does not let Signalith manage
+snapshots, and says what to do.
+
+### What OpenSearch needs
+
+**A repository**, registered once with OpenSearch's admin account:
+
+- In the Docker quick start, the `opensearch-snapshots` volume is ready; register it as
+  the repository `signalith`:
+
+    ```sh
+    docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh register
+    ```
+
+- On your own OpenSearch, register a folder named in `path.repo` (see
+  [OpenSearch snapshots](#opensearch-snapshots)) or a bucket, by the name you give in
+  the settings:
+
+    ```sh
+    $CURL -X PUT "$OS/_snapshot/signalith" -d '{"type":"fs","settings":{"location":"/var/backups/opensearch"}}'
+    ```
+
+**Permissions** for Signalith's own OpenSearch user. OpenSearch runs the policy as the
+user that wrote it, so Signalith needs these cluster permissions itself:
+
+- `cluster:admin/opensearch/snapshot_management/*` to keep the policy and read how it
+  runs;
+- `cluster:admin/snapshot/*` to take, list and delete the snapshots;
+- `cluster:admin/repository/get` to check the repository.
+
+The Docker quick start, the Helm chart and the OpenSearch the Windows installer sets up (`signalith opensearch install`)
+give them with the role `signalith_snapshots` (in
+`deploy/docker/opensearch/security/roles.yml`), mapped to Signalith's certificates in
+`roles_mapping.yml`; an update loads it with the next
+`docker compose -f deploy/docker/docker-compose.yml up -d`. On an OpenSearch with your
+own security configuration, add the same role:
+
+```yaml
+signalith_snapshots:
+  cluster_permissions:
+    - "cluster:admin/opensearch/snapshot_management/*"
+    - "cluster:admin/snapshot/*"
+    - "cluster:admin/repository/get"
+```
+
+and map it to Signalith's user or certificate (in `roles_mapping.yml`, or with
+`PUT _plugins/_security/api/rolesmapping/signalith_snapshots`). OpenSearch's snapshot
+permissions are not limited to one repository: with them, Signalith could delete any
+repository's snapshots. On an OpenSearch you share with other applications, you may
+prefer to leave the role out and take snapshots yourself.
+
+OpenSearch's snapshot management is part of its index-management plugin, which every
+OpenSearch download has; a minimal build without it gets a red item that says so.
+
+### Copies elsewhere
+
+A snapshot in a folder on the same disk as OpenSearch does not survive the disk. Use a
+repository on another computer (an NFS share, an S3 bucket), or copy the folder off
+regularly, such as the quick start's volume with
+`docker compose -f deploy/docker/docker-compose.yml cp opensearch:/usr/share/opensearch/snapshots ./opensearch-snapshots`.
+
+## Schedule backups of each server's files
+
+Scheduled snapshots keep OpenSearch's half. Each server's own files still need
+`signalith backup`, and keep changing less often: after an update, a new certificate
+or a change of settings is enough, plus a schedule as a safety net. A nightly backup
+with cron on Linux, keeping two weeks of zips (`sudo crontab -e`; use
 `/usr/local/bin/signalith` for an install by hand):
 
 ```sh
 15 2 * * * cd /var/backups/signalith && /usr/bin/signalith backup >/dev/null && find . -name 'signalith-backup-*.zip' -mtime +14 -delete
 ```
-
-Add the snapshot command above to the same script, and delete old snapshots with
-`$CURL -X DELETE "$OS/_snapshot/signalith/<name>"`. OpenSearch's
-[snapshot management](https://opensearch.org/docs/latest/tuning-your-cluster/availability-and-recovery/snapshots/snapshot-management/)
-can also take and delete snapshots on a schedule by itself.
 
 On Windows, a scheduled task as SYSTEM, from PowerShell as Administrator:
 
@@ -313,8 +403,108 @@ On Windows, a scheduled task as SYSTEM, from PowerShell as Administrator:
 schtasks /Create /TN "Signalith backup" /RU SYSTEM /SC DAILY /ST 02:15 /TR "cmd /c cd /d C:\Backups && signalith backup"
 ```
 
-For the Docker quick start, schedule the two commands under
-[While Signalith runs](#while-signalith-runs) the same way.
+For the Docker quick start, schedule the `signalith backup` commands under
+[While Signalith runs](#while-signalith-runs) the same way. Each backup is noted in the
+state folder (`last-backup.json`), and the **Backups** card shows the last one.
+
+Without scheduled snapshots, add the snapshot command of
+[OpenSearch snapshots](#opensearch-snapshots) to the same script, and delete old
+snapshots with `$CURL -X DELETE "$OS/_snapshot/signalith/<name>"`.
+
+## Restore drill
+
+Practise a restore before you need one, once a quarter or after a big change, on spare
+computers so the real ones keep running: a backup that was never restored is a hope.
+The same steps restore for real. You need the same version of Signalith as the backup
+(or newer), the snapshots, each server's `signalith backup` zip and its master key file.
+
+**Practise on a copy.** Give a spare OpenSearch the same repository, read-only, so the
+drill cannot change or delete a snapshot (for a folder, mount the share there too and
+name it in `path.repo`):
+
+```sh
+$CURL -X PUT "$OS/_snapshot/signalith" -d '{"type":"fs","settings":{"location":"/var/backups/opensearch","readonly":true}}'
+$CURL "$OS/_cat/snapshots/signalith?v&s=start_epoch"
+```
+
+The last line lists the snapshots, oldest first; pick the newest `SUCCESS` one.
+Scheduled snapshots are named `signalith-daily-<date>-<letters>`.
+
+### One server
+
+1. Install Signalith on the spare computer and stop it (or, in the Docker quick start,
+   `up -d` and stop `signalith`).
+2. Put its files back with `signalith restore -master-key <key file> <zip>`, as in
+   [Restoring](#restoring) (or [While Signalith runs](#while-signalith-runs) in Docker).
+3. Restore the snapshot over Signalith's indices: close them, restore, open the rest.
+   In Docker, `sh snapshot.sh restore <name>` does the three; otherwise:
+
+    ```sh
+    $CURL -X POST "$OS/signalith*/_close?expand_wildcards=open"
+    $CURL -X POST "$OS/_snapshot/signalith/<name>/_restore?wait_for_completion=true" \
+      -d '{"indices":"signalith*","include_global_state":false}'
+    $CURL -X POST "$OS/signalith*/_open?expand_wildcards=closed"
+    ```
+
+4. Start Signalith and accept the restored shared settings:
+
+    ```sh
+    sudo systemctl start signalith
+    sudo signalith cluster accept-restore -yes
+    ```
+
+5. Check, and write down how long it took:
+    - you can sign in with an account from the backup;
+    - a search over the day before the snapshot finds events, and **Findings** and
+      **Cases** show the old ones;
+    - the **Health** page has no red items, and **Backups** shows the snapshots;
+    - an agent sends to the restored server (point one at it for the drill).
+
+A drill on a copy ends here: turn the spare computer off, or wipe it. For real, the
+restored server is the server; with scheduled snapshots on in the restored settings,
+it writes the policy again within a minute and the snapshots go on.
+
+### Several servers sharing one OpenSearch
+
+The servers share one OpenSearch, so there is one set of snapshots, and each server has
+its own files and its own backup zip: its name, identity, keys and certificates. Never
+restore one server's zip onto another; two servers with one identity get in each
+other's way (see [new-identity](cluster-cli.md#new-identity) if it happened).
+
+1. **Stop every Signalith server**: `sudo systemctl stop signalith`, or
+   `Stop-Service Signalith`, on each. Nothing may write to Signalith's indices while
+   they are restored.
+2. **Pause the snapshots**, so none starts while the indices are closed:
+
+    ```sh
+    $CURL -X POST "$OS/_plugins/_sm/policies/signalith-daily/_stop"
+    ```
+
+    Signalith starts the policy again once a server runs the background jobs.
+3. **Restore the snapshot** once, from any computer that reaches OpenSearch, with the
+   three commands of [One server](#one-server), step 3.
+4. **Put back the files of each server that lost them**, on that server, with its own
+   zip and master key file: `signalith restore -master-key <its key file> <its zip>`.
+   A server whose files are intact needs nothing. A server you rebuild from scratch
+   instead joins again with a join token, as when it was added (see
+   [Servers](servers.md)).
+5. **Start the servers**, then on any one of them:
+
+    ```sh
+    sudo signalith cluster accept-restore -yes
+    ```
+
+    Each server remembers how far the shared settings had got, and refuses older ones
+    as changed behind its back until this says the restore was on purpose; every
+    server accepts them within seconds (see
+    [accept-restore](cluster-cli.md#accept-restore)).
+6. **Check**, as for one server, and on the **Servers** page that every server is
+   there, one of them runs the background jobs, and no server reports shared settings
+   it refuses. **Backups** on the **Health** page shows the policy running again.
+
+For a drill on copies, use spare computers for the servers too, each restored from its
+own zip, and pause nothing on the real cluster: the read-only repository keeps the real
+snapshots safe.
 
 ## The master key
 

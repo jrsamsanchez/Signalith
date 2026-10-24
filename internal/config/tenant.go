@@ -29,7 +29,8 @@ func (c *Config) TenantDir(id string) string { return tenants.Dir(c.StateDir(), 
 //
 //   - sharedSections are the server's: how it listens, reaches OpenSearch
 //     (but for the index prefix, which is the tenant's), searches, signs
-//     people in, talks to an AI model, scans and joins a cluster. A
+//     people in, talks to an AI model, scans, joins a cluster and takes
+//     its scheduled snapshots, which hold every tenant's indices. A
 //     tenant's config shares them with the default tenant's, read only.
 //   - tenantSections are the tenant's own: its folders, retention, intel
 //     feeds, notifications, response actions, playbooks and ticketing
@@ -37,7 +38,7 @@ func (c *Config) TenantDir(id string) string { return tenants.Dir(c.StateDir(), 
 //     them, and copies what they hold by reference, so no change to one
 //     tenant's reaches another's.
 var (
-	sharedSections = []string{"Server", "OpenSearch", "Search", "Auth", "Assistant", "Vulns", "Cluster", "Demo"}
+	sharedSections = []string{"Server", "OpenSearch", "Search", "Auth", "Assistant", "Vulns", "Cluster", "Demo", "Backup"}
 	tenantSections = []string{"Retention", "Ingest", "Syslog", "Detections", "Lookups", "Dashboards", "Intel", "M365", "Okta", "Notify", "Response", "Playbooks", "Ticketing"}
 )
 
