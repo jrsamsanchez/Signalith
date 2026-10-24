@@ -1,0 +1,2 @@
+go test fuzz v1
+string("v1|ack|f1|00|a46754ba02f531cdf569ffd13d2b2a42")
