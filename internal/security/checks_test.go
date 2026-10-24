@@ -521,6 +521,25 @@ func TestClusterCACertificate(t *testing.T) {
 				}
 			}},
 	})
+	lost := func(days int) func(f *Facts) {
+		return func(f *Facts) {
+			f.TLS.ClusterCA, f.TLS.ClusterKeyLost, f.TLS.Leaf.NotAfter = true, true, now.AddDate(0, 0, days)
+		}
+	}
+	lostFix := func(t *testing.T, c *Check) {
+		if c.Fix == nil || c.Fix.Docs == nil || c.Fix.Docs.File != "cluster-cli.md" || c.Fix.Docs.Anchor != "reset-key" ||
+			len(c.Fix.Steps) != 2 || !strings.Contains(c.Fix.Steps[0], "new certificate authority to trust") || len(c.Fix.Commands) != 0 {
+			t.Errorf("fix %+v", c.Fix)
+		}
+	}
+	runCases(t, "transit.certificate", []checkCase{
+		{name: "key lost", set: lost(300), state: Attention,
+			line: "The cluster's certificate authority key was lost; HTTPS certificates expire on 9 Aug 2027 and cannot be renewed.", fix: lostFix},
+		{name: "key lost, expiring", set: lost(20), state: Attention,
+			line: "The cluster's certificate authority key was lost; HTTPS certificates expire on 2 Nov 2026 and cannot be renewed.", fix: lostFix},
+		{name: "key lost, expired", set: lost(-1), state: Risk,
+			line: "The certificate expired on 12 Oct 2026. Agents hold their events until it's replaced, and browsers warn on every visit.", fix: lostFix},
+	})
 }
 
 func TestAgentPort(t *testing.T) {

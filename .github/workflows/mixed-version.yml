@@ -19,7 +19,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: mixed-version-${{ github.event.pull_request.number || github.sha }}
+  group: mixed-version-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:

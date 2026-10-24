@@ -313,7 +313,15 @@ func TestAgentStopsCollectorsWhileTokenIsRefused(t *testing.T) {
 		defer fs.mu.Unlock()
 		return len(fs.asks) >= asked+4
 	})
-	if h, _ := os.ReadFile(p.HealthFile()); !strings.Contains(string(h), "fluentbit=off") || !strings.Contains(string(h), "osquery=off") {
+	// On Windows a read can fail while the agent renames a new health
+	// file into place, so wait for a read that works.
+	var h []byte
+	waitFor(t, "the health file to read", func() bool {
+		var err error
+		h, err = os.ReadFile(p.HealthFile())
+		return err == nil
+	})
+	if !strings.Contains(string(h), "fluentbit=off") || !strings.Contains(string(h), "osquery=off") {
 		t.Errorf("a 503 started the collectors again: %q", h)
 	}
 	fs.mu.Lock()

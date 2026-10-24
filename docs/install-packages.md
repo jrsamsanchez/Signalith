@@ -2,16 +2,16 @@
 
 Each [release](https://github.com/jrsamsanchez/Signalith/releases) has ready-made
 packages that install Signalith as a service in one step. Downloads for the current
-release, 0.3.1 (newer ones are on the
+release, 0.3.2 (newer ones are on the
 [latest release](https://github.com/jrsamsanchez/Signalith/releases/latest) page):
 
 | System | Download |
 | --- | --- |
-| Debian, Ubuntu | [amd64 .deb](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.1/signalith_0.3.1-1_amd64.deb), [arm64 .deb](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.1/signalith_0.3.1-1_arm64.deb) |
-| Red Hat, Rocky, Alma, Fedora, SUSE | [x86_64 .rpm](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.1/signalith-0.3.1-1.x86_64.rpm), [aarch64 .rpm](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.1/signalith-0.3.1-1.aarch64.rpm) |
-| Windows 10, 11, Server 2019 and later (64-bit) | [signalith-0.3.1-x64.msi](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.1/signalith-0.3.1-x64.msi) |
-| Docker | `ghcr.io/jrsamsanchez/signalith:0.3.1` |
-| Checksums | [SHA256SUMS](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.1/SHA256SUMS) ([check a download](#check-a-download)) |
+| Debian, Ubuntu | [amd64 .deb](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.2/signalith_0.3.2-1_amd64.deb), [arm64 .deb](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.2/signalith_0.3.2-1_arm64.deb) |
+| Red Hat, Rocky, Alma, Fedora, SUSE | [x86_64 .rpm](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.2/signalith-0.3.2-1.x86_64.rpm), [aarch64 .rpm](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.2/signalith-0.3.2-1.aarch64.rpm) |
+| Windows 10, 11, Server 2019 and later (64-bit) | [signalith-0.3.2-x64.msi](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.2/signalith-0.3.2-x64.msi) |
+| Docker | `ghcr.io/jrsamsanchez/signalith:0.3.2` |
+| Checksums | [SHA256SUMS](https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.2/SHA256SUMS) ([check a download](#check-a-download)) |
 
 On Linux, the [apt](#debian-and-ubuntu) and [dnf](#red-hat-rocky-alma-fedora-and-suse)
 repositories are easier than a download: they install the latest release and upgrade
@@ -50,7 +50,7 @@ sudo signalith initial-password
 Or install a downloaded package (upgrades are then by hand, with the next one):
 
 ```sh
-sudo apt install ./signalith_0.3.1-1_amd64.deb
+sudo apt install ./signalith_0.3.2-1_amd64.deb
 ```
 
 ## Red Hat, Rocky, Alma, Fedora and SUSE
@@ -70,7 +70,7 @@ On SUSE: `sudo zypper addrepo https://signalith.io/rpm/signalith.repo`, then
 Or install a downloaded package (upgrades are then by hand, with the next one):
 
 ```sh
-sudo dnf install ./signalith-0.3.1-1.x86_64.rpm
+sudo dnf install ./signalith-0.3.2-1.x86_64.rpm
 ```
 
 ### What the Linux packages do
@@ -169,14 +169,14 @@ protected your PC". [Check the download](#check-a-download) first, then click
 For a silent install, for example from a deployment tool:
 
 ```powershell
-msiexec /i signalith-0.3.1-x64.msi /qn
+msiexec /i signalith-0.3.2-x64.msi /qn
 ```
 
 To use an OpenSearch you already run instead of installing one, give its address (then
 [secure it](opensearch-security.md) and give Signalith a certificate to sign in with):
 
 ```powershell
-msiexec /i signalith-0.3.1-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
+msiexec /i signalith-0.3.2-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
 ```
 
 ### What the Windows installer does
@@ -265,7 +265,7 @@ OpenSearch's own log is `C:\ProgramData\SignalithOpenSearch\logs\signalith.log`.
 Each release is also a container image for amd64 and arm64:
 
 ```sh
-docker pull ghcr.io/jrsamsanchez/signalith:0.3.1
+docker pull ghcr.io/jrsamsanchez/signalith:0.3.2
 ```
 
 The [Docker quick start](getting-started.md#docker-quick-start) runs this image with
@@ -300,7 +300,7 @@ cosign verify ghcr.io/jrsamsanchez/signalith:0.3.2 \
 
 ## Supported upgrade paths
 
-The released versions are 0.1.0, 0.2.0, 0.3.0 and 0.3.1.
+The released versions are 0.1.0, 0.2.0, 0.3.0, 0.3.1 and 0.3.2.
 
 ### What the project tests
 
@@ -310,11 +310,11 @@ The released versions are 0.1.0, 0.2.0, 0.3.0 and 0.3.1.
 | Mixed versions (`mixed-version.yml`) | On every push to `main`, and on pull requests that change code | The release before the commit, built from its tag, and the commit, on two servers sharing one OpenSearch 3.9.0: a [rolling upgrade](servers.md#rolling-upgrade-one-server-at-a-time) of the pair, each version's pages against the other's API, [upgrade-check](cluster-cli.md#upgrade-check) on a pair and on a single server, and detections spreading once both are upgraded |
 | Rolling upgrade under load (`nightly-load.yml`) | Every night | Two servers of one build to a newer build of the same code, one at a time, while agents send and people work ([Performance](performance.md), scenario S7) |
 
-So the tested path is **from the latest release to the next one**, today 0.3.1 to the next release.
+So the tested path is **from the latest release to the next one**, today 0.3.2 to the next release.
 
 Not tested:
 
-- Upgrading from two or more releases back, such as 0.1.0 or 0.2.0 straight to 0.3.1.
+- Upgrading from two or more releases back, such as 0.1.0 or 0.2.0 straight to 0.3.2.
 - Upgrading the [Docker quick start](getting-started.md#docker-quick-start) or a
   [Helm](kubernetes.md#upgrading) install from one release to the next. The Helm test
   upgrades a release to the same chart, to check that the secrets are kept.
@@ -380,8 +380,8 @@ what you downloaded is exactly what it built.
 **With the GitHub CLI** (any file from the release, or the image):
 
 ```sh
-gh attestation verify signalith_0.3.1-1_amd64.deb --repo jrsamsanchez/Signalith
-gh attestation verify oci://ghcr.io/jrsamsanchez/signalith:0.3.1 --repo jrsamsanchez/Signalith
+gh attestation verify signalith_0.3.2-1_amd64.deb --repo jrsamsanchez/Signalith
+gh attestation verify oci://ghcr.io/jrsamsanchez/signalith:0.3.2 --repo jrsamsanchez/Signalith
 ```
 
 **With the checksums**: download `SHA256SUMS` and its signatures from the release, then
@@ -399,7 +399,7 @@ gpg --verify SHA256SUMS.asc SHA256SUMS
 sha256sum --check --ignore-missing SHA256SUMS
 ```
 
-On Windows, `Get-FileHash signalith-0.3.1-x64.msi` prints the SHA-256 to compare with the
+On Windows, `Get-FileHash signalith-0.3.2-x64.msi` prints the SHA-256 to compare with the
 line in `SHA256SUMS`.
 
 The `.rpm` packages are signed with the same GPG key, so `dnf` and `rpm -K` can check

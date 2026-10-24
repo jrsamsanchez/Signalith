@@ -133,12 +133,16 @@ type TLSFacts struct {
 	// Auto mode.
 	// ClusterCA is true when the certificate authority is the one all
 	// the cluster's servers share: it cannot be changed here yet.
-	ClusterCA  bool
-	CA         *tlsauto.CAInfo
-	Next       *tlsauto.CAInfo
-	Previous   *tlsauto.CAInfo
-	Refusals   []tlsauto.Refusal // runtime only
-	ScopeSetup string            // server.tls.ca_scope
+	ClusterCA bool
+	// ClusterKeyLost is true when the cluster's certificate authority key
+	// was lost (signalith cluster reset-key emptied it), so the
+	// certificate cannot be renewed (runtime only).
+	ClusterKeyLost bool
+	CA             *tlsauto.CAInfo
+	Next           *tlsauto.CAInfo
+	Previous       *tlsauto.CAInfo
+	Refusals       []tlsauto.Refusal // runtime only
+	ScopeSetup     string            // server.tls.ca_scope
 	// WouldCover lists the names a CA made now would cover, by scope.
 	WouldCover map[string][]string
 	// Seen are the names people used to reach this server in the last

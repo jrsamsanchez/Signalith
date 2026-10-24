@@ -19,6 +19,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterparsers"
 	"github.com/jrsamsanchez/signalith/internal/clusterpki"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/reportkeys"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
@@ -66,6 +67,8 @@ func openShared(c *config.Config, node *cluster.Node, log *slog.Logger) (*shared
 	ct.comp.Writable = rt.Writable
 	// Custom parsers are changed by a member only.
 	ct.parsers.Writable = rt.Writable
+	// Report keys are recorded by a member only.
+	ct.reportKeys.Writable = rt.Writable
 	ct.rt.Store(rt)
 	ct.users.follow(rt)
 	return rt, ct
@@ -99,6 +102,9 @@ type sharedDocs struct {
 	comp *clustercomp.Notes
 	// parsers holds the custom parsers (see sharedparsers.go).
 	parsers *clusterparsers.Parsers
+	// reportKeys holds the public keys that signed case reports (see
+	// sharedreportkeys.go).
+	reportKeys *reportkeys.Shared
 }
 
 // newSharedDocs returns the documents of a process, with auth as the
@@ -106,7 +112,7 @@ type sharedDocs struct {
 func newSharedDocs(auth *clusterauth.Docs) sharedDocs {
 	d := sharedDocs{docs: clustercfg.NewDocs(), auth: auth, tls: newSharedTLS(), join: clusterjoin.New(nil), reports: clustercfg.NewReports(),
 		lib: clusterlib.NewDocs(), osca: clusterpki.New(), comp: clustercomp.New(nil),
-		parsers: clusterparsers.New(nil)}
+		parsers: clusterparsers.New(nil), reportKeys: reportkeys.NewShared(nil)}
 	// The users and directory importers and the auth settings of
 	// signalith.yaml reach the users' documents.
 	d.docs.UseAuth(auth)
@@ -133,6 +139,7 @@ func (d sharedDocs) trackers() []sharedTracker {
 		d.osca,
 		d.comp,
 		d.parsers,
+		d.reportKeys,
 		// Append a new shared collection here.
 	}
 }
@@ -171,6 +178,8 @@ func sharedImporters(d sharedDocs, f clustercfg.Files) []shared.Importer {
 		[]shared.Importer{complianceImporter(d.comp, f)},
 		// The custom parsers (sharedparsers.go).
 		[]shared.Importer{parsersImporter(d.parsers, f)},
+		// The case report keys (sharedreportkeys.go).
+		[]shared.Importer{reportKeysImporter(d.reportKeys, f)},
 		// Append a new shared feature's importers here.
 	)
 }

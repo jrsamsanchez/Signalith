@@ -352,6 +352,9 @@ type TLSStatus struct {
 	AdoptError    string `json:"adopt_error,omitempty"`
 	// LeafExpires is when the certificate expires.
 	LeafExpires *time.Time `json:"leaf_expires,omitempty"`
+	// CAKeyLost is true when the cluster's certificate authority key was
+	// lost (see clustertls.KeyLost): the certificate cannot be renewed.
+	CAKeyLost bool `json:"ca_key_lost,omitempty"`
 	// LeafCASHA256 is the fingerprint of the certificate authority that
 	// signed the certificate served now ("" when it is not CASHA256's).
 	// NextCASHA256 is the cluster's next certificate authority, which the
