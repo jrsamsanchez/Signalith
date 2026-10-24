@@ -29,7 +29,7 @@ const (
 // publicRoutes work without signing in. Ingest checks its own token; the
 // CA certificate is public. Signing in to the public demo needs nothing
 // (demoRoute), and demo mode keeps only demoPublicRoutes of the rest.
-var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem", demoRoute}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, agentManagedRoutes, hecRoutes, ssoPublicRoutes, samlPublicRoutes, scimPublicRoutes, passkeyPublicRoutes, chatPublicRoutes)
+var publicRoutes = slices.Concat([]string{"POST /api/ingest", otlpLogsRoute, "POST /api/login", "POST /api/logout", "GET /api/tls/ca.pem", demoRoute}, osqueryRoutes, joinPublicRoutes, installRoutes, sensorPublicRoutes, agentManagedRoutes, hecRoutes, ssoPublicRoutes, samlPublicRoutes, scimPublicRoutes, passkeyPublicRoutes, chatPublicRoutes, metricsPublicRoutes)
 
 // routeLogin adds the routes that work without signing in: the sign-in
 // page, its static assets, and sign-in and sign-out.
