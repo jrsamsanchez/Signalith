@@ -122,8 +122,10 @@ func (p *Pipeline) Admit(ctx context.Context, wait time.Duration, sender string)
 	if s.held < s.n {
 		s.take(key)
 		l.slotsMu.Unlock()
+		pm.slotWait.Observe(0)
 		return release, nil
 	}
+	waitStart := time.Now()
 	w := &slotWaiter{key: key, granted: make(chan struct{})}
 	s.waiting = append(s.waiting, w)
 	s.waitingBy[key.tenant]++
@@ -134,9 +136,11 @@ func (p *Pipeline) Admit(ctx context.Context, wait time.Duration, sender string)
 	var err error
 	select {
 	case <-w.granted:
+		pm.slotWait.Observe(time.Since(waitStart).Seconds())
 		return release, nil
 	case <-t.C:
 		err = ErrBusy
+		pm.slotTimeouts.Add(1)
 	case <-ctx.Done():
 		err = ctx.Err()
 	}

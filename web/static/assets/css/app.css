@@ -6486,3 +6486,15 @@ button.sl-step__box[aria-pressed="true"] { box-shadow: inset 0 3px 0 var(--c), i
   #page-notebooks .nb-editor__bar .spacer { display: none; }
   #page-notebooks .nb-editor__bar { justify-content: flex-end; }
 }
+
+/* Settings > Metrics */
+#page-metrics .mt-card { max-width: 760px; }
+#page-metrics .mt-body { display: grid; gap: 16px; }
+#page-metrics .mt-row { display: grid; gap: 6px; }
+#page-metrics .mt-copy { display: flex; gap: 8px; min-width: 0; }
+#page-metrics .mt-copy .input { flex: 1; min-width: 0; font-size: var(--fs-sm); }
+#page-metrics .mt-copy .btn { flex: none; }
+#page-metrics .mt-help { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; margin: 0; }
+#page-metrics .mt-warn { display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-sm); color: var(--warning); line-height: 1.45; margin: 0; }
+#page-metrics .mt-snippet { margin: 0; padding: 10px 12px; border-radius: var(--r-md); background: var(--sunken); font-size: var(--fs-sm); overflow-x: auto; white-space: pre; }
+#page-metrics .mt-actions { display: flex; gap: 8px; flex-wrap: wrap; }

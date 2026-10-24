@@ -43,7 +43,7 @@ var (
 	// too.
 	platformResources = []string{
 		"settings", "cluster", "security", "tls", "auth", "audit", "requests", "tenants",
-		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat", "summaries",
+		"api-tokens", "compliance", "vulns", "sensor", "sensors", "parsers", "chat", "summaries", "metrics",
 	}
 	// providerManaged are tenant routes that make the server send
 	// requests to addresses a user gives (feeds, webhooks, mail servers,

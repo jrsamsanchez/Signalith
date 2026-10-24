@@ -37,7 +37,7 @@ func (c *Config) TenantDir(id string) string { return tenants.Dir(c.StateDir(), 
 //     them, and copies what they hold by reference, so no change to one
 //     tenant's reaches another's.
 var (
-	sharedSections = []string{"Server", "OpenSearch", "Search", "Auth", "Assistant", "Vulns", "Cluster", "Demo"}
+	sharedSections = []string{"Server", "OpenSearch", "Search", "Auth", "Assistant", "Vulns", "Cluster", "Demo", "Metrics"}
 	tenantSections = []string{"Retention", "Ingest", "Syslog", "Detections", "Lookups", "Dashboards", "Intel", "M365", "Okta", "Notify", "Response", "Playbooks", "Ticketing"}
 )
 
