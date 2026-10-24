@@ -179,6 +179,7 @@ nav:
       - Backup and restore: backup.md
       - Cold storage: cold-storage.md
       - Audit: audit.md
+      - Metrics (Prometheus): metrics.md
   - Security:
       - Security checks: security.md
       - Threat model: threat-model.md

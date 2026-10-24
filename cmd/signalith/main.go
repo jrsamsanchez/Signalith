@@ -43,6 +43,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/chatops"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
+	"github.com/jrsamsanchez/signalith/internal/compliancehist"
 	"github.com/jrsamsanchez/signalith/internal/config"
 	"github.com/jrsamsanchez/signalith/internal/content"
 	"github.com/jrsamsanchez/signalith/internal/dashboards"
@@ -1491,6 +1492,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	cstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	cfiles := casefiles.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	cfiles.Replicas = c.OpenSearch.Replicas.IndexSettings()
+	chist := compliancehist.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
+	chist.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	nstore := notebooks.NewOpenSearch(cl, c.OpenSearch.IndexPrefix)
 	nstore.Replicas = c.OpenSearch.Replicas.IndexSettings()
 	// Hosts running osquery, managed from the Endpoints page. Each server
@@ -1747,6 +1750,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Dashboards:        boards,
 		Cases:             cstore,
 		CaseFiles:         cfiles,
+		ComplianceHistory: chist,
 		Notebooks:         nstore,
 		Respond:           responder,
 		Playbooks:         &api.Playbooks{Manager: pbooks, Runs: pruns},
@@ -1946,6 +1950,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				{chatOK, chats.Index, nil, chats.Replicate},
 				{ticketsOK, tlinks.Index, nil, tlinks.Replicate},
 			})
+		}},
+		// The compliance evidence is recorded once a month.
+		{Name: "compliance history", Run: func(ctx context.Context) {
+			if !ready(ctx) {
+				return
+			}
+			srv.RunComplianceHistory(ctx)
 		}},
 		{Name: "summaries", Run: func(ctx context.Context) {
 			if !ready(ctx) {

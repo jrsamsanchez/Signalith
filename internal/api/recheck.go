@@ -217,7 +217,7 @@ func (s *Server) handleRecheck(w http.ResponseWriter, r *http.Request) {
 // server.tls covers server.tls_cert).
 var protectedSettings = []string{"auth", "server.tls", "server.listen", "server.trusted_proxies", "server.client_header",
 	"server.shared_addresses", "server.proxy_protocol", "opensearch", "cluster.opensearch_url", "syslog.allow",
-	"syslog.tls", "syslog.udp", "syslog.tcp", "syslog.proxy_protocol", "intel.allow_loopback_feeds", "assistant.url", "assistant.mask_fields", "okta", "m365"}
+	"syslog.tls", "syslog.udp", "syslog.tcp", "syslog.proxy_protocol", "intel.allow_loopback_feeds", "assistant.url", "assistant.mask_fields", "okta", "m365", "metrics"}
 
 func protectedSetting(key string) bool {
 	for _, p := range protectedSettings {

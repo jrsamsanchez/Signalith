@@ -368,6 +368,9 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	budget := namesBudget(p.servers())
 	full := map[string]bool{}
 	urlQuery := p.URLQuery()
+	// intakes is each document's intake, for the metrics (-1: the sample
+	// data, which is not counted).
+	intakes := make([]int, len(events))
 	for i := range events {
 		ev := &events[i]
 		if ev.Fields == nil {
@@ -386,7 +389,9 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			}
 			o.stamp(ev.Fields)
 			setSource(ev.Fields, o.Intake)
+			intakes[i] = intakeIndex(o.Intake)
 		} else {
+			intakes[i] = -1
 			ev.Origin.stamp(ev.Fields)
 		}
 		if ev.Time.IsZero() {
@@ -418,14 +423,19 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		}
 		docs = append(docs, doc)
 	}
+	start := time.Now()
 	errs, err := p.Store.Bulk(ctx, docs)
+	observeBulk(time.Since(start), err)
 	if err != nil {
 		p.stats.Failed.Add(int64(len(docs)))
+		countFailed(intakes)
 		return nil, err
 	}
 	if retry, pos, removed := retryable(errs, events, docs); len(retry) > 0 {
 		errs = keepOthers(errs, pos)
+		start := time.Now()
 		again, err := p.Store.Bulk(ctx, retry)
+		observeBulk(time.Since(start), err)
 		if err != nil {
 			again = make([]store.BulkItemError, len(retry))
 			for i, d := range retry {
@@ -442,6 +452,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	errs, res.Duplicates = store.WithoutConflicts(errs, docs)
 	res.Rejected = len(errs)
 	res.Indexed = len(docs) - len(errs)
+	countWritten(intakes, errs)
 	res.Sensor = storedSensor(events, errs, recv)
 	limited := 0
 	for _, e := range errs {
