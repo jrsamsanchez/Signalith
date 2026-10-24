@@ -17,6 +17,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assets"
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/casetemplates"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/query"
@@ -186,10 +187,28 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 		Severity    string   `json:"severity"`
 		Owner       string   `json:"owner"`
 		Findings    []string `json:"findings"`
+		// Template fills the severity and description when they are not
+		// given, and adds the template's tasks.
+		Template string `json:"template"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+	var tmpl *casetemplates.Template
+	if req.Template != "" {
+		t, err := s.findCaseTemplate(r, req.Template)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		tmpl = &t
+		if req.Severity == "" {
+			req.Severity = t.Severity
+		}
+		if strings.TrimSpace(req.Description) == "" {
+			req.Description = t.Description
+		}
 	}
 	if req.Severity == "" {
 		req.Severity = "medium"
@@ -224,6 +243,13 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	}
 	if c.Owner != "" {
 		c.Status = findings.StatusInProgress
+	}
+	if tmpl != nil {
+		c.Template = tmpl.ID
+		if _, err := c.AddTasks(tmpl.Tasks, user, now); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 	}
 	if err := s.createCase(r.Context(), c, now); err != nil {
 		writeError(w, http.StatusBadGateway, err)
@@ -275,8 +301,16 @@ func (s *Server) handleGetCase(w http.ResponseWriter, r *http.Request) {
 			linked = append(linked, f)
 		}
 	}
+	// Evidence that no longer matches the hash taken when it was added
+	// was changed outside Signalith.
+	changed := []string{}
+	for _, e := range c.Entries {
+		if !cases.EvidenceIntact(e) {
+			changed = append(changed, e.ID)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"case": c, "findings": linked, "missing_findings": missing,
-		"entity_context": s.entityContext(c.Entities)})
+		"entity_context": s.entityContext(c.Entities), "evidence_changed": changed})
 }
 
 // entityContext looks each case entity up in the asset and identity
@@ -642,7 +676,7 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 		if i >= 0 && c.Entries[i].Kind == cases.KindAction {
 			return false, badRequest{errors.New("a response action stays on the timeline: it is the record of what was done")}
 		}
-		// Notes, pinned events and searches are evidence: analysts remove
+		// Notes, pinned events, searches and files are evidence: analysts remove
 		// only their own, admins anyone's.
 		if i >= 0 && !p.Role.AtLeast(users.Admin) && !strings.EqualFold(c.Entries[i].Author, p.Username) {
 			return false, notYours{fmt.Errorf("only %s or an admin can remove this; you can remove what you added yourself", c.Entries[i].Author)}
@@ -653,6 +687,7 @@ func (s *Server) handleRemoveCaseEntry(w http.ResponseWriter, r *http.Request) {
 		s.writeModifyError(w, err)
 		return
 	}
+	s.removeCaseFile(r, c.ID, gone)
 	// What was removed is evidence: name its kind, author, when it was
 	// added and its text or query.
 	s.audit(r, "case.entry_remove: removed from an investigation's timeline", "target", c.ID, "entry", id, "kind", gone.Kind,

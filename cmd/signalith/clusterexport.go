@@ -60,6 +60,8 @@ func sharedExporters(d sharedDocs, f clustercfg.Files) []shared.Exporter {
 		[]shared.Exporter{complianceExporter(d.comp, f)},
 		// The custom parsers (sharedparsers.go).
 		[]shared.Exporter{parsersExporter(d.parsers, f)},
+		// The case report keys (sharedreportkeys.go).
+		[]shared.Exporter{reportKeysExporter(d.reportKeys, f)},
 		// Append a new shared feature's exporter here.
 	)
 }

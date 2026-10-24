@@ -26,6 +26,8 @@ refreshCaseCount();
 // ---------- small helpers ----------
 const plural = (n, one, many) => `${n.toLocaleString()} ${n === 1 ? one : (many || one + 's')}`;
 const fullTime = (t) => new Date(t).toLocaleString();
+const shortDate = (t) => new Date(t).toLocaleDateString();
+const sizeText = (n) => (n >= 1 << 20 ? (n / (1 << 20)).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : plural(n, 'byte'));
 // shortAgo drops the "ago" for table cells: 48m, 3h, 2d.
 const shortAgo = (t) => { const a = ago(t); return a === 'just now' ? 'now' : a.replace(/ ago$/, ''); };
 // when gives a timeline time: relative for a week, then the date.
@@ -433,8 +435,72 @@ function renderCase() {
   const edits = caseState.detailsEdits ? caseState.detailsEdits(c.id) : null;
   fill($('c-view'), backButton(), caseHead(c, linked),
     el('div', { class: 'c-layout' },
-      el('div', { class: 'c-main' }, timelineCard(c, linked)),
+      el('div', { class: 'c-main' }, tasksCard(c), timelineCard(c, linked)),
       el('div', { class: 'c-side' }, detailsCard(c, linked, edits), ticketsCard(c), findingsCard(c, linked, missing || []), entitiesCard(c, ectx || []))));
+}
+
+// ----- tasks: the case's checklist -----
+function tasksCard(c) {
+  const tasks = c.tasks || [];
+  const analyst = can('analyst');
+  if (!tasks.length && !analyst) return null;
+  const done = tasks.filter((t) => t.done).length;
+  const path = (t) => '/tasks/' + encodeURIComponent(t.id);
+  const row = (t) => {
+    const box = el('input', { type: 'checkbox', 'aria-label': (t.done ? 'Reopen: ' : 'Done: ') + t.title });
+    box.checked = !!t.done;
+    box.disabled = !analyst;
+    box.addEventListener('change', async () => {
+      box.disabled = true;
+      if (!await caseCall(c.id, path(t), { done: box.checked }, 'PATCH', 'Couldn’t update the task')) { box.checked = !box.checked; box.disabled = false; }
+    });
+    const meta = t.done && t.done_by ? el('span', { class: 'c-task__meta', title: fmtTime(t.done_at) }, `${t.done_by} · ${when(t.done_at)}`)
+      : t.owner ? el('span', { class: 'owner c-task__owner', title: 'Owner: ' + t.owner }, caseAvatar(t.owner), el('span', { class: 'owner__name' }, t.owner)) : null;
+    const mine = analyst && !t.done && currentUser && t.owner !== currentUser
+      ? el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'Take this task', 'aria-label': 'Take: ' + t.title,
+        onclick: () => caseCall(c.id, path(t), { owner: currentUser }, 'PATCH', 'Couldn’t update the task') }, icon('user-plus')) : null;
+    const del = analyst ? el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', title: 'Remove this task', 'aria-label': 'Remove: ' + t.title,
+      onclick: () => caseCall(c.id, path(t), undefined, 'DELETE', 'Couldn’t remove the task') }, icon('x')) : null;
+    return el('li', { class: 'c-task' + (t.done ? ' is-done' : '') },
+      el('label', { class: 'c-task__check' }, box, el('span', { class: 'c-task__title' }, t.title)), meta, mine, del);
+  };
+  let add = null;
+  if (analyst) {
+    const input = el('input', { class: 'input', type: 'text', maxlength: '200', placeholder: 'Add a task', 'aria-label': 'New task', autocomplete: 'off' });
+    const addBtn = el('button', { type: 'submit', class: 'btn btn--secondary' }, 'Add');
+    const tmpl = el('details', { class: 'menu c-task-tmpl' }, el('summary', { class: 'btn btn--ghost', title: 'Add the tasks of a template' }, icon('list-checks'), el('span', { class: 'hide-sm' }, 'From template')));
+    const menu = el('div', { class: 'menu__panel', role: 'menu' });
+    tmpl.append(menu);
+    tmpl.addEventListener('toggle', async () => {
+      if (!tmpl.open || menu.childElementCount) return;
+      try {
+        const ts = await caseTemplates();
+        fill(menu, ...ts.map((t) => el('button', { type: 'button', class: 'menu__item', role: 'menuitem', onclick: async () => {
+          tmpl.open = false;
+          if (await caseCall(c.id, '/tasks', { template: t.id }, 'POST', 'Couldn’t add the tasks')) toast(`Added ${plural((t.tasks || []).length, 'task')} from ${t.name}.`);
+        } }, t.name, el('span', { class: 'menu__hint' }, plural((t.tasks || []).length, 'task')))));
+      } catch (e) { fill(menu, el('p', { class: 'menu__row' }, 'Templates could not be loaded.')); }
+    });
+    add = el('form', { class: 'c-task-add', onsubmit: async (ev) => {
+      ev.preventDefault();
+      const title = input.value.trim();
+      if (!title) { input.focus(); return; }
+      const restore = busy(addBtn, 'Adding…');
+      if (await caseCall(c.id, '/tasks', { titles: [title] }, 'POST', 'Couldn’t add the task')) {
+        const again = $('c-view').querySelector('.c-task-add input');
+        if (again) again.focus();
+      } else restore();
+    } }, input, addBtn, tmpl);
+  }
+  const pct = tasks.length ? Math.round((done / tasks.length) * 100) : 0;
+  return el('section', { class: 'card c-tasks', 'aria-labelledby': 'ct-head' },
+    el('div', { class: 'card__head' }, el('div', {},
+      el('h3', { class: 'card__title', id: 'ct-head' }, 'Tasks'),
+      el('p', { class: 'card__sub' }, tasks.length ? `${done} of ${tasks.length} done` : 'A checklist for this investigation')),
+      tasks.length ? el('div', { class: 'c-task-bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(pct), 'aria-label': 'Tasks done' },
+        el('span', { style: `--w:${pct}%` })) : null),
+    tasks.length ? el('ul', { class: 'c-task-list' }, ...tasks.map(row)) : null,
+    add ? el('div', { class: 'card__foot' }, add) : null);
 }
 
 // ----- header: editable title, status line, resolve or reopen -----
@@ -480,8 +546,24 @@ function caseHead(c, linked) {
         el('span', { title: fullTime(c.updated) }, `Updated ${ago(c.updated)}`))),
     el('div', { class: 'c-head__actions' },
       storylineButton({ case: c.id }, { label: 'Storyline', title: 'See this case’s findings with every other finding and risk event about its entities, in ATT&CK order' }),
+      editable ? caseExportMenu(c) : null,
       editable ? el('button', { type: 'button', class: 'btn btn--secondary', title: 'Run a response action, such as blocking an IP or disabling an account', onclick: () => caseRespond(c) }, icon('zap'), 'Respond') : null,
       editable ? action : null));
+}
+
+// caseExportMenu downloads the case's report: a page to read, print or
+// attach, or its JSON, both with the SHA-256 of the report and of each
+// piece of evidence (docs/cases.md#exporting-a-report).
+function caseExportMenu(c) {
+  const url = (format) => `api/cases/${encodeURIComponent(c.id)}/report?format=${format}`;
+  const m = el('details', { class: 'menu c-export' },
+    el('summary', { class: 'btn btn--secondary', title: 'Download the case as a report with SHA-256 fingerprints' }, icon('download'), el('span', { class: 'hide-sm' }, 'Export')));
+  const item = (format, label, hint) => el('a', { class: 'menu__item', role: 'menuitem', href: url(format), download: '', onclick: () => { m.open = false; } },
+    label, el('span', { class: 'menu__hint' }, hint));
+  m.append(el('div', { class: 'menu__panel', role: 'menu' },
+    item('html', 'Report page', 'HTML'),
+    item('json', 'Report data', 'JSON')));
+  return m;
 }
 
 // caseRespond opens the Respond dialog (respond.js) with the case's
@@ -718,18 +800,58 @@ function timelineCard(c, linked) {
     if (caseState.open === c.id) showCase(c.id);
   });
 
-  // Note or Search
+  // File composer: one file at a time, with an optional note.
+  const MAX_FILE = 10 * 1024 * 1024;
+  const fileIn = el('input', { id: 'cf-file', class: 'input', type: 'file', 'aria-label': 'File' });
+  const fileNote = el('input', { id: 'cf-text', class: 'input', type: 'text', maxlength: '2000', placeholder: 'What it is (optional)', 'aria-label': 'What the file is' });
+  const fileBtn = el('button', { type: 'submit', class: 'btn btn--primary', disabled: '' }, icon('paperclip'), 'Attach');
+  const fileErr = el('div', { class: 'field-error hidden', role: 'alert' });
+  const showFileErr = (m) => { fill(fileErr, icon('circle-alert'), sentence(m)); fileErr.classList.remove('hidden'); };
+  fileIn.addEventListener('change', () => {
+    fileErr.classList.add('hidden');
+    const f = fileIn.files[0];
+    fileBtn.disabled = !f;
+    if (f && f.size > MAX_FILE) { fileBtn.disabled = true; showFileErr(`${f.name} is ${sizeText(f.size)}; a file is at most 10 MB`); }
+  });
+  const fileForm = el('form', { class: 'c-compose__form' }, fileIn, fileErr,
+    el('div', { class: 'c-compose__bar' }, fileNote, el('span', { class: 'hint hide-sm' }, 'Up to 10 MB. Its SHA-256 is kept with it.'), el('span', { class: 'spacer' }), fileBtn));
+  fileForm.addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    const f = fileIn.files[0];
+    if (!f) return;
+    fileErr.classList.add('hidden');
+    const fd = new FormData();
+    fd.append('text', fileNote.value);
+    fd.append('file', f, f.name);
+    const done = busy(fileBtn, 'Attaching…');
+    try {
+      const resp = await apiRaw('api/cases/' + encodeURIComponent(c.id) + '/files', { method: 'POST', body: fd });
+      const r = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(r.error || resp.statusText);
+    } catch (e) {
+      done();
+      showFileErr(e.message);
+      return;
+    }
+    draft.mode = 'note';
+    refreshCaseCount();
+    if (caseState.open === c.id) showCase(c.id);
+  });
+
+  // Note, Search or File
   const seg = el('div', { class: 'seg seg--sm', role: 'group', 'aria-label': 'Add to the timeline' });
   const setMode = (m, focus) => {
     draft.mode = m;
     seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
     noteForm.classList.toggle('hidden', m !== 'note');
     searchForm.classList.toggle('hidden', m !== 'search');
-    if (focus) (m === 'note' ? note : sq).focus();
+    fileForm.classList.toggle('hidden', m !== 'file');
+    if (focus) (m === 'note' ? note : m === 'search' ? sq : fileIn).focus();
   };
   seg.append(
     el('button', { type: 'button', 'data-mode': 'note', onclick: () => setMode('note', true) }, icon('message-square-text'), 'Note'),
-    el('button', { type: 'button', 'data-mode': 'search', onclick: () => setMode('search', true) }, icon('search'), 'Search'));
+    el('button', { type: 'button', 'data-mode': 'search', onclick: () => setMode('search', true) }, icon('search'), 'Search'),
+    el('button', { type: 'button', 'data-mode': 'file', onclick: () => setMode('file', true) }, icon('paperclip'), 'File'));
   setMode(draft.mode);
 
   const entries = c.entries || [];
@@ -752,7 +874,7 @@ function timelineCard(c, linked) {
     el('div', { class: 'card__head' },
       el('div', {}, el('h3', { class: 'card__title', id: 'ct-head' }, 'Timeline ', el('span', { class: 'count' }, String(entries.length)))),
       can('analyst') ? el('div', { class: 'card__actions' }, seg) : null),
-    can('analyst') ? el('div', { class: 'c-compose' }, noteForm, searchForm) : null,
+    can('analyst') ? el('div', { class: 'c-compose' }, noteForm, searchForm, fileForm) : null,
     el('ol', { class: 'timeline c-entries' }, ...items));
 }
 
@@ -803,7 +925,7 @@ function entryNode(c, e, linked) {
     }
     case 'event':
       return tlItem({ kind: 'event', icon: 'pin', time: e.time, text: [who, ' pinned an event'],
-        body: [e.text ? el('p', { class: 'c-note' }, e.text) : null, eventBody(e.event || {})],
+        body: [e.text ? el('p', { class: 'c-note' }, e.text) : null, eventBody(e.event || {}), evidenceLine(e)],
         remove: removeEntryButton(c, e, 'event') });
     case 'search':
       return tlItem({ kind: 'search', icon: 'search', time: e.time, text: [who, ' ran a search'],
@@ -812,8 +934,26 @@ function entryNode(c, e, linked) {
           el('pre', { class: 'c-query' }, e.query),
           el('div', { class: 'c-search-meta' }, el('span', {}, searchSummary(e)),
             el('button', { type: 'button', class: 'link-btn', onclick: () => openSearch(e.query, e.earliest, e.latest) }, 'Run again in Search', icon('arrow-up-right', 'icon--xs'))),
-          snapshotTable(e)],
+          snapshotTable(e), evidenceLine(e)],
         remove: removeEntryButton(c, e, 'search') });
+    case 'file': {
+      // Always a download: the server never shows a file in the browser.
+      const href = 'api/cases/' + encodeURIComponent(c.id) + '/files/' + encodeURIComponent(e.file_id);
+      return tlItem({ kind: 'file', icon: 'paperclip', time: e.time, text: [who, ' attached a file'],
+        body: [e.text ? el('p', { class: 'c-note' }, e.text) : null,
+          el('div', { class: 'c-file' },
+            el('span', { class: 'c-file__icon' }, icon('file-text')),
+            el('div', { class: 'c-file__main' },
+              el('a', { class: 'c-file__name', href, download: e.file_name, rel: 'noopener' }, e.file_name),
+              el('span', { class: 'hint' }, `${sizeText(e.file_size || 0)} · ${(e.file_type || '').split(';')[0]}`)),
+            el('a', { class: 'btn btn--ghost btn--sm', href, download: e.file_name, 'aria-label': 'Download ' + e.file_name }, icon('download'), el('span', { class: 'hide-sm' }, 'Download'))),
+          // The file's own SHA-256, which whoever has a copy can check;
+          // the warning when the entry was changed outside Signalith.
+          ((caseState.data && caseState.data.evidence_changed) || []).includes(e.id) ? evidenceLine(e)
+            : e.file_sha256 ? el('p', { class: 'c-evidence', title: 'SHA-256 of the file when attached: ' + e.file_sha256 }, icon('fingerprint', 'icon--xs'),
+              'SHA-256 ', el('span', { class: 'mono' }, e.file_sha256.slice(0, 16) + '…')) : null].filter(Boolean),
+        remove: removeEntryButton(c, e, 'file') });
+    }
     case 'notebook':
       // A hunting notebook linked to this case; unlinking happens from the
       // notebook, so the entry has no remove button here.
@@ -834,7 +974,20 @@ function entryNode(c, e, linked) {
   }
 }
 
-const CASE_HISTORY_ICON = { status: 'circle-dot', owner: 'user', severity: 'gauge', title: 'pencil', description: 'pencil', resolution: 'pencil', finding: 'unlink', entity: 'tag', timeline: 'trash-2', ticket: 'ticket' };
+const CASE_HISTORY_ICON = { status: 'circle-dot', owner: 'user', severity: 'gauge', title: 'pencil', description: 'pencil', resolution: 'pencil', finding: 'unlink', entity: 'tag', timeline: 'trash-2', ticket: 'ticket', tasks: 'list-checks', task: 'list-checks' };
+// evidenceLine shows the hash taken when evidence was added, and warns
+// when the evidence no longer matches it.
+function evidenceLine(e) {
+  if (!e.sha256) return null;
+  const changed = ((caseState.data && caseState.data.evidence_changed) || []).includes(e.id);
+  if (changed) {
+    return el('p', { class: 'c-evidence is-changed', role: 'note' }, icon('triangle-alert', 'icon--xs'),
+      'This no longer matches the SHA-256 taken when it was added: it was changed outside Signalith.');
+  }
+  return el('p', { class: 'c-evidence', title: 'SHA-256 when added: ' + e.sha256 }, icon('fingerprint', 'icon--xs'),
+    'SHA-256 ', el('span', { class: 'mono' }, e.sha256.slice(0, 16) + '…'));
+}
+
 function historyNode(h) {
   const who = el('b', {}, h.author || 'Someone');
   const label = (field, v) => {
@@ -853,6 +1006,8 @@ function historyNode(h) {
     case 'timeline': text = [who, ` removed a ${h.from} from the timeline`]; break;
     case 'description': case 'resolution': text = [who, ` edited the ${h.field}`]; break;
     case 'title': text = [who, ' renamed the case to ', el('b', {}, h.to)]; break;
+    case 'tasks': text = [who, ` added ${h.to === '1 added' ? 'a task' : String(h.to).replace(/ added$/, ' tasks')}`]; break;
+    case 'task': text = h.to === 'done' ? [who, ' finished ', el('b', {}, h.from)] : h.to === 'reopened' ? [who, ' reopened ', el('b', {}, h.from)] : [who, ' removed the task ', el('b', {}, h.from)]; break;
     case 'ticket': text = h.from ? [who, ' replaced the deleted ticket ', el('b', {}, h.from), ' with ', el('b', {}, h.to)] : [who, ' opened ticket ', el('b', {}, h.to)]; break;
     default: text = [who, ` changed ${h.field} from `, el('b', {}, label(h.field, h.from)), ' to ', el('b', {}, label(h.field, h.to))];
   }
@@ -1110,9 +1265,24 @@ function pickCase({ title = '', heading = 'Add to case', only = '' } = {}) {
     const newTitle = el('input', { id: 'cp-new-title', class: 'input', type: 'text', value: visibleText(title), placeholder: 'What is this investigation about?', autocomplete: 'off' });
     const titleErr = el('div', { class: 'field-error hidden', id: 'cp-title-err' }, icon('circle-alert'), 'Give the new case a title.');
     const newSev = caseSelect('cp-sev', SEVERITIES.map((s) => [s, SEVERITY_LABEL[s] || s]), 'medium');
+    // A template sets the severity and adds its tasks to the new case.
+    const newTmpl = caseSelect('cp-template', [['', 'None']], '');
+    const tmplHint = el('p', { class: 'hint', id: 'cp-template-hint' });
+    newTmpl.setAttribute('aria-describedby', 'cp-template-hint');
+    caseTemplates().then((ts) => {
+      newTmpl.append(...ts.map((t) => el('option', { value: t.id }, t.name)));
+    }).catch(() => {});
+    newTmpl.addEventListener('change', async () => {
+      const t = (await caseTemplates().catch(() => [])).find((x) => x.id === newTmpl.value);
+      if (t && t.severity) newSev.value = t.severity;
+      tmplHint.textContent = t ? `Adds ${plural((t.tasks || []).length, 'task', 'tasks')}${t.description ? ': ' + t.description : '.'}` : '';
+    });
     const newFields = el('div', { class: 'cp-new' + (newOnly ? '' : ' cp-new--nested') },
       el('div', { class: 'field' }, el('label', { class: 'label', for: 'cp-new-title' }, 'Title'), newTitle, titleErr),
-      el('div', { class: 'field cp-sev' }, el('label', { class: 'label', for: 'cp-sev' }, 'Severity'), newSev));
+      el('div', { class: 'cp-row' },
+        el('div', { class: 'field cp-template' }, el('label', { class: 'label', for: 'cp-template' }, 'Template'), newTmpl),
+        el('div', { class: 'field cp-sev' }, el('label', { class: 'label', for: 'cp-sev' }, 'Severity'), newSev)),
+      tmplHint);
     const newRadio = el('input', { type: 'radio', name: 'cp-case', value: 'new' });
     const go = el('button', { type: 'submit', class: 'btn btn--primary' }, newOnly ? 'Create case' : 'Add to case');
     const setChoice = (v) => {
@@ -1148,7 +1318,9 @@ function pickCase({ title = '', heading = 'Add to case', only = '' } = {}) {
       }
       const done = busy(go, 'Creating…');
       try {
-        const res = await api('api/cases', { title: newTitle.value.trim(), severity: newSev.value, owner: currentUser });
+        const body = { title: newTitle.value.trim(), severity: newSev.value, owner: currentUser };
+        if (newTmpl.value) body.template = newTmpl.value;
+        const res = await api('api/cases', body);
         refreshCaseCount();
         result = res.case.id;
         dlg.close();
@@ -1185,6 +1357,182 @@ function pickCase({ title = '', heading = 'Add to case', only = '' } = {}) {
       fill(list, el('p', { class: 'cp-none' }, 'Open cases could not be loaded. ' + sentence(e.message)));
     });
   });
+}
+
+// ---------- case templates (admins) ----------
+// The built-in templates are shown for reference; admins add, change
+// and remove their own, saved together.
+async function editCaseTemplates() {
+  const dlg = $('case-templates');
+  let all;
+  try { all = await caseTemplates(true); } catch (e) { toastError('Couldn’t load the templates', e); return; }
+  const builtin = all.filter((t) => t.builtin);
+  const mine = all.filter((t) => !t.builtin).map((t) => ({ ...t, tasks: [...(t.tasks || [])] }));
+  const err = formAlert();
+  const list = el('div', { class: 'ctm-list' });
+  const slug = (name) => name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'template';
+  const draw = () => {
+    fill(list,
+      el('p', { class: 'label' }, 'Your templates'),
+      mine.length ? null : el('p', { class: 'hint' }, 'None yet. Add one for the incidents your team sees, such as an OT safety event.'),
+      ...mine.map((t, i) => {
+        const name = el('input', { class: 'input', type: 'text', maxlength: '80', value: t.name, 'aria-label': 'Template name', placeholder: 'Name' });
+        name.addEventListener('input', () => { t.name = name.value; });
+        const sev = caseSelect('ctm-sev-' + i, [['', 'Any'], ...SEVERITIES.map((v) => [v, SEVERITY_LABEL[v] || v])], t.severity || '', 'Severity');
+        sev.addEventListener('change', () => { t.severity = sev.value; });
+        const desc = el('textarea', { class: 'textarea', rows: '2', maxlength: '4000', placeholder: 'Description the new case starts with', 'aria-label': 'Description' });
+        desc.value = t.description || '';
+        desc.addEventListener('input', () => { t.description = desc.value; });
+        const tasks = el('textarea', { class: 'textarea', rows: '4', placeholder: 'One task per line', 'aria-label': 'Tasks, one per line' });
+        tasks.value = t.tasks.join('\n');
+        tasks.addEventListener('input', () => { t.tasks = tasks.value.split('\n').map((x) => x.trim()).filter(Boolean); });
+        const del = el('button', { type: 'button', class: 'btn btn--ghost btn--icon', title: 'Remove this template', 'aria-label': 'Remove ' + (t.name || 'template'),
+          onclick: () => { mine.splice(i, 1); draw(); } }, icon('trash-2'));
+        return el('div', { class: 'ctm-item' },
+          el('div', { class: 'ctm-item__row' }, name, sev, del), desc, tasks);
+      }),
+      el('button', { type: 'button', class: 'btn btn--secondary ctm-add', onclick: () => {
+        mine.push({ id: '', name: '', severity: '', description: '', tasks: [] });
+        draw();
+        const inputs = list.querySelectorAll('.ctm-item input[type=text]');
+        if (inputs.length) inputs[inputs.length - 1].focus();
+      } }, icon('plus'), 'Add template'),
+      el('details', { class: 'ctm-builtin' }, el('summary', {}, `Built-in templates (${builtin.length})`),
+        el('ul', {}, ...builtin.map((t) => el('li', {}, el('b', {}, t.name), ` · ${plural((t.tasks || []).length, 'task')}`)))));
+  };
+  const save = el('button', { type: 'submit', class: 'btn btn--primary' }, 'Save templates');
+  const close = () => dlg.close();
+  const form = el('form', { method: 'dialog', onsubmit: async (ev) => {
+    ev.preventDefault();
+    err.classList.add('hidden');
+    const used = new Set(builtin.map((t) => t.id));
+    const body = mine.map((t) => {
+      let id = t.id || slug(t.name);
+      for (let n = 2; !t.id && used.has(id); n++) id = slug(t.name).slice(0, 36) + '-' + n;
+      used.add(id);
+      return { id, name: t.name.trim(), severity: t.severity || '', description: (t.description || '').trim(), tasks: t.tasks };
+    });
+    const done = busy(save, 'Saving…');
+    try {
+      await api('api/case-templates', { templates: body }, 'PUT');
+      caseTemplates(true).catch(() => {});
+      dlg.close();
+      toast('Templates saved.');
+    } catch (e) {
+      done();
+      showAlert(err, 'The templates were not saved.', sentence(e.message));
+    }
+  } },
+    modalHead('ctm', 'Case templates', 'A new case can start from a template: its severity, description and tasks.', close),
+    el('div', { class: 'modal__body' }, err, list),
+    el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Cancel'), save));
+  draw();
+  fill(dlg, form);
+  dlg.showModal();
+}
+$('c-templates').addEventListener('click', editCaseTemplates);
+
+// ----- checking reports, and the keys that sign them (docs/cases.md#checking-a-report) -----
+const KEY_STATUS = { current: ['In use', 'badge--success'], retired: ['Retired', ''], revoked: ['Revoked', 'badge--danger'] };
+
+async function openReportCheck() {
+  const dlg = $('case-reports');
+  const close = () => dlg.close();
+  const result = el('div', { class: 'crk-result', 'aria-live': 'polite' });
+  const file = el('input', { class: 'input', type: 'file', accept: '.html,.htm,.json,text/html,application/json', id: 'crk-file', 'aria-label': 'Report file' });
+  const check = el('button', { type: 'submit', class: 'btn btn--primary', disabled: '' }, icon('shield-check'), 'Check');
+  file.addEventListener('change', () => { check.disabled = !file.files.length; fill(result); });
+  const keys = el('div', { class: 'crk-keys' });
+  // Revoking a key is the provider's: every tenant shares it.
+  const admin = can('admin') && !inTenant();
+
+  const showResult = (r) => {
+    const ok = r.verified;
+    const lines = [];
+    if (r.case) lines.push(el('p', {}, el('b', {}, r.title || r.case), ` · ${r.case}`));
+    if (r.generated) lines.push(el('p', { class: 'hint' }, `Made ${fullTime(r.generated)} by ${r.generated_by}`));
+    // Only a verified report is "signed with" its key; otherwise the key
+    // is only what the file claims.
+    if (ok && r.key_id) lines.push(el('p', { class: 'hint' }, `Signed with report key ${r.key_id}` + (r.key_status ? ` (${(KEY_STATUS[r.key_status] || [r.key_status])[0].toLowerCase()})` : '')));
+    else if (r.key_id) lines.push(el('p', { class: 'hint' }, `Claims report key ${r.key_id}`));
+    if (!ok && r.error) lines.push(el('p', {}, sentence(String(r.error).replace(/^the report did not verify: /, ''))));
+    const head = ok ? 'Verified: this server signed it, and nothing changed since.'
+      : r.status === 'revoked' ? 'Signed with a revoked key: this report cannot be trusted.' : 'This report did not verify.';
+    fill(result, el('div', { class: 'alert', 'data-tone': ok ? 'success' : 'danger', role: 'status' },
+      icon(ok ? 'shield-check' : 'shield-x'), el('div', {}, el('b', {}, head), ...lines)));
+  };
+
+  const drawKeys = (ks) => {
+    if (!ks.length) { fill(keys, el('p', { class: 'hint' }, 'No report has been signed yet. The first export makes the key.')); return; }
+    fill(keys, el('ul', { class: 'crk-list' }, ...ks.map((k) => {
+      const [label, tone] = KEY_STATUS[k.status || (k.revoked ? 'revoked' : k.retired ? 'retired' : 'current')] || ['', ''];
+      const st = k.revoked ? 'revoked' : k.retired ? 'retired' : 'current';
+      const revoke = admin && st !== 'revoked' ? el('button', { type: 'button', class: 'btn btn--ghost btn--sm', onclick: () => revokeKey(k) }, 'Revoke…') : null;
+      return el('li', { class: 'crk-key' },
+        el('div', { class: 'crk-key__main' },
+          el('span', { class: 'mono' }, k.id),
+          el('span', { class: 'badge ' + (KEY_STATUS[st] || ['', ''])[1] }, (KEY_STATUS[st] || [st])[0]),
+          el('span', { class: 'hint' }, `${k.source === 'cluster' ? 'Cluster key' : 'Master key'} · since ${shortDate(k.first_used)}`)),
+        k.revoked ? el('p', { class: 'hint' }, `Revoked ${shortDate(k.revoked)}${k.revoked_by ? ' by ' + k.revoked_by : ''}${k.reason ? ': ' + k.reason : ''}`) : null,
+        revoke);
+    })));
+  };
+  const loadKeys = async () => {
+    try { drawKeys((await api('api/cases/reports/keys')).keys || []); } catch (e) { fill(keys, el('p', { class: 'hint' }, 'The report keys could not be loaded.')); }
+  };
+  const revokeKey = async (k) => {
+    const reason = el('textarea', { class: 'textarea', rows: '2', maxlength: '500', placeholder: 'Why, such as "the master key was in a leaked backup"', 'aria-label': 'Reason' });
+    const d = modalDialog('crk-revoke');
+    const ok = el('button', { type: 'button', class: 'btn btn--danger' }, 'Revoke key');
+    ok.onclick = async () => {
+      const done = busy(ok, 'Revoking…');
+      try {
+        drawKeys((await api(`api/cases/reports/keys/${encodeURIComponent(k.id)}/revoke`, { reason: reason.value }, 'POST')).keys || []);
+        d.close();
+        toast('Key revoked. Reports it signed no longer verify.');
+      } catch (e) { done(); toastError('Couldn’t revoke the key', e); }
+    };
+    fill(d, modalHead('crk-revoke', `Revoke report key ${k.id}?`, 'Do this when the cluster key or master key it comes from may have leaked: someone with it could sign a report. Reports it signed no longer verify, and it signs no more; reports are exported unsigned until you change that key, so new reports get a new one.', () => d.close()),
+      el('div', { class: 'modal__body' }, reason),
+      el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: () => d.close() }, 'Cancel'), ok));
+    d.showModal();
+    reason.focus();
+  };
+
+  const form = el('form', { method: 'dialog', onsubmit: async (ev) => {
+    ev.preventDefault();
+    const f = file.files[0];
+    if (!f) return;
+    if (f.size > 16 * 1024 * 1024) { showResult({ verified: false, error: 'the file is larger than 16 MiB, more than any case report' }); return; }
+    const done = busy(check, 'Checking…');
+    try {
+      const resp = await apiRaw('api/cases/reports/verify', { method: 'POST', body: f, headers: { 'Content-Type': 'application/octet-stream' } });
+      const r = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(r.error || resp.statusText);
+      showResult(r);
+    } catch (e) { showResult({ verified: false, error: e.message }); }
+    done();
+  } },
+    modalHead('crk', 'Check a report', 'Check a case report someone sent you: that this server signed it, and that nothing in it changed since.', close),
+    el('div', { class: 'modal__body crk-body' },
+      el('div', { class: 'crk-pick' }, el('label', { class: 'label', for: 'crk-file' }, 'Report file (.html or .json)'), el('div', { class: 'crk-pick__row' }, file, check)),
+      result,
+      el('div', { class: 'crk-keys-head' },
+        el('p', { class: 'label' }, 'Report keys'),
+        el('a', { class: 'btn btn--ghost btn--sm', href: 'api/cases/reports/keys', download: 'signalith-report-keys.json', title: 'For checking reports on another computer: signalith report verify -keys signalith-report-keys.json report.html' }, icon('download'), 'Download')),
+      keys),
+    el('div', { class: 'modal__foot' }, el('button', { type: 'button', class: 'btn btn--ghost', onclick: close }, 'Close')));
+  fill(dlg, form);
+  dlg.showModal();
+  loadKeys();
+}
+$('c-reports').addEventListener('click', openReportCheck);
+
+// caseTemplates loads the case templates once a page view.
+let caseTemplatesP = null;
+function caseTemplates(fresh) {
+  if (!caseTemplatesP || fresh) caseTemplatesP = api('api/case-templates').then((r) => r.templates || []).catch((e) => { caseTemplatesP = null; throw e; });
+  return caseTemplatesP;
 }
 
 // ---------- adding from other pages ----------

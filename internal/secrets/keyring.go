@@ -5,6 +5,7 @@ package secrets
 
 import (
 	"bytes"
+	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
@@ -238,6 +239,18 @@ func (k *Keyring) KeyID() string {
 		return ""
 	}
 	return src.KeyID
+}
+
+// ReportKey returns the key that signs case reports on a server that is
+// not in a cluster, made from the master key in use. It never makes a
+// master key.
+func (k *Keyring) ReportKey() (ed25519.PrivateKey, error) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if err := k.ensure(); err != nil {
+		return nil, err
+	}
+	return k.cur.report, nil
 }
 
 // Seal encrypts plain for the setting field, making a master key if there
