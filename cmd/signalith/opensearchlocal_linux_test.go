@@ -186,11 +186,21 @@ func TestToolEnv(t *testing.T) {
 func TestConnectSignalith(t *testing.T) {
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "signalith.yaml")
-	t.Setenv("SIGNALITH_STATE_DIR", filepath.Join(dir, "state"))
 	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "a-long-test-password")
 	old, oldRestart := signalithConfigFile, restartSignalith
 	t.Cleanup(func() { signalithConfigFile, restartSignalith = old, oldRestart })
 	signalithConfigFile = cfg
+	// The service keeps the Settings page's file in its own lookups
+	// folder (/var/lib/signalith/lookups), which this command does not see
+	// unless it reads the service's settings.
+	t.Setenv("SIGNALITH_STATE_DIR", filepath.Join(dir, "state"))
+	lookups := filepath.Join(dir, "service-lookups")
+	t.Setenv("SIGNALITH_LOOKUPS_DIR", "")
+	saved := readServiceSettings
+	readServiceSettings = func() *serviceSettings {
+		return &serviceSettings{where: "the test unit", args: []string{"serve", "-c", cfg}, env: map[string]string{"SIGNALITH_LOOKUPS_DIR": lookups}}
+	}
+	t.Cleanup(func() { readServiceSettings = saved })
 	restarted := false
 	restartSignalith = func() error { restarted = true; return nil }
 	l := oslocal.Layout{Home: filepath.Join(dir, "os"), Data: filepath.Join(dir, "osdata"), Client: filepath.Join(dir, "client")}
@@ -215,9 +225,14 @@ func TestConnectSignalith(t *testing.T) {
 	if !restarted || !strings.Contains(out.String(), "https://127.0.0.1:9201") {
 		t.Errorf("restarted %v, out %q", restarted, out.String())
 	}
+	// As the service loads it.
+	t.Setenv("SIGNALITH_LOOKUPS_DIR", lookups)
 	c, err := config.Load(cfg)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(lookups, "settings.yaml")); err != nil {
+		t.Errorf("not in the service's settings file: %v", err)
 	}
 	if c.SettingsProblem() != "" {
 		t.Fatal(c.SettingsProblem())
