@@ -45,7 +45,7 @@ func lookFacts(p Paths) facts {
 		if root == "" {
 			root = `C:\Windows`
 		}
-		f.Sysmon = exists(filepath.Join(root, "Sysmon64.exe")) || exists(filepath.Join(root, "Sysmon.exe"))
+		f.Sysmon = exists(filepath.Join(root, "Sysmon64.exe")) || exists(filepath.Join(root, "Sysmon64a.exe")) || exists(filepath.Join(root, "Sysmon.exe"))
 	}
 	return f
 }
