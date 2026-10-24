@@ -237,7 +237,7 @@ else
 [Unit]
 Description=Signalith SIEM server
 Documentation=https://github.com/jrsamsanchez/Signalith
-After=network-online.target opensearch.service
+After=network-online.target opensearch.service signalith-opensearch.service
 Wants=network-online.target
 
 [Service]
@@ -397,13 +397,13 @@ cat <<'MSG'
   Password:  sudo signalith initial-password
   Agents:    send to port 7779 (Add data sets them up). Open 9000 and 7779
              in this server's firewall for other machines.
-  OpenSearch: Signalith expects it at http://127.0.0.1:9200. To use another
-             one, change it on the Settings page (OpenSearch > Address).
+  OpenSearch: set it up on this server, secured, with:
+               sudo signalith opensearch install
+             Or use one you run: Settings > OpenSearch > Address, then secure
+             it: https://signalith.io/docs/opensearch-security/
 
 The browser warns about the certificate until you trust Signalith's own CA:
 https://signalith.io/docs/https/
 Back up the master key in /var/lib/signalith/keys: https://signalith.io/docs/encryption/
-Secure OpenSearch and give Signalith a certificate to sign in with:
-https://signalith.io/docs/opensearch-security/
 
 MSG

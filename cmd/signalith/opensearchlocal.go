@@ -32,13 +32,15 @@ const opensearchUsage = `usage:
   signalith opensearch status                show what is installed
   signalith opensearch adopt -c CONFIG       on an upgrade: install it when CONFIG's OpenSearch was never set up
 
-The Windows installer runs these (docs/install-packages.md). install
-downloads OpenSearch ` + oslocal.Version + ` for Windows and checks its SHA-512;
+The Windows installer runs these; on Linux, run them as root after
+installing Signalith's package (docs/install-packages.md). install
+downloads OpenSearch ` + oslocal.Version + ` for this system and checks its SHA-512;
 -zip uses a copy of that file instead, for a computer without internet
 access; -proxy downloads through a proxy (by default the computer's own
 proxy setting is used). adopt installs it the same way, and points CONFIG at it, only when
 CONFIG still has the address older installers wrote (plain http on this
-computer, port 9200, no sign-in) and nothing answers there.
+computer, port 9200, no sign-in) and nothing answers there. On Linux,
+install also sets Signalith to use it.
 `
 
 // localOpenSearch is what installing OpenSearch needs from the system.
@@ -69,7 +71,7 @@ func cmdOpenSearch(args []string) error {
 	fs.StringVar(&l.Home, "home", def.Home, "folder for OpenSearch's program")
 	fs.StringVar(&l.Data, "data", def.Data, "folder for OpenSearch's config, data and logs")
 	fs.StringVar(&l.Client, "client", def.Client, "folder for Signalith's certificate for OpenSearch")
-	zip := fs.String("zip", "", "the OpenSearch "+oslocal.Version+" .zip for Windows to install, instead of downloading it")
+	zip := fs.String("zip", "", "the OpenSearch "+oslocal.Version+" release file for this system ("+oslocal.File()+") to install, instead of downloading it")
 	proxy := fs.String("proxy", "", "the proxy to download through (host:port); by default the computer's own proxy setting")
 	path := configFlag(fs)
 	fs.Parse(args)
@@ -83,7 +85,10 @@ func cmdOpenSearch(args []string) error {
 	}
 	switch cmd {
 	case "install":
-		return installOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client)
+		if err := installOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client); err != nil {
+			return err
+		}
+		return afterOpenSearchInstall(os.Stdout, l)
 	case "adopt":
 		applyServiceEnv(*path)
 		c, err := loadConfig(*path, newLogger(os.Stderr))
@@ -98,12 +103,15 @@ func cmdOpenSearch(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Release installed: %s, SHA-512 %s\n", oslocal.URL(), oslocal.SHA512)
+		fmt.Printf("Release installed: %s, SHA-512 %s\n", oslocal.URL(), oslocal.SHA512())
 		if st == nil {
 			fmt.Println("Signalith has not installed OpenSearch on this computer.")
 			return nil
 		}
 		fmt.Printf("OpenSearch %s at %s, the %s service (there: %v)\n", st.Version, st.URL(), oslocal.ServiceName, sys.exists())
+		if oslocal.Newer(oslocal.Version, st.Version) {
+			fmt.Printf("This Signalith installs OpenSearch %s; upgrade to it with: signalith opensearch install\n", oslocal.Version)
+		}
 		return nil
 	}
 	fmt.Fprint(os.Stderr, opensearchUsage)
@@ -124,7 +132,10 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 	if err != nil {
 		return err
 	}
-	if st == nil {
+	// fresh is a new install: it unpacks the release it checked, never a
+	// program someone left in Home.
+	fresh := st == nil
+	if fresh {
 		// A new install starts from an empty folder: files someone left
 		// there are not trusted.
 		if entries, err := os.ReadDir(l.Data); err == nil && len(entries) > 0 {
@@ -154,35 +165,47 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 		version = st.Version
 	}
 	home := l.VersionHome(version)
-	if st.Version == version && sys.exists() {
+	if !fresh && st.Version == version && sys.exists() {
 		if _, err := os.Stat(filepath.Join(home, "bin")); err == nil {
 			fmt.Fprintf(out, "OpenSearch %s is installed; checking it runs.\n", version)
+			if err := sys.prepare(l, home); err != nil {
+				return err
+			}
 			if err := sys.start(); err != nil {
 				return err
 			}
 			return waitOpenSearch(ctx, out, sys, l, home, st.Port)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(home, "bin")); err != nil {
+	if _, err := os.Stat(filepath.Join(home, "bin")); fresh || err != nil {
 		if version != oslocal.Version {
 			return fmt.Errorf("OpenSearch %s is not in %s any more; install Signalith with OpenSearch %s or newer", version, home, version)
 		}
-		if err := oslocal.CheckRoom(l); err != nil {
-			return err
-		}
-		file, err := oslocal.Fetch(ctx, zip, l.Download(), client, out)
-		if err != nil {
-			return err
-		}
-		defer os.Remove(file)
-		os.RemoveAll(home)
-		fmt.Fprintf(out, "Unpacking OpenSearch %s to %s...\n", version, home)
-		if err := oslocal.Extract(file, home); err != nil {
+		if err := unpackRelease(ctx, out, l, zip, client, home); err != nil {
 			return err
 		}
 	}
 	if err := sys.prepare(l, home); err != nil {
 		return err
+	}
+	// The OpenSearch running now, which an upgrade goes back to when the
+	// new one's service cannot be set up or started.
+	var previous string
+	// Stopped before its settings are written, so it changes nothing
+	// while they are.
+	if sys.exists() {
+		if st.Version != version {
+			if _, err := os.Stat(filepath.Join(l.VersionHome(st.Version), "bin")); err == nil {
+				previous = st.Version
+			}
+		}
+		fmt.Fprintln(out, "Stopping OpenSearch to set it up again...")
+		if err := sys.stop(); err != nil {
+			return err
+		}
+		if err := sys.remove(); err != nil {
+			return err
+		}
 	}
 	port := st.Port
 	if err := oslocal.MakeCerts(l, time.Now()); err != nil {
@@ -190,23 +213,6 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 	}
 	if err := oslocal.WriteConfig(l, home, port, oslocal.HeapMB(sys.memoryMB())); err != nil {
 		return fmt.Errorf("writing OpenSearch's settings: %w", err)
-	}
-	// The OpenSearch running now, which an upgrade goes back to when the
-	// new one's service cannot be set up or started.
-	var previous string
-	if sys.exists() {
-		if st.Version != version {
-			if _, err := os.Stat(filepath.Join(l.VersionHome(st.Version), "bin")); err == nil {
-				previous = st.Version
-			}
-		}
-		fmt.Fprintln(out, "Stopping OpenSearch to upgrade it...")
-		if err := sys.stop(); err != nil {
-			return err
-		}
-		if err := sys.remove(); err != nil {
-			return err
-		}
 	}
 	if err := startService(out, sys, l, home, version, port); err != nil {
 		if previous == "" {
@@ -239,6 +245,25 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 		}
 	}
 	return nil
+}
+
+// unpackRelease checks there is room, downloads the release (or copies
+// zip), checks it against the pin and unpacks it to home, in place of
+// whatever was there. The tests change it.
+var unpackRelease = func(ctx context.Context, out io.Writer, l oslocal.Layout, zip string, client *http.Client, home string) error {
+	if err := oslocal.CheckRoom(l); err != nil {
+		return err
+	}
+	file, err := oslocal.Fetch(ctx, zip, l.Download(), client, out)
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file)
+	if err := os.RemoveAll(home); err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "Unpacking OpenSearch %s to %s...\n", filepath.Base(home), home)
+	return oslocal.Extract(file, home)
 }
 
 // oldDefaultOpenSearch is the address installers before 0.3.1 wrote when

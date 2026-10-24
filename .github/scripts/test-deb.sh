@@ -69,5 +69,73 @@ echo "== Install again: the kept config and password are used"
 sudo apt-get install -y "$new"
 up
 signin "$password"
+
+echo "== signalith opensearch install sets up OpenSearch, and Signalith uses it"
+# The pinned SHA-512 is the one OpenSearch publishes for the release.
+status=$(sudo signalith opensearch status); echo "$status"
+rel=$(echo "$status" | sed -n 's/^Release installed: \([^,]*\), SHA-512 .*/\1/p')
+pin=$(echo "$status" | sed -n 's/^Release installed: .*, SHA-512 \([0-9a-f]*\)$/\1/p')
+published=$(curl -fsSL "$rel.sha512" | awk '{print $1}')
+# The arm64 release's pin too, which no runner here installs: read from
+# the source this package was built from.
+arm=${rel%-linux-x64.tar.gz}-linux-arm64.tar.gz
+armpin=$(python3 - "$(dirname "$0")/../../internal/oslocal/oslocal.go" <<'PY'
+import re, sys
+src = open(sys.argv[1]).read()
+m = re.search(r'"linux/arm64":\s*\{.*?SHA512:\s*((?:"[0-9a-f]*"\s*\+?\s*)+)', src, re.S)
+print("".join(re.findall(r'"([0-9a-f]*)"', m.group(1))) if m else "")
+PY
+)
+armpublished=$(curl -fsSL "$arm.sha512" | awk '{print $1}')
+bad=no
+if [ -z "$rel" ] || [ "$published" != "$pin" ]; then
+  echo "::error::The pinned SHA-512 for $rel is '$pin'; OpenSearch publishes $published"; bad=yes
+fi
+if [ "$armpublished" != "$armpin" ]; then
+  echo "::error::The pinned SHA-512 for $arm is '$armpin'; OpenSearch publishes $armpublished"; bad=yes
+fi
+[ "$bad" = no ] || exit 1
+# GitHub's runners leave /opt writable by everyone, which a server should
+# not, and which signalith opensearch install rightly refuses.
+if [ -n "$(find /opt -maxdepth 0 -perm -o+w)" ]; then sudo chmod go-w /opt; fi
+sudo signalith opensearch install
+systemctl is-active --quiet signalith-opensearch
+pid=$(systemctl show -p MainPID --value signalith-opensearch)
+test "$(ps -o user= -p "$pid")" = signalith-opensearch
+osport=$(sudo jq -r .port /var/lib/signalith-opensearch/installed.json)
+# Java can bind 127.0.0.1 through an IPv6 socket, which ss shows as
+# [::ffff:127.0.0.1]: the same address.
+listen=$(ss -Hltn "sport = :$osport" | awk '{print $4}' | sed -e 's/:[0-9]*$//' -e 's/^\[::ffff:\(.*\)\]$/\1/' | sort -u | tr '\n' ' ')
+if [ "$listen" != "127.0.0.1 " ]; then echo "OpenSearch listens on $listen, want 127.0.0.1 only"; exit 1; fi
+code=$(curl -sk -o /dev/null -w '%{http_code}' -u admin:admin "https://127.0.0.1:$osport/")
+if [ "$code" != 401 ]; then echo "OpenSearch answered $code to the demo password, want 401"; exit 1; fi
+test "$(sudo stat -c %U:%a /var/lib/signalith-opensearch)" = root:711
+test "$(sudo stat -c %U:%a /var/lib/signalith-opensearch/ca)" = root:700
+test "$(sudo stat -c %U:%G:%a /etc/signalith/opensearch/opensearch-client-key.pem)" = root:signalith:640
+test "$(sudo stat -c %U /var/lib/signalith-opensearch/data)" = signalith-opensearch
+# Its settings are root's, which it may read but not change.
+test "$(sudo stat -c %U:%G:%a /var/lib/signalith-opensearch/config)" = root:signalith-opensearch:750
+test "$(sudo stat -c %U:%G:%a /var/lib/signalith-opensearch/config/opensearch.yml)" = root:signalith-opensearch:640
+test "$(sudo stat -c %U:%G:%a /var/lib/signalith-opensearch/config/opensearch.keystore)" = root:signalith-opensearch:640
+up
+ready=no
+for _ in $(seq 1 40); do
+  curl -skf -o /dev/null "https://localhost:$port/readyz" && { ready=yes; break; }
+  sleep 3
+done
+if [ "$ready" != yes ]; then
+  echo "Signalith is not ready with the OpenSearch on this computer"
+  sudo journalctl -u signalith --no-pager | tail -50; sudo journalctl -u signalith-opensearch --no-pager | tail -50; exit 1
+fi
+signin "$password"
+echo "== Run again: it is installed, and still runs"
+sudo signalith opensearch install
+systemctl is-active --quiet signalith-opensearch
+echo "== signalith opensearch remove keeps its data"
+sudo signalith opensearch remove
+if systemctl is-active --quiet signalith-opensearch; then echo "OpenSearch still runs"; exit 1; fi
+test ! -e /etc/systemd/system/signalith-opensearch.service
+test ! -e /opt/signalith-opensearch
+sudo test -d /var/lib/signalith-opensearch/data
 sudo apt-get purge -y signalith
-echo "The .deb installs, upgrades and removes cleanly."
+echo "The .deb installs, upgrades and removes cleanly, and sets up OpenSearch."
