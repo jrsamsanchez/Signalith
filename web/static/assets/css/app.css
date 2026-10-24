@@ -5751,6 +5751,11 @@ details[open] > summary .inv-exact__chev { transform: rotate(90deg); }
 #page-health .hp-cluster .hp-total th, #page-health .hp-cluster .hp-total td { font-weight: 600; box-shadow: inset 0 1px 0 var(--line-subtle); }
 #page-health .hp-cluster__table { min-width: 560px; }
 #page-health .hp-cluster .table-wrap { overflow-x: auto; }
+/* Health: the backups, scheduled snapshots and each server's files */
+#page-health .hp-backup { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 6px 0 0; }
+#page-health .hp-backup dt { color: var(--text-2); }
+#page-health .hp-backup dd { margin: 0; overflow-wrap: anywhere; }
+#page-health .hp-backups p { margin: 0; }
 /* Servers page: the OpenSearch part of this server's side panel */
 .sv-os { display: grid; gap: 12px; }
 .sv-os__sum { color: var(--text-2); }

@@ -91,7 +91,7 @@ func TestRegistryCoversEveryConfigSetting(t *testing.T) {
 			t.Errorf("Excluded has %s, which is not a setting of Config", k)
 		}
 	}
-	if len(Sections) != 14 {
+	if len(Sections) != 15 {
 		t.Errorf("sections: %d", len(Sections))
 	}
 }

@@ -31,6 +31,9 @@
 //   - GET /_plugins/_security/authinfo, once Secure turns sign-in on
 //     (before that, as without the security plugin, it is not found).
 //
+// TakeSnapshot and RestoreSnapshot stand in for OpenSearch's snapshots,
+// which it has no API for.
+//
 // Anything else is acknowledged, so a server can start against it.
 package ostest
 
@@ -109,6 +112,8 @@ type Server struct {
 	// paths are the node's path.home and path.data (see SetPaths).
 	home string
 	data []string
+	// sm holds the snapshot repositories and policies (see sm.go).
+	sm *smState
 }
 
 // Account is the one account the fake lets in once Secure is called, and
@@ -388,6 +393,68 @@ func (s *Server) IndexBody(name string) json.RawMessage {
 	return nil
 }
 
+// Snapshot is a copy of some indices, as an OpenSearch snapshot holds
+// them (see TakeSnapshot).
+type Snapshot struct {
+	indices  map[string]*index
+	settings map[string][]json.RawMessage
+}
+
+// TakeSnapshot copies the indices pattern matches (comma-separated
+// wildcards), documents, settings and all.
+func (s *Server) TakeSnapshot(pattern string) *Snapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	snap := &Snapshot{indices: map[string]*index{}, settings: map[string][]json.RawMessage{}}
+	for _, ix := range s.match(pattern) {
+		cp := *ix
+		cp.body = append(json.RawMessage(nil), ix.body...)
+		cp.docs = make(map[string]*doc, len(ix.docs))
+		for id, d := range ix.docs {
+			dc := *d
+			dc.source = copySource(d.source)
+			cp.docs[id] = &dc
+		}
+		snap.indices[ix.name] = &cp
+		snap.settings[ix.name] = append([]json.RawMessage(nil), s.settings[ix.name]...)
+	}
+	return snap
+}
+
+// RestoreSnapshot puts back the indices of snap, replacing indices of the
+// same name and leaving the others, as restoring an OpenSearch snapshot
+// over closed indices does. snap can be restored again.
+func (s *Server) RestoreSnapshot(snap *Snapshot) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for name, ix := range snap.indices {
+		cp := *ix
+		cp.docs = make(map[string]*doc, len(ix.docs))
+		for id, d := range ix.docs {
+			dc := *d
+			dc.source = copySource(d.source)
+			cp.docs[id] = &dc
+		}
+		s.indices[name] = &cp
+		s.settings[name] = append([]json.RawMessage(nil), snap.settings[name]...)
+	}
+}
+
+// copySource is a deep copy of a document's source.
+func copySource(src map[string]any) map[string]any {
+	b, err := json.Marshal(src)
+	if err != nil {
+		return maps.Clone(src)
+	}
+	var out map[string]any
+	d := json.NewDecoder(bytes.NewReader(b))
+	d.UseNumber()
+	if d.Decode(&out) != nil {
+		return maps.Clone(src)
+	}
+	return out
+}
+
 func (s *Server) now() time.Time {
 	if s.Clock != nil {
 		return s.Clock.Now().Add(s.Offset)
@@ -592,6 +659,9 @@ func (s *Server) handle(w http.ResponseWriter, r *http.Request, p string, body [
 		if u, err := url.PathUnescape(parts[i]); err == nil {
 			parts[i] = u
 		}
+	}
+	if s.serveSM(w, r, parts, body) {
+		return
 	}
 	q := r.URL.Query()
 	switch {

@@ -337,6 +337,11 @@ func projectShards(prefix string, held []indexCopies, used, limit int, keep func
 		if !ok {
 			continue
 		}
+		// A monthly index (the audit records) adds one index a month,
+		// not one a day: it stays in used as it is.
+		if c, _ := retention.CategoryByID(category); c.Kind != retention.KindEvents {
+			continue
+		}
 		d := byModel[category]
 		if d == nil {
 			d = &days{}

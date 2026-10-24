@@ -203,7 +203,7 @@
     const f = S.fields[key];
     const sec = sectionOf(key);
     if (!f || !sec) return key;
-    if (['general', 'web', 'https', 'search', 'detections', 'intel'].includes(sec.sid)) return f.label;
+    if (['general', 'web', 'https', 'search', 'detections', 'intel', 'backup'].includes(sec.sid)) return f.label;
     return sec.title + ' ' + noun(f.label);
   }
   // noun is a label inside a sentence: "Password" becomes "password",
