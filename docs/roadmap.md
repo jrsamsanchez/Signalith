@@ -21,6 +21,10 @@ Ideas and requests are welcome as
 
 ## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
 
+**The next release**
+:   Finished and waiting for the next release: [case](cases.md) templates and tasks,
+    files attached to a case, and case reports signed with SHA-256 fingerprints.
+
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
     Splunk's answers where the two should agree.
@@ -111,7 +115,7 @@ These are outside what Signalith is for:
 
 ## Done <span class="sg-pill sg-pill--done">Available</span> { #done data-toc-label="Done" }
 
-Everything below is in Signalith now.
+Everything below is in Signalith now. Items named under **The next release** in [Now](#now) arrive with the release after 0.3.2.
 
 **Search foundation**
 
