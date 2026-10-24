@@ -40,6 +40,8 @@ type fakeOpenSearch struct {
 	stoppedYML string
 	// failHome is a program the service does not start with.
 	failHome string
+	// slow is how long the service takes to answer once started.
+	slow time.Duration
 }
 
 func (f *fakeOpenSearch) prepare(l oslocal.Layout, home string) error {
@@ -85,9 +87,14 @@ func (f *fakeOpenSearch) start() error {
 	caPEM, _ := os.ReadFile(filepath.Join(f.l.Certs(), ospki.RootCAFile))
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(caPEM)
-	ln, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(st.Port))
+	addr := "127.0.0.1:" + strconv.Itoa(st.Port)
+	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err
+	}
+	if f.slow > 0 {
+		// Nothing answers until it has started.
+		ln.Close()
 	}
 	f.srv = &http.Server{
 		TLSConfig: &tls.Config{Certificates: []tls.Certificate{pair}, ClientCAs: pool, ClientAuth: tls.VerifyClientCertIfGiven},
@@ -104,7 +111,16 @@ func (f *fakeOpenSearch) start() error {
 			}
 		}),
 	}
-	go f.srv.ServeTLS(ln, "", "")
+	srv := f.srv
+	go func() {
+		if f.slow > 0 {
+			time.Sleep(f.slow)
+			if ln, err = net.Listen("tcp", addr); err != nil {
+				return
+			}
+		}
+		srv.ServeTLS(ln, "", "")
+	}()
 	f.t.Cleanup(func() { f.stop() })
 	return nil
 }
@@ -143,9 +159,9 @@ func fakeUnpack(t *testing.T, l oslocal.Layout) *int {
 }
 
 func shortWaits(t *testing.T) {
-	a, s, p := osAnswerWait, osSecurityWait, osPoll
-	osAnswerWait, osSecurityWait, osPoll = 5*time.Second, 300*time.Millisecond, 50*time.Millisecond
-	t.Cleanup(func() { osAnswerWait, osSecurityWait, osPoll = a, s, p })
+	a, s, p, g := osAnswerWait, osSecurityWait, osPoll, osProgress
+	osAnswerWait, osSecurityWait, osPoll, osProgress = 5*time.Second, 300*time.Millisecond, 50*time.Millisecond, 200*time.Millisecond
+	t.Cleanup(func() { osAnswerWait, osSecurityWait, osPoll, osProgress = a, s, p, g })
 }
 
 func TestInstallOpenSearch(t *testing.T) {
@@ -243,6 +259,26 @@ func TestInstallOpenSearch(t *testing.T) {
 
 // An upgrade whose new OpenSearch does not start goes back to the one that
 // ran before, which is kept.
+// A slow first start says it is still starting, rather than nothing.
+func TestInstallOpenSearchSaysItIsStarting(t *testing.T) {
+	shortWaits(t)
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
+	d := t.TempDir()
+	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "signalith", "opensearch")}
+	fakeUnpack(t, l)
+	sys := &fakeOpenSearch{t: t, l: l, slow: time.Second}
+	sys.loaded.Store(true)
+	var out strings.Builder
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+	if strings.Count(out.String(), "Waiting for OpenSearch to answer") != 1 || !strings.Contains(out.String(), "  still starting (") {
+		t.Fatalf("no word while it starts:\n%s", out.String())
+	}
+}
+
 func TestInstallOpenSearchGoesBack(t *testing.T) {
 	shortWaits(t)
 	bits := ospki.KeyBits

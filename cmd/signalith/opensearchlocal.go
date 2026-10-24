@@ -364,6 +364,7 @@ var (
 	osAnswerWait   = 5 * time.Minute
 	osSecurityWait = time.Minute
 	osPoll         = 3 * time.Second
+	osProgress     = 30 * time.Second
 )
 
 // waitOpenSearch waits until OpenSearch answers with its security
@@ -390,11 +391,20 @@ func waitOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l o
 		return resp.StatusCode
 	}
 	logs := fmt.Sprintf("its log, %s", filepath.Join(l.Logs(), "signalith.log"))
-	deadline := time.Now().Add(osAnswerWait)
+	start := time.Now()
+	deadline := start.Add(osAnswerWait)
+	next := start.Add(osProgress)
 	code := 0
 	for code = status(); code == 0; code = status() {
 		if time.Now().After(deadline) {
 			return fmt.Errorf("OpenSearch did not answer at %s. Its service may have stopped: see %s, and the service's own logs in %s", url, logs, l.Logs())
+		}
+		if time.Now().After(next) {
+			if next.Equal(start.Add(osProgress)) {
+				fmt.Fprintf(out, "Waiting for OpenSearch to answer at %s; its first start can take a few minutes, and Signalith waits up to %s.\n", url, osAnswerWait)
+			}
+			fmt.Fprintf(out, "  still starting (%s)\n", time.Since(start).Round(time.Second))
+			next = next.Add(osProgress)
 		}
 		time.Sleep(osPoll)
 	}
