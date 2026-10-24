@@ -294,6 +294,7 @@ so on `--uninstall`). It never changes the machine's network settings files.
 | `--networks <cidr,...>` | Your own networks (default: the private ranges). |
 | `--no-zeek`, `--no-suricata` | Suricata only, or Zeek only. |
 | `--suricata-protocols` | Suricata also logs flows, DNS, HTTP and TLS (on when there is no Zeek). |
+| `--ot` | Industrial protocols (see [Industrial protocols](#industrial-protocols)): Suricata parses Modbus, DNP3 and EtherNet/IP, and Zeek gets CISA's ICSNPP analyzers, built on the sensor (not with `--docker`). Run the line again without it to remove the analyzers. |
 | `--local-rules <file>` | A file of your own Suricata rules, added to the downloaded ones. |
 | `--zeek-workers <n>` | Zeek processes reading the port (default: one Zeek process below 8 cores; from 8 cores, a quarter of them, at most 8). |
 | `--suricata-threads <n>` | Suricata capture threads (default: half the cores). |
@@ -316,6 +317,13 @@ script (see [Signing keys](#signing-keys)); the key is trusted for that reposito
 | Suricata, suricata-update | the OISF PPA `ppa:oisf/suricata-stable` | Debian's `bookworm-backports` | Debian's own `trixie` | OISF's COPR `@oisf/suricata-8.0` |
 | Fluent Bit | packages.fluentbit.io | packages.fluentbit.io | packages.fluentbit.io | packages.fluentbit.io |
 
+With `--ot`, the sensor also gets `git`, `cmake`, `make` and `g++` from the system's own
+repositories, and CISA's ICSNPP analyzers from their GitHub repositories
+(`github.com/cisagov/icsnpp-*`), each checked out at a commit pinned in the script (its git
+commit ID, which the script checks after the install) and built on the sensor by Zeek's
+package manager (`zkg`). The build runs their C++ and Spicy code as root, before Zeek starts:
+choose `--ot` only if you accept that, as you would for any package built from source.
+
 Signalith does not include or pass on any of them, nor any rules: your machine downloads
 them from their publishers.
 
@@ -336,6 +344,8 @@ What it writes:
   `--uninstall`.
 - Zeek's `node.cfg`, `networks.cfg`, `zeekctl.cfg` and a `signalith.zeek` site script (JSON
   logs, Community ID).
+- With `--ot`: `/var/lib/signalith-sensor/zkg/` (the package manager's settings and copies),
+  and the analyzers under Zeek's `site/packages` and `plugins/packages` folders.
 - The systemd units `signalith-zeek`, `signalith-suricata`, `signalith-fluent-bit`,
   `signalith-sensor-capture`, and the timers `signalith-suricata-update`,
   `signalith-sensor-status` and `signalith-zeekctl-cron`. The packages' own `suricata` and
@@ -578,11 +588,20 @@ Signalith maps them onto the **Industrial** data model when a sensor logs them. 
 is needed on an ordinary office network, and nothing changes for sensors that do not see
 these protocols.
 
+- **A sensor the install script builds**: tick **Industrial protocols** under Add data >
+  Network sensor > Set up a new sensor (the line gets `--ot`), or add `--ot` to the line and
+  run it again. Suricata then parses Modbus, DNP3 and EtherNet/IP for its rules, and Zeek
+  gets CISA's ICSNPP analyzers (below), pinned to tested commits and built on the sensor:
+  this takes a few minutes more and about 2 GB of disk, and the sensor must reach
+  `github.com` while it installs. With `--docker`, Zeek gets no ICSNPP analyzers and logs
+  Modbus and DNP3 only. When Zeek runs, Suricata leaves the logging of these protocols to
+  it, as it does for DNS and the web.
 - **Zeek** logs **Modbus** and **DNP3** out of the box (`modbus.log`, `dnp3.log`), so a
   sensor on such a network sends them already.
 - **CISA's ICSNPP** analyzers for Zeek (free, BSD 3-Clause) add S7comm, EtherNet/IP and CIP,
-  BACnet, OPC UA, PROFINET and more, and more detail for Modbus and DNP3. Install the ones
-  your network uses with Zeek's package manager on the sensor, then deploy:
+  BACnet, OPC UA, PROFINET, GE SRTP, Omron FINS and HART-IP, and more detail for Modbus and
+  DNP3. On a Zeek you run yourself, install the ones your network uses with Zeek's package
+  manager, then deploy:
 
     ```sh
     sudo /opt/zeek/bin/zkg install icsnpp-s7comm icsnpp-enip icsnpp-bacnet
@@ -595,9 +614,10 @@ these protocols.
     land in the same folder as Zeek's others, so the sensor's Fluent Bit sends them with
     no change.
 - **Suricata** parses Modbus, DNP3 and EtherNet/IP, but they are off in its default
-  `suricata.yaml`. To turn them on, set `enabled: yes` under `app-layer.protocols` for
+  `suricata.yaml` (`--ot` turns them on). On a Suricata you run yourself, set `enabled: yes` under `app-layer.protocols` for
   `modbus`, `dnp3` and `enip`, add `- modbus`, `- dnp3` and `- enip` to the `eve-log`
-  output's `types`, and restart Suricata.
+  output's `types`, and restart Suricata. Logging EtherNet/IP needs Suricata 8 (Debian's
+  own Suricata 7 only parses it).
 
 The sensor only listens, here as everywhere: it never sends anything to a controller or
 any other device on the mirrored network.
