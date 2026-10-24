@@ -51,6 +51,10 @@ scrapes; it then answers `404`, as for a page that does not exist.
   (127.0.0.1 or ::1) may use plain HTTP.
 - **An allowed address**, when `metrics.allow` lists any. Behind a trusted
   reverse proxy this is the scraper's own address, as the proxy forwards it.
+  A reverse proxy on the same computer must be listed in
+  `server.trusted_proxies`: otherwise every scrape looks like it comes from
+  the server itself, all scrapers share one rate limit, and an allowlist of
+  outside addresses refuses them.
 - **Patience**: each address may scrape 30 times a minute, and all of them
   together 3,600 times an hour; more get `429` with `Retry-After`. Wrong
   tokens count too. Refused scrapes are logged (as audit records) at most
