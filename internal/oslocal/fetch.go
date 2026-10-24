@@ -47,6 +47,46 @@ func CheckRoom(l Layout) error {
 	return nil
 }
 
+// diskSpaceOf is diskSpace; the tests change it.
+var diskSpaceOf = diskSpace
+
+func freeBytes(dir string) (int64, error) {
+	free, _, err := diskSpaceOf(dir)
+	return free, err
+}
+
+// OpenSearch's disk watermarks, which Signalith leaves at their defaults:
+// above the high one it creates no index (and Signalith's own indexes
+// with it), and the retention disk guard deletes the oldest days to stay
+// under the low one.
+const (
+	lowWatermark  = 85
+	highWatermark = 90
+)
+
+// DiskWarning is a warning when the disk OpenSearch keeps its data on
+// will be past the low watermark once the program is installed, or ""
+// when there is room (or the disk cannot be read).
+func DiskWarning(l Layout) string {
+	dir := existing(l.Data)
+	free, total, err := diskSpaceOf(dir)
+	if err != nil || total <= 0 {
+		return ""
+	}
+	if filepath.VolumeName(existing(l.Home)) == filepath.VolumeName(dir) {
+		free -= programRoom
+	}
+	used := float64(total-free) * 100 / float64(total)
+	if used < lowWatermark {
+		return ""
+	}
+	// Room to get back under the low watermark, rounded up to a GB.
+	short := (int64(float64(total)*(100-lowWatermark)/100) - free + 1<<30 - 1) >> 30
+	return fmt.Sprintf("The disk %s is on will be %.0f%% full. Above %d%% OpenSearch creates no new indexes, so Signalith cannot "+
+		"store new events, and Signalith deletes its oldest events to stay under %d%%. Free about %d GB there.",
+		dir, used, highWatermark, lowWatermark, short)
+}
+
 // existing is dir, or its nearest parent that exists.
 func existing(dir string) string {
 	for {

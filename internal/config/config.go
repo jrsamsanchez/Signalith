@@ -68,7 +68,9 @@ type Config struct {
 	Ticketing  Ticketing  `yaml:"ticketing,omitempty"`
 	Cluster    Cluster    `yaml:"cluster,omitempty"`
 	Demo       Demo       `yaml:"demo,omitempty"`
-	Backup     Backup     `yaml:"backup,omitempty"`
+	// Metrics is the scrape endpoint GET /metrics (see metrics.go).
+	Metrics Metrics `yaml:"metrics,omitempty"`
+	Backup  Backup  `yaml:"backup,omitempty"`
 
 	// path is where the file was loaded from.
 	path string
@@ -2804,6 +2806,7 @@ func (c *Config) Validate() error {
 	p = append(p, c.oidcProblems()...)
 	p = append(p, c.samlProblems()...)
 	p = append(p, c.scimProblems()...)
+	p = append(p, c.metricsProblems()...)
 	if c.Detections.Dir == "" {
 		p = append(p, "detections.dir is required, for example: detections")
 	}

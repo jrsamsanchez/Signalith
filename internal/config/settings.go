@@ -222,6 +222,7 @@ var Sections = []Section{
 	{ID: "vulns", Title: "Vulnerability scans", Help: "How scans on the Vulnerabilities page look up the known vulnerabilities (CVEs) of the software they find. Only product names are sent, never addresses."},
 	{ID: "m365", Title: "Microsoft 365", Help: "Read Microsoft 365's audit log (Entra ID sign-ins and changes, Exchange, SharePoint, OneDrive, Teams and security alerts) with an app registered in Entra ID. One server reads it every 5 minutes. See the Microsoft 365 guide in the docs for how to register the app."},
 	{ID: "okta", Title: "Okta", Help: "Read Okta's System Log (sign-ins, MFA, account and admin changes, and Okta's own threat alerts) with an API service app in your Okta organization. One server reads it every minute. See the Okta guide in the docs for how to add the app."},
+	{ID: "metrics", Title: "Metrics", Tab: "metrics", Help: "A scrape endpoint, GET /metrics, for Prometheus and other OpenMetrics scrapers: ingest, OpenSearch writes, syslog, retention and the background jobs, with no event data. Off until turned on, and then only for a scraper that sends the scrape token."},
 }
 
 // Registry lists every setting on the page, in page order.
@@ -620,6 +621,15 @@ var Registry = []Setting{
 	{Key: "auth.scim.token_sha256", Scope: ScopeCluster, Section: "sso", Label: "SCIM token", Type: TypeText,
 		Help:  "The identity provider sends this token with every request. Signalith keeps only its SHA-256 fingerprint, so the token is shown once, when you create it.",
 		check: sha256Hex},
+
+	{Key: "metrics.enabled", Scope: ScopeCluster, Section: "metrics", Label: "Metrics endpoint", Type: TypeBool,
+		Help: "Answers GET /metrics on the web port of every server, each with its own numbers, for a scraper that sends the scrape token. Off, it answers 404."},
+	{Key: "metrics.token_sha256", Scope: ScopeCluster, Section: "metrics", Label: "Scrape token", Type: TypeText,
+		Help:  "The scraper sends this token as Authorization: Bearer. Signalith keeps only its SHA-256 fingerprint, so the token is shown once, when you create it.",
+		check: sha256Hex},
+	{Key: "metrics.allow", Scope: ScopeCluster, Section: "metrics", Label: "Scrapers' addresses", Type: TypeList,
+		Help:        "The IP addresses or ranges scrapers may come from. Others are refused even with the token.",
+		Placeholder: "10.0.5.20", EmptyMeans: "any address with the token", check: checkAddressList, problem: listProblem("metrics.allow")},
 
 	{Key: "intel.allow_loopback_feeds", Scope: ScopeCluster, Section: "intel", Label: "Allow feeds from this computer", Type: TypeBool, Restart: true,
 		Help:    "Lets feeds download from 127.0.0.1 or ::1, for a feed server on this computer.",

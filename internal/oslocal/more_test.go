@@ -4,8 +4,10 @@
 package oslocal
 
 import (
+	"archive/tar"
 	"archive/zip"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"io/fs"
@@ -13,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -178,6 +181,38 @@ func TestWriteConfigProblems(t *testing.T) {
 		t.Errorf("complete = %v", err)
 	}
 
+	// What the service may have planted in its config folder is never
+	// written through.
+	if runtime.GOOS != "windows" {
+		outside := filepath.Join(t.TempDir(), "outside")
+		os.WriteFile(outside, []byte("keep"), 0o600)
+		yml := filepath.Join(l.Config(), "opensearch.yml")
+		os.Remove(yml)
+		if err := os.Symlink(outside, yml); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteConfig(l, home, 9200, 1024); err == nil || !strings.Contains(err.Error(), "not a file") {
+			t.Errorf("over a link = %v", err)
+		}
+		os.Remove(yml)
+		if err := os.Link(outside, yml); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteConfig(l, home, 9200, 1024); err != nil {
+			t.Errorf("over a hard link = %v", err)
+		}
+		os.RemoveAll(filepath.Join(l.Config(), "jvm.options.d"))
+		if err := os.Symlink(t.TempDir(), filepath.Join(l.Config(), "jvm.options.d")); err != nil {
+			t.Fatal(err)
+		}
+		if err := WriteConfig(l, home, 9200, 1024); err == nil {
+			t.Error("wrote into a linked folder")
+		}
+		if b, _ := os.ReadFile(outside); string(b) != "keep" {
+			t.Errorf("the file outside became %q", b)
+		}
+	}
+
 	blocked := testLayout(t)
 	os.MkdirAll(filepath.Dir(blocked.Data), 0o700)
 	os.WriteFile(blocked.Data, []byte("x"), 0o600)
@@ -195,5 +230,121 @@ func TestMakeCertsBlocked(t *testing.T) {
 	os.WriteFile(l.Client, []byte("x"), 0o600)
 	if err := MakeCerts(l, time.Now()); err == nil {
 		t.Error("made certificates with the client folder a file")
+	}
+}
+
+type tarEntry struct {
+	name, body, link string
+	kind             byte
+	mode             int64
+}
+
+func makeTarGz(t *testing.T, entries ...tarEntry) string {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	for _, e := range entries {
+		h := &tar.Header{Name: e.name, Typeflag: e.kind, Mode: e.mode, Linkname: e.link, Size: int64(len(e.body))}
+		if e.kind != tar.TypeReg {
+			h.Size = 0
+		}
+		if err := tw.WriteHeader(h); err != nil {
+			t.Fatal(err)
+		}
+		if e.kind == tar.TypeReg {
+			io.WriteString(tw, e.body)
+		}
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	gz.Close()
+	p := filepath.Join(t.TempDir(), "os.tar.gz")
+	if err := os.WriteFile(p, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestExtractTarGz(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the .tar.gz releases are Linux's")
+	}
+	z := makeTarGz(t,
+		tarEntry{name: "opensearch-3.9.0/", kind: tar.TypeDir, mode: 0o755},
+		tarEntry{name: "opensearch-3.9.0/bin/opensearch", kind: tar.TypeReg, mode: 0o755, body: "run"},
+		tarEntry{name: "opensearch-3.9.0/jdk/legal/java.base/LICENSE", kind: tar.TypeReg, mode: 0o644, body: "license"},
+		tarEntry{name: "opensearch-3.9.0/jdk/legal/jdk.jfr/LICENSE", kind: tar.TypeSymlink, link: "../java.base/LICENSE"},
+	)
+	dest := filepath.Join(t.TempDir(), "3.9.0")
+	if err := Extract(z, dest); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(filepath.Join(dest, "bin", "opensearch")); err != nil || fi.Mode().Perm() != 0o755 {
+		t.Errorf("bin/opensearch = %v %v", fi, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(dest, "jdk", "legal", "jdk.jfr", "LICENSE")); err != nil || string(b) != "license" {
+		t.Errorf("link = %q %v", b, err)
+	}
+
+	for name, z := range map[string]string{
+		"absolute link":   makeTarGz(t, tarEntry{name: "opensearch-3.9.0/a", kind: tar.TypeSymlink, link: "/etc/passwd"}),
+		"link up":         makeTarGz(t, tarEntry{name: "opensearch-3.9.0/a/b", kind: tar.TypeSymlink, link: "../../x"}),
+		"link to the top": makeTarGz(t, tarEntry{name: "opensearch-3.9.0/a", kind: tar.TypeSymlink, link: "."}),
+		"up through a link": makeTarGz(t,
+			tarEntry{name: "opensearch-3.9.0/d/", kind: tar.TypeDir, mode: 0o755},
+			tarEntry{name: "opensearch-3.9.0/d/y", kind: tar.TypeSymlink, link: "../d"},
+			tarEntry{name: "opensearch-3.9.0/x", kind: tar.TypeSymlink, link: "d/y/../../z"}),
+		"file through a link": makeTarGz(t,
+			tarEntry{name: "opensearch-3.9.0/d/", kind: tar.TypeDir, mode: 0o755},
+			tarEntry{name: "opensearch-3.9.0/d/y", kind: tar.TypeSymlink, link: "../d"},
+			tarEntry{name: "opensearch-3.9.0/d/y/f", kind: tar.TypeSymlink, link: "../../x"}),
+		"file into a link made before": makeTarGz(t,
+			tarEntry{name: "opensearch-3.9.0/d/", kind: tar.TypeDir, mode: 0o755},
+			tarEntry{name: "opensearch-3.9.0/l", kind: tar.TypeSymlink, link: "d"},
+			tarEntry{name: "opensearch-3.9.0/l/f", kind: tar.TypeReg, mode: 0o644, body: "1"}),
+		"out through a link made after": makeTarGz(t,
+			tarEntry{name: "opensearch-3.9.0/s/", kind: tar.TypeDir, mode: 0o755},
+			tarEntry{name: "opensearch-3.9.0/L", kind: tar.TypeSymlink, link: "s/c/../../x"},
+			tarEntry{name: "opensearch-3.9.0/s/c", kind: tar.TypeSymlink, link: "."}),
+		"hard link":   makeTarGz(t, tarEntry{name: "opensearch-3.9.0/a", kind: tar.TypeLink, link: "opensearch-3.9.0/b"}),
+		"other top":   makeTarGz(t, tarEntry{name: "x/a", kind: tar.TypeReg, mode: 0o644, body: "1"}),
+		"escape name": makeTarGz(t, tarEntry{name: "opensearch-3.9.0/../a", kind: tar.TypeReg, mode: 0o644, body: "1"}),
+		"twice": makeTarGz(t,
+			tarEntry{name: "opensearch-3.9.0/a", kind: tar.TypeReg, mode: 0o644, body: "1"},
+			tarEntry{name: "opensearch-3.9.0/a", kind: tar.TypeReg, mode: 0o644, body: "2"}),
+		"file over a link": makeTarGz(t,
+			tarEntry{name: "opensearch-3.9.0/a", kind: tar.TypeReg, mode: 0o644, body: "1"},
+			tarEntry{name: "opensearch-3.9.0/l", kind: tar.TypeSymlink, link: "a"},
+			tarEntry{name: "opensearch-3.9.0/l", kind: tar.TypeReg, mode: 0o644, body: "2"}),
+	} {
+		parent := t.TempDir()
+		dest := filepath.Join(parent, "3.9.0")
+		if err := Extract(z, dest); err == nil {
+			t.Errorf("%s: extracted", name)
+		}
+		if entries, _ := os.ReadDir(parent); len(entries) != 0 {
+			t.Errorf("%s: left %d entries", name, len(entries))
+		}
+	}
+
+	bad := filepath.Join(t.TempDir(), "x.tar.gz")
+	os.WriteFile(bad, []byte{0x1f, 0x8b, 0, 0}, 0o600)
+	if err := Extract(bad, filepath.Join(t.TempDir(), "d")); err == nil {
+		t.Error("extracted a broken .tar.gz")
+	}
+}
+
+func TestSaveRefusesTooLarge(t *testing.T) {
+	keep := maxRelease
+	maxRelease = 10
+	t.Cleanup(func() { maxRelease = keep })
+	dir := t.TempDir()
+	if _, err := save(strings.NewReader(strings.Repeat("x", 11)), dir, "the release"); err == nil || !strings.Contains(err.Error(), "larger") {
+		t.Fatalf("got %v", err)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("left %d files", len(entries))
 	}
 }
