@@ -103,7 +103,9 @@ systemctl is-active --quiet signalith-opensearch
 pid=$(systemctl show -p MainPID --value signalith-opensearch)
 test "$(ps -o user= -p "$pid")" = signalith-opensearch
 osport=$(sudo jq -r .port /var/lib/signalith-opensearch/installed.json)
-listen=$(ss -Hltn "sport = :$osport" | awk '{print $4}' | sed 's/:[0-9]*$//' | sort -u | tr '\n' ' ')
+# Java can bind 127.0.0.1 through an IPv6 socket, which ss shows as
+# [::ffff:127.0.0.1]: the same address.
+listen=$(ss -Hltn "sport = :$osport" | awk '{print $4}' | sed -e 's/:[0-9]*$//' -e 's/^\[::ffff:\(.*\)\]$/\1/' | sort -u | tr '\n' ' ')
 if [ "$listen" != "127.0.0.1 " ]; then echo "OpenSearch listens on $listen, want 127.0.0.1 only"; exit 1; fi
 code=$(curl -sk -o /dev/null -w '%{http_code}' -u admin:admin "https://127.0.0.1:$osport/")
 if [ "$code" != 401 ]; then echo "OpenSearch answered $code to the demo password, want 401"; exit 1; fi
