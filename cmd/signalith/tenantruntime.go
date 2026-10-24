@@ -334,7 +334,7 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	ret := newRetention(c, cl, log)
 	archiveCrypto(ret.Archive, c, t.r.clusterKey)
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
-	pipeline := &ingest.Pipeline{Store: cl, Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log,
+	pipeline := &ingest.Pipeline{Store: store.NewBulkGroup(cl, 0), Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log,
 		Rollover: &ingest.Rollover{Client: cl, Prefix: prefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log}}
 	pipeline.SetURLQuery(c.URLQueryMode())
 	pipeline.Servers = func() int { return t.r.node.IndexingServers(10 * time.Minute) }
