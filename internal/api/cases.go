@@ -612,7 +612,7 @@ func (s *Server) handleAddCaseEntry(w http.ResponseWriter, r *http.Request) {
 		}
 		e.Query, e.Earliest, e.Latest = qs, req.Earliest, req.Latest
 		e.Result, e.Columns, e.Matched = res.Kind, res.Columns, res.Matched
-		e.Truncated = res.Truncated || len(res.Rows) > cases.MaxRows
+		e.Truncated, e.Sampled = res.Truncated || len(res.Rows) > cases.MaxRows, res.Sampled
 		for _, row := range res.Rows[:min(len(res.Rows), cases.MaxRows)] {
 			e.Rows = append(e.Rows, map[string]any(row))
 		}

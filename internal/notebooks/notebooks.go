@@ -116,7 +116,10 @@ type Result struct {
 	Rows      []map[string]any `json:"rows,omitempty"`
 	Matched   int64            `json:"matched"`
 	Truncated bool             `json:"truncated,omitempty"` // more rows than were kept
-	Error     string           `json:"error,omitempty"`
+	// Sampled is how many of the Matched events the commands after the
+	// search ran over, when fewer than matched (SL-01).
+	Sampled int    `json:"sampled,omitempty"`
+	Error   string `json:"error,omitempty"`
 }
 
 // Errors returned by stores and notebook methods.

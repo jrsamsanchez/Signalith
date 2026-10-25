@@ -137,6 +137,9 @@ type Entry struct {
 	Rows      []map[string]any `json:"rows,omitempty"`
 	Matched   int64            `json:"matched,omitempty"`
 	Truncated bool             `json:"truncated,omitempty"` // more rows than were kept
+	// Sampled is how many of the Matched events the commands after the
+	// search ran over, when fewer than matched (SL-01).
+	Sampled int `json:"sampled,omitempty"`
 
 	Event     map[string]any `json:"event,omitempty"`
 	FindingID string         `json:"finding_id,omitempty"`
@@ -168,8 +171,13 @@ func EvidenceHash(e Entry) string {
 	case KindEvent:
 		v = map[string]any{"kind": e.Kind, "event": e.Event}
 	case KindSearch:
-		v = map[string]any{"kind": e.Kind, "query": e.Query, "earliest": e.Earliest, "latest": e.Latest,
+		m := map[string]any{"kind": e.Kind, "query": e.Query, "earliest": e.Earliest, "latest": e.Latest,
 			"result_kind": e.Result, "columns": e.Columns, "rows": e.Rows, "matched": e.Matched, "truncated": e.Truncated}
+		if e.Sampled > 0 {
+			// Only when set, so snapshots taken before it hash the same.
+			m["sampled"] = e.Sampled
+		}
+		v = m
 	case KindFile:
 		v = map[string]any{"kind": e.Kind, "file_id": e.FileID, "file_name": e.FileName, "file_size": e.FileSize,
 			"file_type": e.FileType, "file_sha256": e.FileSHA256}

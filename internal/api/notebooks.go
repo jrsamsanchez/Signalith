@@ -506,7 +506,7 @@ func (s *Server) runNotebookCell(ctx context.Context, src, rng string) *notebook
 		rows[i] = map[string]any(row)
 	}
 	out := notebooks.Snapshot(res.Kind, res.Columns, rows, res.Matched, res.Truncated)
-	out.RanAt, out.Earliest = now, earliest
+	out.RanAt, out.Earliest, out.Sampled = now, earliest, res.Sampled
 	return out
 }
 
@@ -587,7 +587,7 @@ func (s *Server) handleLinkNotebookCase(w http.ResponseWriter, r *http.Request) 
 				}
 				e := cases.Entry{Kind: cases.KindSearch, Text: cell.Title, Query: cell.Query, Earliest: cell.Result.Earliest, NotebookID: n.ID,
 					Result: cell.Result.Kind, Columns: cell.Result.Columns, Matched: cell.Result.Matched,
-					Truncated: cell.Result.Truncated || len(cell.Result.Rows) > cases.MaxRows}
+					Truncated: cell.Result.Truncated || len(cell.Result.Rows) > cases.MaxRows, Sampled: cell.Result.Sampled}
 				e.Rows = slices.Clone(cell.Result.Rows[:min(len(cell.Result.Rows), cases.MaxRows)])
 				if e.Rows == nil {
 					e.Rows = []map[string]any{}

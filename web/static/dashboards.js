@@ -184,6 +184,8 @@
     showPage('detections');
   }
   const note = (text) => el('p', { class: 'db-note' }, text);
+  // sampledNote says a result covers only the newest events matched.
+  const sampledNote = (res) => `Sampled: ${(res.matched || 0).toLocaleString()} events matched, but this was worked out from only the newest ${res.sampled.toLocaleString()}. Narrow the query, or put stats right after the search to count every event.`;
 
   // ---------- deltas ----------
   // deltaFoot describes the change from the previous period: an arrow, the
@@ -1120,6 +1122,8 @@
     const rows = res.rows || [];
     const notes = [];
     if (res.truncated) notes.push(`Showing the first ${rows.length} rows.`);
+    // SL-01: the commands after the search saw only the newest events.
+    if (res.sampled) notes.push(sampledNote(res));
     const noRows = () => emptyState('search', 'No results', 'Nothing matched in this time range.');
     // In the editor's preview a click would leave the editor.
     const dr = box.closest('dialog') ? null : pr.drill;
@@ -1135,7 +1139,8 @@
         put(box, el(dr ? 'a' : 'div', { class: 'db-single' + (dr ? ' db-drill' : ''), ...go },
           el('div', { class: 'kpi__value' }, ...numberParts(pr.value)),
           delta,
-          pr.compare_note ? el('div', { class: 'kpi__foot' }, el('span', { title: pr.compare_note }, pr.compare_note)) : null));
+          pr.compare_note ? el('div', { class: 'kpi__foot' }, el('span', { title: pr.compare_note }, pr.compare_note)) : null),
+          ...notes.map(note));
         return;
       }
       case 'line':

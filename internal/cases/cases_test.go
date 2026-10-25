@@ -256,3 +256,18 @@ func TestEvidenceHash(t *testing.T) {
 		t.Error("a changed event still matches its hash")
 	}
 }
+
+// A sampled search snapshot's hash covers the sample, and one without it
+// hashes as before the field existed.
+func TestEvidenceHashSampled(t *testing.T) {
+	e := Entry{Kind: KindSearch, Query: "* | eval x=1 | stats count", Result: "table", Matched: 50000, Rows: []map[string]any{{"count": 10000}}}
+	plain := EvidenceHash(e)
+	e.Sampled = 10000
+	if EvidenceHash(e) == plain {
+		t.Error("the sample is not in the hash")
+	}
+	e.Sampled = 0
+	if EvidenceHash(e) != plain {
+		t.Error("hash of an unsampled snapshot changed")
+	}
+}

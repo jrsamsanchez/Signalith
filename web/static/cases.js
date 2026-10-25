@@ -1035,6 +1035,7 @@ function searchSummary(e) {
   if (e.result_kind === 'events') bits.push(plural(e.matched || 0, 'matching event'));
   else bits.push(plural(n, 'row'));
   if (e.truncated) bits.push(`first ${n} kept`);
+  if (e.sampled) bits.push(`sampled: worked out from the newest ${e.sampled.toLocaleString()} events`);
   return bits.join(' · ');
 }
 
