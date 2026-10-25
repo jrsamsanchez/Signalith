@@ -398,8 +398,9 @@ type ProcessFacts struct {
 type MemoryFacts struct {
 	Known bool
 	// CoreOff is true when the core file limit is 0, and NotDumpable when
-	// the process is not dumpable (or that cannot be read, in the CLI).
-	CoreOff, NotDumpable bool
+	// the process is not dumpable. DumpableUnknown: whether it is dumpable
+	// couldn't be told (the CLI, about a service that runs as root).
+	CoreOff, NotDumpable, DumpableUnknown bool
 	// Swap: off, encrypted, or plain; SwapOffForUs when the cgroup's
 	// memory.swap.max is 0.
 	SwapOn, SwapEncrypted, SwapOffForUs bool

@@ -559,6 +559,24 @@ func coreLimitOff(fs sysFS, pid string) (off, known bool) {
 	return false, false
 }
 
+// notDumpable tells from outside whether a process is dumpable: Linux
+// gives the files in a process's /proc/<pid> to root when it is not
+// dumpable, and to its effective user when it is. owner is the owner of
+// /proc/<pid>/status (-1 when unread) and euid the process's effective
+// user. A process running as
+// root can't be told either way.
+func notDumpable(owner, euid int) (not, unknown bool) {
+	switch {
+	case owner < 0 || euid == 0:
+		return false, true
+	case owner == euid:
+		return false, false
+	case owner == 0:
+		return true, false
+	}
+	return false, true
+}
+
 // swapFacts reads whether swap is on, whether every swap device is
 // encrypted, and whether the cgroup of pid turns swap off.
 func swapFacts(fs sysFS, mountinfo, pid string, m *MemoryFacts) {

@@ -339,6 +339,48 @@ func TestAgentScriptDryRun(t *testing.T) {
 // With --osquery the script adds osquery's signed repository, installs
 // osquery, masks its own service and adds the services that run it with
 // the agent's flags; a run again keeps it, and --uninstall removes it.
+// A Fluent Bit or osquery service that already runs here (sending
+// somewhere else, say) stops the script before it changes anything, unless
+// the line says --take-over.
+func TestAgentScriptTakeOver(t *testing.T) {
+	for _, c := range []struct {
+		name, running string
+		args          []string
+	}{
+		{"fluent-bit", "fluent-bit.service", nil},
+		{"osqueryd", "osqueryd.service", []string{"--osquery"}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			m := newAgentMachine(t)
+			mustWrite(t, filepath.Join(m.dir, "bin", "systemctl"), `#!/bin/sh
+case "$*" in
+  "show -p ActiveState --value `+c.running+`") echo active ;;
+  "show -p ActiveState --value "*) echo inactive ;;
+  "is-enabled `+c.running+`") echo enabled ;;
+  *) exit 1 ;;
+esac
+`, 0o755)
+			root := filepath.Join(m.dir, "root")
+			out, err := m.run(t, testToken, nil, append(m.line(root), c.args...)...)
+			if err == nil || !strings.Contains(out, c.running+" already runs here") || !strings.Contains(out, "--take-over") {
+				t.Fatalf("ran over %s: %v\n%s", c.running, err, out)
+			}
+			if strings.Contains(out, "Installing") {
+				t.Errorf("changed something before stopping:\n%s", out)
+			}
+			out, err = m.run(t, testToken, nil, append(append(m.line(root), c.args...), "--take-over")...)
+			if err != nil {
+				t.Fatalf("--take-over: %v\n%s", err, out)
+			}
+			for _, want := range []string{c.running + " already runs here: it will be stopped and masked", "would run: systemctl mask --now " + c.running} {
+				if !strings.Contains(out, want) {
+					t.Errorf("output has no %q:\n%s", want, out)
+				}
+			}
+		})
+	}
+}
+
 func TestAgentScriptDryRunOsquery(t *testing.T) {
 	for _, c := range []struct {
 		id, version, repoFile, repo string
