@@ -53,9 +53,13 @@ on its own, right now. For example:
 - **Investigations**: at least one investigation recorded (the feature being on is not
   enough).
 - **Settings**: [data retention](retention.md) (90 days searchable, a year kept, the
-  disk guard), [notifications](notifications.md), [response actions](response-actions.md),
-  [threat intel feeds](threat-intel.md), named [user accounts](users.md), and HTTPS with
-  plain syslog off.
+  disk guard), [threat intel feeds](threat-intel.md), and HTTPS with plain syslog off.
+- **Settings in use**: being set up is partial; use is evidence.
+  [Notifications](notifications.md) need a message delivered in the last 30 days (a test
+  counts) and no channel whose latest message failed; [response actions](response-actions.md)
+  a run that succeeded in the last 90 days; named [user accounts](users.md) a sign-in in
+  the last 90 days; and the [asset and identity lists](detections.md#assets-and-identities) an owner or a priority
+  on at least one entry.
 - **Settings**: also [two-step sign-in](users.md) required for everyone, and event data
   deleted after a set time instead of kept forever.
 - **Built in**: things Signalith always does to the events it receives, such as storing

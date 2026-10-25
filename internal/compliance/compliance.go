@@ -210,7 +210,8 @@ type Snapshot struct {
 	Retention *Retention
 	Users     *Users
 	// Assets is how many assets and identities are listed; -1 when unknown.
-	Assets int
+	// AssetsRated counts those with an owner or a priority.
+	Assets, AssetsRated int
 	// HTTPS is whether the web UI and API are served over HTTPS.
 	HTTPS bool
 	// PlainSyslog lists the plain (unencrypted) syslog listeners that
@@ -304,17 +305,28 @@ const TriageWindow = 7 * 24 * time.Hour
 // Cases counts investigations.
 type Cases struct{ Total, Open int }
 
-// Notify counts the notification setup.
+// Notify counts the notification setup and what it sent.
 type Notify struct {
 	Channels int
 	Rules    int // enabled rules that send to at least one channel
+	// Sent counts messages delivered (findings or tests) in the last
+	// EvidenceWindow; Failing the channels whose latest delivery failed.
+	// Unread is set when the deliveries could not be read.
+	Sent, Failing int
+	Unread        bool
 }
 
-// Response counts response actions and playbooks.
+// Response counts response actions and playbooks, and their runs.
 type Response struct {
 	Actions   int // set up without problems
 	Playbooks int
+	// Ran counts runs that succeeded in the last EvidenceWindow.
+	Ran int
 }
+
+// EvidenceWindow is how recent a use of a feature must be to show it
+// works: a notification sent, a response action run, a sign-in.
+const EvidenceWindow = 90 * 24 * time.Hour
 
 // Intel counts threat intel feeds.
 type Intel struct {
@@ -344,6 +356,9 @@ type Retention struct {
 type Users struct {
 	Named     int // users other than the built-in admin
 	Directory bool
+	// SignedIn counts named users who signed in in the last
+	// EvidenceWindow.
+	SignedIn int
 }
 
 // HasData reports whether a data model had events in the window.

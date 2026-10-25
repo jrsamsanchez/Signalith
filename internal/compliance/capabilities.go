@@ -152,7 +152,11 @@ var capabilities = []Capability{
 			if r.Playbooks > 0 {
 				d += fmt.Sprintf(", and %d %s", r.Playbooks, plural(r.Playbooks, "playbook", "playbooks"))
 			}
-			return Met, d + "."
+			// Set up is not shown to work: a run is (COMP-02).
+			if r.Ran == 0 {
+				return Partial, d + ", but none has run successfully in the last 90 days. Run one on a test target to show it works."
+			}
+			return Met, d + fmt.Sprintf("; %d %s succeeded in the last 90 days.", r.Ran, plural(r.Ran, "run", "runs"))
 		}},
 	{ID: "notify", Name: "Alert notifications", Page: "notify",
 		Description: "Findings that matter are sent to email, Slack, Teams or a webhook.",
@@ -163,7 +167,18 @@ var capabilities = []Capability{
 			case n == nil:
 				return Missing, "Notifications are off."
 			case n.Rules > 0:
-				return Met, fmt.Sprintf("%d %s send findings to %d %s.", n.Rules, plural(n.Rules, "rule", "rules"), n.Channels, plural(n.Channels, "channel", "channels"))
+				// An enabled rule is not shown to work: a delivered
+				// message is (COMP-02).
+				d := fmt.Sprintf("%d %s send findings to %d %s", n.Rules, plural(n.Rules, "rule", "rules"), n.Channels, plural(n.Channels, "channel", "channels"))
+				switch {
+				case n.Unread:
+					return Partial, d + ", but what was sent could not be read."
+				case n.Failing > 0:
+					return Partial, d + fmt.Sprintf(", but the latest message to %d %s failed.", n.Failing, plural(n.Failing, "channel", "channels"))
+				case n.Sent == 0:
+					return Partial, d + ", but nothing was delivered in the last 30 days. Send a test from Settings > Notifications."
+				}
+				return Met, d + fmt.Sprintf("; %d %s delivered in the last 30 days.", n.Sent, plural(n.Sent, "message", "messages"))
 			case n.Channels > 0:
 				return Partial, fmt.Sprintf("%d %s set up, but no enabled rule sends findings to them.", n.Channels, plural(n.Channels, "channel is", "channels are"))
 			}
@@ -223,7 +238,13 @@ var capabilities = []Capability{
 			case s.Assets == 0:
 				return Missing, "No assets or identities are listed."
 			}
-			return Met, fmt.Sprintf("%s %s listed.", count(int64(s.Assets)), plural(s.Assets, "asset or identity", "assets and identities"))
+			d := fmt.Sprintf("%s %s listed", count(int64(s.Assets)), plural(s.Assets, "asset or identity", "assets and identities"))
+			// A list without owners or priorities is a name list
+			// (COMP-02).
+			if s.AssetsRated == 0 {
+				return Partial, d + ", but none has an owner or a priority."
+			}
+			return Met, d + fmt.Sprintf(", %s with an owner or a priority.", count(int64(s.AssetsRated)))
 		}},
 
 	// Keeping the logs.
@@ -290,12 +311,17 @@ var capabilities = []Capability{
 			switch {
 			case u == nil:
 				return Partial, "Users could not be read."
+			case u.Named == 0 && !u.Directory:
+				return Partial, "Only the built-in admin account is used, so actions cannot be traced to a person."
+			case u.SignedIn == 0:
+				// Accounts nobody uses show nothing: sign-ins do
+				// (COMP-02).
+				return Partial, fmt.Sprintf("%d named %s with roles, but none signed in in the last 90 days.", u.Named, plural(u.Named, "user", "users"))
 			case u.Directory:
-				return Met, fmt.Sprintf("People sign in with the directory; %d named %s with roles.", u.Named, plural(u.Named, "user", "users"))
-			case u.Named > 0:
-				return Met, fmt.Sprintf("%d named %s with roles, besides the built-in admin.", u.Named, plural(u.Named, "user", "users"))
+				return Met, fmt.Sprintf("People sign in with the directory; %d of %d named %s signed in in the last 90 days.", u.SignedIn, u.Named, plural(u.Named, "user", "users"))
+			default:
+				return Met, fmt.Sprintf("%d of %d named %s with roles, besides the built-in admin, signed in in the last 90 days.", u.SignedIn, u.Named, plural(u.Named, "user", "users"))
 			}
-			return Partial, "Only the built-in admin account is used, so actions cannot be traced to a person."
 		}},
 	{ID: "siem-tls", Name: "Logs are encrypted in transit", Page: "security",
 		Description: "The web UI, the API, the agents and syslog use encrypted connections.",

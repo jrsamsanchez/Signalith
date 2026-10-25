@@ -119,12 +119,13 @@ func full() *Snapshot {
 		Vulns:       &Vulns{Networks: 1, LastScan: now.Add(-3 * 24 * time.Hour)},
 		Findings:    &Findings{Open: 4, New: 1, Total: 10, Reviewed: 9},
 		Cases:       &Cases{Total: 2, Open: 1},
-		Notify:      &Notify{Channels: 1, Rules: 1},
-		Response:    &Response{Actions: 2},
+		Notify:      &Notify{Channels: 1, Rules: 1, Sent: 3},
+		Response:    &Response{Actions: 2, Ran: 1},
 		Intel:       &Intel{Feeds: 2, Fresh: 2},
 		Retention:   &Retention{KeepDays: 400, Guard: true, Oldest: now.Add(-401 * 24 * time.Hour), OldestRead: true},
-		Users:       &Users{Named: 3},
+		Users:       &Users{Named: 3, SignedIn: 2},
 		Assets:      10,
+		AssetsRated: 4,
 		HTTPS:       true,
 		MFA:         "everyone",
 	}
@@ -451,5 +452,42 @@ func TestExports(t *testing.T) {
 	b.Reset()
 	if err := WriteHTML(&b, rep, nist, Export{Server: "siem-1", Version: "0.2.0"}); err != nil || !strings.Contains(b.String(), "1 host: &lt;img") {
 		t.Errorf("report does not name the failing host: %v", err)
+	}
+}
+
+// COMP-02: a feature set up but never shown to work is partial: a
+// response action that never ran, a notification rule that delivered
+// nothing or whose channel fails, an asset list with no owner or
+// priority, and named accounts nobody signs in with.
+func TestConfigurationAloneIsPartial(t *testing.T) {
+	status := func(s *Snapshot, id string) Status {
+		for _, c := range Evaluate(s, nil).Capabilities {
+			if c.ID == id {
+				return c.Status
+			}
+		}
+		t.Fatalf("no capability %s", id)
+		return ""
+	}
+	for _, c := range []struct {
+		id     string
+		change func(*Snapshot)
+	}{
+		{"response", func(s *Snapshot) { s.Response.Ran = 0 }},
+		{"notify", func(s *Snapshot) { s.Notify.Sent = 0 }},
+		{"notify", func(s *Snapshot) { s.Notify.Failing = 1 }},
+		{"notify", func(s *Snapshot) { s.Notify.Unread = true }},
+		{"assets", func(s *Snapshot) { s.AssetsRated = 0 }},
+		{"siem-access", func(s *Snapshot) { s.Users.SignedIn = 0 }},
+		{"siem-access", func(s *Snapshot) { s.Users.Directory = true; s.Users.SignedIn = 0 }},
+	} {
+		s := full()
+		if got := status(s, c.id); got != Met {
+			t.Fatalf("%s with everything in place = %s", c.id, got)
+		}
+		c.change(s)
+		if got := status(s, c.id); got != Partial {
+			t.Errorf("%s from configuration alone = %s, want partial", c.id, got)
+		}
 	}
 }
