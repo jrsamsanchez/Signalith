@@ -12,7 +12,10 @@ opensearch:
   cert: loadtest/compose/out/opensearch-client.pem
   key: loadtest/compose/out/opensearch-client-key.pem
 phases:
-  - {name: settle, for: 30s}
+  # Long enough for the work a server does once after it starts (the
+  # month's compliance record, 2 minutes in) to fall before the idle
+  # phase, which measures what servers cost while they wait.
+  - {name: settle, for: 2m30s}
   - {name: idle, for: 2m}
   - {name: cookies, for: 1m, cookie_flood: {rate: 200}}
 criteria:
