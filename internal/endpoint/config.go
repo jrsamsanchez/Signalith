@@ -26,6 +26,11 @@ const (
 	qStartup  = "startup"
 	qFIM      = "fim"
 	qAddrs    = "addresses"
+	// qPackages lists a Linux host's installed packages, with the exact
+	// distribution version and the release of the system, which CVEs are
+	// matched to (internal/vulnscan). Its results are kept per host, not
+	// written as events.
+	qPackages = "packages"
 	// qProcess is every program start on macOS, from EndpointSecurity.
 	qProcess = "process_start"
 	// qCheck starts the name of each configuration check's query, followed
@@ -71,7 +76,8 @@ func schedule(platform string, set Settings) []scheduled {
 		qs = append(qs,
 			scheduled{qSoftware, "SELECT name, version, maintainer AS vendor, '' AS path, 'deb' AS package_type FROM deb_packages " +
 				"UNION ALL SELECT name, version || '-' || release, vendor, '' AS path, 'rpm' AS package_type FROM rpm_packages;", inv, false},
-			scheduled{qServices, "SELECT id AS name, description AS display_name, unit_file_state AS start_type, fragment_path AS path FROM systemd_units WHERE id LIKE '%.service';", inv, false})
+			scheduled{qServices, "SELECT id AS name, description AS display_name, unit_file_state AS start_type, fragment_path AS path FROM systemd_units WHERE id LIKE '%.service';", inv, false},
+			scheduled{qPackages, packagesSQL, packagesInterval, true})
 	}
 	if platform == Darwin {
 		qs = append(qs, scheduled{qProcess, processStartSQL, 60, false})
@@ -96,6 +102,19 @@ func schedule(platform string, set Settings) []scheduled {
 	}
 	return qs
 }
+
+// packagesSQL lists the installed deb and rpm packages, with the source
+// package each was built from (Debian and Ubuntu advisories name source
+// packages) and the RPM epoch, and one row (type os) for the system:
+// osquery's platform (ubuntu, debian, rhel, rocky, almalinux...) and its
+// major.minor version.
+const packagesSQL = "SELECT name, version, source, 'deb' AS type FROM deb_packages WHERE status LIKE '% installed' " +
+	"UNION ALL SELECT name, CASE WHEN CAST(epoch AS INTEGER) > 0 THEN CAST(epoch AS TEXT) || ':' ELSE '' END || version || '-' || release, source, 'rpm' FROM rpm_packages " +
+	"UNION ALL SELECT platform, CAST(major AS TEXT) || '.' || CAST(minor AS TEXT), platform_like, 'os' FROM os_version;"
+
+// packagesInterval is how often, in seconds, a Linux host lists its
+// packages, all of them each time.
+const packagesInterval = 6 * 3600
 
 // processStartSQL reads the programs macOS started since the last run
 // from EndpointSecurity (es_process_events, which needs osquery's

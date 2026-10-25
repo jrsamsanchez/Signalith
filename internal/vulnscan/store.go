@@ -124,13 +124,16 @@ func (c Counts) Total() int { return c.Critical + c.High + c.Medium + c.Low }
 
 // Host is one host as its network's latest scan found it.
 type Host struct {
-	ID         string        `json:"id"`
-	TargetID   string        `json:"target_id"`
-	TargetName string        `json:"target_name"`
-	Address    string        `json:"address"`
-	Hostname   string        `json:"hostname,omitempty"`
-	MAC        string        `json:"mac,omitempty"`
-	Vendor     string        `json:"vendor,omitempty"`
+	ID         string `json:"id"`
+	TargetID   string `json:"target_id"`
+	TargetName string `json:"target_name"`
+	Address    string `json:"address"`
+	Hostname   string `json:"hostname,omitempty"`
+	MAC        string `json:"mac,omitempty"`
+	Vendor     string `json:"vendor,omitempty"`
+	// EndpointID is the osquery host's node ID, for a host whose
+	// installed packages were checked (PackagesTarget).
+	EndpointID string        `json:"endpoint_id,omitempty"`
 	Services   []HostService `json:"services"`
 	Counts     Counts        `json:"counts"`
 	MaxCVSS    float64       `json:"max_cvss"`
@@ -166,13 +169,21 @@ type Vuln struct {
 	EPSSPercentile float64 `json:"epss_percentile,omitempty"`
 	CPE            string  `json:"cpe"`
 	// Source is where it came from: "" for a CVE matched to the software
-	// version Nmap found, or openvas for a weakness OpenVAS tested for.
+	// version Nmap found, openvas for a weakness OpenVAS tested for, or
+	// package for a CVE matched to a package osquery found installed.
 	Source string `json:"source,omitempty"`
 	// Distro is the Linux distribution the service's banner says built
 	// it ("Ubuntu"), for a CVE matched by version only: distributions fix
 	// CVEs without changing the upstream version, so it may be fixed
 	// there already (ASI-02).
 	Distro string `json:"distro,omitempty"`
+	// For a CVE matched to an installed package (Source package): the
+	// version the distribution fixed it in, the distribution's advisory
+	// when it is not the CVE itself (USN-6242-1, ALSA-2023:4419), and the
+	// release, such as Ubuntu 22.04 (ASI-19).
+	Fixed     string `json:"fixed,omitempty"`
+	Advisory  string `json:"advisory,omitempty"`
+	Ecosystem string `json:"ecosystem,omitempty"`
 	// From OpenVAS: the test's OID and name, every CVE it names (CVE is
 	// the newest of them, or empty), and how to fix it.
 	OID      string   `json:"oid,omitempty"`
@@ -585,8 +596,14 @@ func (s *Store) SaveHosts(ctx context.Context, targetID string, hosts []*Host) e
 // and DropHosts leaves it to the sample data.
 const SampleTarget = "sample-data"
 
+// PackagesTarget is the network the CVEs of osquery hosts' installed
+// packages are kept under (PackageCheck). Like SampleTarget it is never
+// one of the scan settings' networks, and DropHosts leaves it.
+const PackagesTarget = "installed-packages"
+
 // DropHosts deletes the hosts of networks no longer listed, but for the
-// sample data's (SampleTarget).
+// sample data's (SampleTarget) and the installed packages'
+// (PackagesTarget).
 func (s *Store) DropHosts(ctx context.Context, targets map[string]bool) error {
 	docs, err := s.hostDocs(ctx, "")
 	if err != nil {
@@ -594,7 +611,7 @@ func (s *Store) DropHosts(ctx context.Context, targets map[string]bool) error {
 	}
 	for _, d := range docs {
 		var h Host
-		if json.Unmarshal(d.Source, &h) == nil && !targets[h.TargetID] && h.TargetID != SampleTarget {
+		if json.Unmarshal(d.Source, &h) == nil && !targets[h.TargetID] && h.TargetID != SampleTarget && h.TargetID != PackagesTarget {
 			if err := s.Docs.DeleteIf(ctx, s.Index, d.ID, d.Version, false); err != nil && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrConflict) {
 				return err
 			}

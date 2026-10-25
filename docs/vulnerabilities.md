@@ -46,6 +46,7 @@ can be against the law, and the page asks you to confirm before it adds a networ
 | Nmap can run a test scan | Makes sure Nmap works under the account Signalith runs as | Yes |
 | Outbound HTTPS to `services.nvd.nist.gov` | Looks software versions up in the NVD to name the CVEs | No: without it, scans still list hosts, ports and software |
 | An NVD API key | Makes the first lookups about ten times faster | No |
+| Outbound HTTPS to `osv-vulnerabilities.storage.googleapis.com` | Checks the packages installed on Linux hosts that run osquery ([below](#installed-packages-on-linux-hosts)) | No |
 | OpenVAS on the scanning server | Deeper tests for the networks that turn it on ([below](#deeper-scans-with-openvas-optional)) | No |
 
 Install Nmap:
@@ -129,6 +130,70 @@ them to the server, and enter their full paths as **Known exploited catalog addr
 **Vulnerability scans** (or set `SIGNALITH_KEV_URL` and `SIGNALITH_EPSS_URL`, or
 `vulns.kev_url` and `vulns.epss_url` in `signalith.yaml`). A file must end in `.json`,
 `.csv` or `.gz`. The same settings take the address of a mirror on your own network.
+
+## Installed packages on Linux hosts
+
+A scan reads a version from what a port answers, such as `OpenSSH 8.9p1 Ubuntu-3ubuntu0.10`.
+Linux distributions fix CVEs in their own builds without changing that version, so a scan
+cannot tell whether the fix is in. Those CVEs are marked **Version only** (see
+[below](#what-a-real-openvas-scan-finds)).
+
+Linux hosts that run osquery from the [Endpoints page](endpoints.md) can settle it. Every
+6 hours each one lists its installed deb and rpm packages, with the exact version its
+distribution built (such as `1:8.9p1-3ubuntu0.10`), and its release. Signalith matches
+each package to its distribution's own advisories and reports a CVE only when the
+installed version is older than the version the distribution fixed it in. Versions are
+compared the way `dpkg` and `rpm` compare them, epoch and revision included. A CVE the
+distribution has not fixed yet is not reported: no update would fix it.
+
+| Release | Advisories |
+| --- | --- |
+| Debian (each release) | Debian's security tracker (DSA, DLA and CVE records) |
+| Ubuntu (each release, LTS or not) | Ubuntu Security Notices |
+| Red Hat Enterprise Linux | Red Hat's security data (RHSA) |
+| AlmaLinux | AlmaLinux errata (ALSA) |
+| Rocky Linux | Rocky Linux errata (RLSA) |
+
+Other systems, such as CentOS Stream, Amazon Linux, SUSE and Alpine, are not checked
+yet. Ubuntu Pro (ESM) fixes are not checked either: a host with ESM updates can show a CVE
+that its ESM version has fixed. Hosts enrolled in a tenant are not checked yet, only the
+provider's own.
+
+The advisories come from [OSV.dev](https://osv.dev), which publishes all of them in one
+format. The server that runs the background jobs downloads only the releases your hosts
+run (for example `Debian:12/all.zip` or `Ubuntu:22.04:LTS/all.zip` from
+`osv-vulnerabilities.storage.googleapis.com`), once a day, and tries again an hour after a
+failed download. Nothing about your hosts is sent. A download can be large (about 150 MB
+for one Ubuntu release, 45 MB for Debian, at most 512 MB), so the server reads it from a
+temporary file. If a download fails, the last results stay. Each data source has its own
+license: Ubuntu's notices are CC BY-SA 4.0, Red Hat's data CC BY 4.0, AlmaLinux's MIT and
+Rocky Linux's BSD.
+
+The results show on the **Hosts** tab under the network **Installed packages**, one row per
+host, with one entry per source package (such as `openssh`) and the version that fixes each
+CVE. Each CVE is marked **Package**. They are written as events like a scan's, with
+`vuln_confidence=package`, `vuln_source=package`, `vuln_distro` (such as `Ubuntu 22.04`),
+`product` and `product_version` (the source package and the installed version),
+`endpoint_id`, and `solution` (the version to upgrade to). They have no `dest_port`. A
+host's CVEs are written when they change, and once a day while they stay. Package matches
+raise the same detections as a scan's CVEs: known exploited, critical (CVSS 9 or more) and
+likely exploited. Red Hat, AlmaLinux and Rocky Linux rate their advisories as
+Critical, Important, Moderate or Low; when an advisory has no CVSS score, that rating sets
+the severity, and the critical detection, which needs a CVSS score, does not fire.
+
+```
+datamodel=Vulnerabilities vuln_confidence=package | stats dc(cve) as cves by dest, product | sort -cves
+datamodel=Vulnerabilities vuln_confidence=package known_exploited=true | table dest, product, product_version, cve, solution
+```
+
+It runs while **Look up CVEs in the National Vulnerability Database** is on in **Scanner
+setup**, and needs no scan network. **Scanner setup** shows how it stands. To stop it, set
+**Distribution advisories address** in [Settings](settings.md), on the **Server** tab under
+**Vulnerability scans**, to `off` (or `SIGNALITH_OSV_URL=off`, or `vulns.osv_url: off` in
+`signalith.yaml`). The same setting takes a mirror's https address, or, on a network with no
+internet, the full path of a folder on the server that runs the background jobs that holds
+each release's file, as `Debian:12/all.zip`. On Windows, which allows no `:` in a folder
+name, use `_` instead: `Debian_12/all.zip`.
 
 ## Networks
 
@@ -226,7 +291,8 @@ distribution's build, though: when the banner names one (`OpenSSH 8.9p1 Ubuntu-3
 Vulnerabilities page and `vuln_confidence=version_only` in their events, since the
 distribution may have fixed them without changing the version, and the detections for
 critical and likely exploited vulnerabilities leave them out (known exploited ones still
-raise a finding). A signed-in OpenVAS scan reads the installed packages and settles it.
+raise a finding). A signed-in OpenVAS scan reads the installed packages and settles it,
+and so does osquery's list of [installed packages](#installed-packages-on-linux-hosts).
 The two find different things, which is why a network can use both.
 
 ### Credentialed OpenVAS scans

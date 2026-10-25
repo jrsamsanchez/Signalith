@@ -50,6 +50,9 @@ type Scanner struct {
 	// Exploits ranks the CVEs found by CISA's KEV catalog and FIRST's EPSS
 	// scores; nil leaves them as the NVD has them.
 	Exploits *ExploitFeeds
+	// Packages matches osquery hosts' installed packages to their
+	// distribution's advisories; nil does not.
+	Packages *PackageCheck
 	// OpenVAS runs the deeper scans of the networks that ask for them;
 	// nil or not configured is not set up on this server.
 	OpenVAS *OpenVAS
@@ -316,7 +319,8 @@ func (s *Scanner) Step(ctx context.Context) error {
 	if leader {
 		s.prune(ctx, targets, false)
 	}
-	s.exploits(ctx, leader && len(set.Targets) > 0)
+	s.exploits(ctx, leader && (len(set.Targets) > 0 || s.Packages.Active()))
+	s.packages(ctx, leader && set.CVELookup)
 	if s.busy() {
 		return nil
 	}
@@ -459,6 +463,28 @@ func (s *Scanner) exploits(ctx context.Context, download bool) {
 		go run()
 	} else {
 		run()
+	}
+}
+
+// packages checks osquery hosts' installed packages, on the server
+// running the jobs while CVE lookups are on: hourly, and when the
+// advisories it downloads once a day change.
+func (s *Scanner) packages(ctx context.Context, run bool) {
+	if s.Packages == nil || !run {
+		return
+	}
+	check := func() {
+		if err := s.Packages.Run(ctx, s.Exploits.Current()); err != nil && ctx.Err() == nil {
+			s.log().Debug("package check incomplete", "err", err)
+		}
+	}
+	s.mu.Lock()
+	async := s.async
+	s.mu.Unlock()
+	if async {
+		go check()
+	} else {
+		check()
 	}
 }
 

@@ -166,7 +166,7 @@ func (t *Target) Validate() error {
 	if len(t.Name) > maxNameLen || strings.ContainsAny(t.Name, "\x00\r\n") {
 		return inputErrorf("%q: the name is longer than %d characters or has a line break", t.Name, maxNameLen)
 	}
-	if !idRE.MatchString(t.ID) || t.ID == SampleTarget {
+	if !idRE.MatchString(t.ID) || t.ID == SampleTarget || t.ID == PackagesTarget {
 		return inputErrorf("%s: the network has no valid ID; reload the page and add it again", t.Name)
 	}
 	var err error

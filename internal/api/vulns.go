@@ -28,15 +28,18 @@ type Vulns struct {
 	report *vulnscan.Report
 }
 
-// useNVD puts a CVE database address and API key, and the exploit feeds'
-// addresses, saved on the Settings page into use, and has the next setup
-// check look again.
-func (v *Vulns) useNVD(url, key, kevURL, epssURL string) {
+// useNVD puts a CVE database address and API key, the exploit feeds'
+// addresses and the distribution advisories' address, saved on the
+// Settings page, into use, and has the next setup check look again.
+func (v *Vulns) useNVD(url, key, kevURL, epssURL, osvURL string) {
 	if v.Scanner != nil && v.Scanner.NVD != nil {
 		v.Scanner.NVD.Set(url, key)
 	}
 	if v.Scanner != nil && v.Scanner.Exploits != nil {
 		v.Scanner.Exploits.Set(kevURL, epssURL)
+	}
+	if v.Scanner != nil && v.Scanner.Packages != nil {
+		v.Scanner.Packages.Set(osvURL)
 	}
 	v.mu.Lock()
 	v.report = nil
@@ -151,7 +154,11 @@ func (s *Server) handleVulns(w http.ResponseWriter, r *http.Request) {
 		row := vulnHostRow{ID: h.ID, TargetID: h.TargetID, TargetName: h.TargetName, Address: h.Address, Hostname: h.Hostname,
 			Vendor: h.Vendor, Counts: h.Counts, MaxCVSS: h.MaxCVSS, Ports: []int{}, FirstSeen: h.FirstSeen, LastSeen: h.LastSeen}
 		for _, svc := range h.Services {
-			row.Ports = append(row.Ports, svc.Port)
+			// A host's own findings and its installed packages have no
+			// port.
+			if svc.Port > 0 {
+				row.Ports = append(row.Ports, svc.Port)
+			}
 			for _, vu := range svc.Vulns {
 				if row.TopCVE == "" {
 					row.TopCVE = vu.CVE

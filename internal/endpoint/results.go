@@ -47,6 +47,9 @@ type Batch struct {
 	IPs []string
 	// Checks are configuration check results that are new or changed.
 	Checks []CheckResult
+	// Packages are the host's installed packages, when the batch had a
+	// snapshot of them.
+	Packages *PackageList
 	// Skipped counts lines that were not results of Signalith's queries,
 	// or could not be read.
 	Skipped int
@@ -109,6 +112,13 @@ func ParseResults(n *Node, lines []json.RawMessage, now time.Time) *Batch {
 			}
 			if l.Snapshot != nil {
 				b.IPs = append([]string{}, ips...)
+			}
+			continue
+		}
+		if name == qPackages {
+			// Only a whole list says what is installed now.
+			if l.Snapshot != nil {
+				b.Packages = packageList(l.Snapshot, at)
 			}
 			continue
 		}

@@ -1695,9 +1695,17 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	exploits.HTTP.Timeout = 5 * time.Minute
 	in.downloads = append(in.downloads, exploits.HTTP)
 	exploits.Log = log
+	// The packages osquery hosts list, matched to their distribution's
+	// advisories from OSV.dev, downloaded as feeds are (ASI-19).
+	packages := vulnscan.NewPackageCheck(vstore, estore, c.Vulns.OSVURL)
+	packages.HTTP = newDownloadClient(c)
+	packages.HTTP.Timeout = 10 * time.Minute
+	in.downloads = append(in.downloads, packages.HTTP)
+	packages.Events, packages.Server, packages.Log = pipeline, sampleServer, log
 	scanner := &vulnscan.Scanner{
 		Store: vstore, NVD: nvd, Events: pipeline, Server: sampleServer, NodeID: sampleNode, Log: log, OpenVAS: openvas, Exploits: exploits,
-		Checker: &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas, Exploits: exploits},
+		Packages: packages,
+		Checker:  &vulnscan.Checker{NVD: nvd, Docker: cluster.InContainer(), OpenVAS: openvas, Exploits: exploits, Packages: packages},
 	}
 	if r.node != nil {
 		scanner.Leader, scanner.Paused = r.node.RunsJobs, r.node.WritesRefused
@@ -2698,6 +2706,10 @@ func feedFoundAssets(ctx context.Context, es *endpoint.Store, vs *vulnscan.Store
 		hosts, verr := vs.Hosts(ctx)
 		if verr == nil {
 			for _, h := range hosts {
+				if h.TargetID == vulnscan.PackagesTarget {
+					// An osquery host, listed above.
+					continue
+				}
 				if a := canon(h.Address); a.IsValid() {
 					if known[a] {
 						continue

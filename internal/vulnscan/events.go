@@ -5,6 +5,7 @@ package vulnscan
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -63,45 +64,99 @@ func Events(sc *Scan, scanner string, hosts []*Host, at time.Time) []ingest.Even
 				delete(base, "dest_port")
 			}
 			for _, v := range svc.Vulns {
-				f := copyFields(base)
-				f["category"] = CategoryVulnerability
-				f["signature_id"] = v.Key()
-				f["signature"] = vulnSignature(v)
-				f["severity"] = v.Severity
-				f["cvss"] = v.CVSS
-				f["known_exploited"] = strconv.FormatBool(v.KEV)
-				if v.KEV {
-					f["known_ransomware"] = strconv.FormatBool(v.Ransomware)
-					if v.KEVDue != "" {
-						f["kev_due"] = v.KEVDue
-					}
-				}
-				if v.EPSS > 0 || v.EPSSPercentile > 0 {
-					f["epss"] = v.EPSS
-					f["epss_percentile"] = v.EPSSPercentile
-				}
-				if v.CVE != "" {
-					f["cve"] = v.CVE
-					f["url"] = "https://nvd.nist.gov/vuln/detail/" + v.CVE
-				}
-				if v.CPE != "" {
-					f["cpe"] = v.CPE
-				}
-				if v.Distro != "" {
-					// Matched by version only, on a build the
-					// distribution may have fixed (ASI-02).
-					f["vuln_confidence"] = ConfidenceVersionOnly
-					f["vuln_distro"] = v.Distro
-				}
-				if v.Source == SourceOpenVAS {
-					f["vendor_product"] = "Signalith OpenVAS scan"
-					f["vuln_source"] = SourceOpenVAS
-					f["openvas_oid"] = v.OID
-					if v.Solution != "" {
-						f["solution"] = truncate(v.Solution, 500)
-					}
-				}
-				out = append(out, ingest.Event{Time: at, Model: Model, Fields: f})
+				out = append(out, ingest.Event{Time: at, Model: Model, Fields: vulnFields(base, v)})
+			}
+		}
+	}
+	return out
+}
+
+// vulnFields are the fields of one vulnerability's event, on top of its
+// host's and service's.
+func vulnFields(base map[string]any, v Vuln) map[string]any {
+	f := copyFields(base)
+	f["category"] = CategoryVulnerability
+	f["signature_id"] = v.Key()
+	f["signature"] = vulnSignature(v)
+	f["severity"] = v.Severity
+	f["cvss"] = v.CVSS
+	f["known_exploited"] = strconv.FormatBool(v.KEV)
+	if v.KEV {
+		f["known_ransomware"] = strconv.FormatBool(v.Ransomware)
+		if v.KEVDue != "" {
+			f["kev_due"] = v.KEVDue
+		}
+	}
+	if v.EPSS > 0 || v.EPSSPercentile > 0 {
+		f["epss"] = v.EPSS
+		f["epss_percentile"] = v.EPSSPercentile
+	}
+	if v.CVE != "" {
+		f["cve"] = v.CVE
+		f["url"] = "https://nvd.nist.gov/vuln/detail/" + v.CVE
+	}
+	if v.CPE != "" {
+		f["cpe"] = v.CPE
+	}
+	if v.Distro != "" {
+		// Matched by version only, on a build the
+		// distribution may have fixed (ASI-02).
+		f["vuln_confidence"] = ConfidenceVersionOnly
+		f["vuln_distro"] = v.Distro
+	}
+	switch v.Source {
+	case SourceOpenVAS:
+		f["vendor_product"] = "Signalith OpenVAS scan"
+		f["vuln_source"] = SourceOpenVAS
+		f["openvas_oid"] = v.OID
+		if v.Solution != "" {
+			f["solution"] = truncate(v.Solution, 500)
+		}
+	case SourcePackage:
+		// The installed version is older than the one the
+		// distribution fixed it in (ASI-19).
+		f["vendor_product"] = PackageVendorProduct
+		f["vuln_source"] = SourcePackage
+		f["vuln_confidence"] = ConfidencePackage
+		f["vuln_distro"] = v.Ecosystem
+		sol := "Upgrade " + fmt.Sprint(base["product"]) + " to " + v.Fixed + " or later"
+		if v.Advisory != "" {
+			sol += " (" + v.Advisory + ")"
+		}
+		f["solution"] = truncate(sol, 500)
+	}
+	return f
+}
+
+// PackageVendorProduct is the vendor_product of the events of CVEs found
+// in installed packages.
+const PackageVendorProduct = "Signalith package check"
+
+// PackageEvents turns hosts' installed packages with CVEs (PackageCheck)
+// into events, one per CVE, shaped as a scan's are. A package has no port:
+// dest_port and transport are left out, and product and product_version
+// are the source package and its installed version.
+func PackageEvents(server string, hosts []*Host, at time.Time) []ingest.Event {
+	var out []ingest.Event
+	for _, h := range hosts {
+		dest := h.Hostname
+		if dest == "" {
+			dest = h.Address
+		}
+		for _, svc := range h.Services {
+			base := map[string]any{
+				"host": server, "sourcetype": Sourcetype, "vendor_product": PackageVendorProduct,
+				"dest": dest, "product": svc.Product, "product_version": svc.Version,
+				"scan_id": h.ScanID, "scan_network": h.TargetName,
+			}
+			if h.Address != "" && h.Address != h.Hostname {
+				base["dest_ip"] = h.Address
+			}
+			if h.EndpointID != "" {
+				base["endpoint_id"] = h.EndpointID
+			}
+			for _, v := range svc.Vulns {
+				out = append(out, ingest.Event{Time: at, Model: Model, Fields: vulnFields(base, v)})
 			}
 		}
 	}
