@@ -868,6 +868,10 @@ func (h *Hub) Restore(d CacheData) {
 	}
 }
 
+// acceptRestoreTries is how many times AcceptRestore writes a document
+// that another writer changed meanwhile.
+const acceptRestoreTries = 5
+
 // AcceptRestore makes this server, and every other, accept the documents
 // now in OpenSearch after an intentional snapshot restore lowered their
 // revisions: every document of the config index whose MAC verifies,
@@ -876,10 +880,6 @@ func (h *Hub) Restore(d CacheData) {
 // above every one applied anywhere (peerMaxRev is the highest the other
 // servers' heartbeats report). Documents that fail their MAC stay
 // refused.
-// acceptRestoreTries is how many times AcceptRestore writes a document
-// that another writer changed meanwhile.
-const acceptRestoreTries = 5
-
 func (h *Hub) AcceptRestore(ctx context.Context, by string, peerMaxRev int64) error {
 	rev := max(peerMaxRev, h.MaxRev()) + 1
 	c, prefix := h.target()
