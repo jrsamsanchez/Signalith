@@ -649,3 +649,24 @@ func TestDocReadWhileShardsUnassigned(t *testing.T) {
 		t.Errorf("the same copy read again: %+v %v, missing %v, problems %v", v, ok, db.Missing(), b.Problems())
 	}
 }
+
+// A server that writes a document while accept-restore writes it again
+// (its own nodecfg, say) makes accept-restore read it again and write it
+// once more, not fail.
+func TestAcceptRestoreRetriesAConflict(t *testing.T) {
+	e := newEnv(t)
+	ctx := context.Background()
+	a, _ := e.hub("siem-a")
+	da := NewDoc[testBody](a, "users", "users", 1)
+	if _, err := da.Mutate(ctx, "sam", func(v *testBody) error { v.Name = "jlee"; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	e.os.FailN(1, http.MethodPut, "/_doc/users", http.StatusConflict, "version_conflict_engine_exception")
+	if err := a.AcceptRestore(ctx, "sam", 0); err != nil {
+		t.Fatalf("accept-restore after a conflict: %v", err)
+	}
+	cycle(t, a)
+	if _, _, rev := da.Updated(); rev != 2 {
+		t.Errorf("rev %d after accept-restore", rev)
+	}
+}
