@@ -31,6 +31,7 @@ These features send nothing of yours: they only download public data.
 | [Behavior baselines](baselines.md#the-ip-database) | The iptoasn.com IP database |
 | [Content updates](detections.md#content-updates) | The signed content bundle |
 | KEV and EPSS, for [vulnerability scans](vulnerabilities.md#which-vulnerabilities-to-fix-first-kev-and-epss) | The whole KEV catalog and the whole EPSS score list |
+| [Installed packages](vulnerabilities.md#installed-packages-on-linux-hosts) on Linux hosts | OSV.dev's whole advisory file for each release your hosts run, from `osv-vulnerabilities.storage.googleapis.com`. Packages are matched in Signalith |
 | [Microsoft 365](microsoft-365.md) and [Okta](okta.md) | Their audit logs, into Signalith, with the app credentials you set up |
 
 ## Keeping AI on your own network

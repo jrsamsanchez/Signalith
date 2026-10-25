@@ -51,6 +51,9 @@ type Checker struct {
 	OpenVAS *OpenVAS
 	// Exploits are the KEV and EPSS feeds, for their status.
 	Exploits *ExploitFeeds
+	// Packages is the check of osquery hosts' installed packages, for its
+	// status.
+	Packages *PackageCheck
 	// Reach finds how this server reaches an address; nil is LocalRoute.
 	Reach func(ctx context.Context, entry string) Route
 }
@@ -180,6 +183,9 @@ func (c *Checker) Run(ctx context.Context, set Settings, mine []Target) (checks 
 
 	if c.Exploits != nil {
 		checks = append(checks, c.exploitsCheck(ctx, len(set.Targets) > 0))
+	}
+	if c.Packages != nil {
+		checks = append(checks, c.packagesCheck(ctx, set.CVELookup))
 	}
 
 	checks = append(checks, c.openVASCheck(ctx, mine))

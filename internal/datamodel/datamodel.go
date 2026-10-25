@@ -484,7 +484,7 @@ var Models = []Model{
 	},
 	{
 		Name:        "Vulnerabilities",
-		Description: "Vulnerabilities and open services that network scans found: one event per open port, and one per known vulnerability (CVE) in the software on it.",
+		Description: "Vulnerabilities and open services that network scans found: one event per open port, and one per known vulnerability (CVE) in the software on it. Also one per CVE in a package installed on a Linux host that runs osquery, older than the version its distribution fixed it in.",
 		Fields: []Field{
 			{Name: "category", Type: "string", Description: "Kind of result: open_port (a port that answered) or vulnerability (a CVE that applies to the software on it)", Examples: []string{"open_port", "vulnerability"}},
 			{Name: "dest", Type: "string", Description: "Host that was scanned: its name when it has one, else its address", Examples: []string{"web-01.corp.example"}},
@@ -504,8 +504,8 @@ var Models = []Model{
 			{Name: "epss", Type: "number", Description: "EPSS score from FIRST: the probability, from 0 to 1, that the CVE is exploited in the next 30 days", Examples: []string{"0.944"}},
 			{Name: "epss_percentile", Type: "number", Description: "Share of all CVEs with a lower EPSS score, from 0 to 1", Examples: []string{"0.9997"}},
 			{Name: "url", Type: "string", Description: "Where to read about the vulnerability", Examples: []string{"https://nvd.nist.gov/vuln/detail/CVE-2023-38408"}},
-			{Name: "vuln_confidence", Type: "string", Description: "version_only when the CVE was matched by version alone on software a Linux distribution built: distributions fix CVEs without changing the version, so it may be fixed already", Examples: []string{"version_only"}},
-			{Name: "vuln_distro", Type: "string", Description: "For a version_only match: the distribution the service's banner names", Examples: []string{"Ubuntu", "Debian"}},
+			{Name: "vuln_confidence", Type: "string", Description: "How the CVE was matched: version_only by version alone on software a Linux distribution built (distributions fix CVEs without changing the version, so it may be fixed already), or package when an installed package is older than the version its distribution fixed it in", Examples: []string{"version_only", "package"}},
+			{Name: "vuln_distro", Type: "string", Description: "The distribution: for a version_only match, the one the service's banner names; for a package match, the release the host runs", Examples: []string{"Ubuntu", "Debian 12"}},
 			{Name: "scan_id", Type: "string", Description: "Scan that found it"},
 			{Name: "scan_network", Type: "string", Description: "Network the scan covered, as named on the Vulnerabilities page", Examples: []string{"Office LAN"}},
 		},

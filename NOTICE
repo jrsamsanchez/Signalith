@@ -93,7 +93,11 @@ the NVD (https://nvd.nist.gov). It also downloads CISA's Known Exploited
 Vulnerabilities catalog (https://www.cisa.gov/known-exploited-vulnerabilities-catalog,
 public domain, CC0 1.0) and FIRST's Exploit Prediction Scoring System scores
 (EPSS, https://www.first.org/epss/, used under FIRST's terms of use, with
-credit to FIRST).
+credit to FIRST). For the packages installed on Linux hosts, it downloads
+distribution advisories from OSV.dev (https://osv.dev), each under its
+source's license: Debian's security tracker data, Ubuntu Security Notices
+(CC BY-SA 4.0), Red Hat Security Data (CC BY 4.0), AlmaLinux errata (MIT) and
+Rocky Linux errata (BSD). Signalith ships none of this data.
 
 The sign-in country and network checks download the IP-to-ASN database of
 iptoasn.com (https://iptoasn.com), which is made available under the Open Data

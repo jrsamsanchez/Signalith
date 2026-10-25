@@ -1149,7 +1149,7 @@ func (s *Server) applyLive(old, saved *config.Config) []string {
 	}
 	s.useLive(&next, applied)
 	if changed("vulns.") && s.Vulns != nil {
-		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey, next.Vulns.KEVURL, next.Vulns.EPSSURL)
+		s.Vulns.useNVD(next.NVDURL(), next.Vulns.NVDAPIKey, next.Vulns.KEVURL, next.Vulns.EPSSURL, next.Vulns.OSVURL)
 	}
 	if changed("server.public_url") {
 		s.coverPublicURL(&next)

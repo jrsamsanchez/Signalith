@@ -283,7 +283,11 @@ type RunState struct {
 	// timeout; LastError says how long that was.
 	TimedOut bool `json:"timed_out,omitempty"`
 	Capped   bool `json:"capped,omitempty"`
-	Running  bool `json:"running,omitempty"`
+	// Sampled is set when the last run's commands after the search saw
+	// only the newest Sampled of SampledOf matching events (SL-01).
+	Sampled   int   `json:"sampled,omitempty"`
+	SampledOf int64 `json:"sampled_of,omitempty"`
+	Running   bool  `json:"running,omitempty"`
 	// Lag is how long after its slot ended the last scheduled run
 	// started. LateRuns counts the runs that started more than one
 	// schedule interval late, LastLate is when the latest one did.
@@ -321,10 +325,14 @@ type RunResult struct {
 	// earlier run of the same slot.
 	Duplicates int `json:"duplicates"`
 	// Suppressed counts the results an exception matched.
-	Suppressed int       `json:"suppressed,omitempty"`
-	Capped     bool      `json:"capped,omitempty"`
-	Earliest   time.Time `json:"earliest"`
-	Latest     time.Time `json:"latest"`
+	Suppressed int  `json:"suppressed,omitempty"`
+	Capped     bool `json:"capped,omitempty"`
+	// Sampled is how many events the commands after the search saw when
+	// more matched (SampledOf): the counts come from the newest ones.
+	Sampled   int       `json:"sampled,omitempty"`
+	SampledOf int64     `json:"sampled_of,omitempty"`
+	Earliest  time.Time `json:"earliest"`
+	Latest    time.Time `json:"latest"`
 }
 
 // ErrNotAllowed stops a scheduled run on a server that no longer runs the
@@ -752,10 +760,15 @@ func (s *Scheduler) runSlot(ctx context.Context, d *Detection, sched time.Durati
 		advance = true
 		st.LastResults, st.LastFindings, st.LastRisk = res.Results, len(res.Findings), res.Risk
 		st.LastThrottled, st.LastDuplicates, st.LastSuppressed, st.Capped = res.Throttled, res.Duplicates, res.Suppressed, res.Capped
+		st.Sampled, st.SampledOf = res.Sampled, res.SampledOf
+		if res.Sampled > 0 {
+			s.log().Warn("detection counted only the newest events", "detection", d.ID, "counted", res.Sampled, "matched", res.SampledOf)
+		}
 		st.LastError, st.ErrorKind, st.TimedOut, st.Attempts = "", "", false, 0
 	case ErrorQuery, ErrorSetup:
 		advance = true
 		st.LastResults, st.LastFindings, st.LastRisk, st.LastThrottled, st.LastDuplicates, st.LastSuppressed, st.Capped = 0, 0, 0, 0, 0, 0, false
+		st.Sampled, st.SampledOf = 0, 0
 		st.LastError, st.ErrorKind, st.TimedOut, st.Attempts = err.Error(), kind, false, 0
 	case ErrorTimeout:
 		st.Attempts++
@@ -1027,6 +1040,11 @@ func (s *Scheduler) run(ctx context.Context, d *Detection, spec runSpec) (*RunRe
 		return nil, &searchError{Err: err}
 	}
 	out := &RunResult{Results: len(res.Rows), Earliest: earliest, Latest: latest, Findings: []*findings.Finding{}}
+	if res.Sampled > 0 {
+		// SL-01: a rule like eval ... | stats counted only the newest
+		// events, so its counts may be low. Say so on the rule.
+		out.Sampled, out.SampledOf = res.Sampled, res.Matched
+	}
 	s.mu.Lock()
 	maxF := s.MaxFindingsPerRun
 	s.mu.Unlock()

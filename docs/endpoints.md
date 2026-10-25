@@ -15,6 +15,7 @@ Each host reports:
 | Listening ports and the program behind each | Inventory (`inventory_type=port`) | every 10 minutes |
 | Operating system, installed software, accounts, services and startup items, as they are added or removed | Inventory (`inventory_type=os`, `software`, `user`, `service`, `startup`) | every hour (adjustable) |
 | Configuration checks, when a result changes | Configuration_Check | every hour (adjustable) |
+| Linux only: every installed deb and rpm package with its exact version, and the release, for [checking against distribution advisories](vulnerabilities.md#installed-packages-on-linux-hosts) | Kept per host, not as events | every 6 hours, in full |
 
 Inventory and checks are sent the first time in full, then only what changed, so an
 unchanged host sends nothing. osquery runs them on the hour, so a newly enrolled host's

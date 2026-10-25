@@ -56,6 +56,7 @@ func TestValidateRefusals(t *testing.T) {
 		{func(c *Config) { c.Okta.Domain = "not a domain" }, "okta.domain"},
 		{func(c *Config) { c.Vulns.NVDURL = "ftp://x" }, "vulns.nvd_url"},
 		{func(c *Config) { c.Vulns.KEVURL = "ftp://x" }, "vulns.kev_url"},
+		{func(c *Config) { c.Vulns.OSVURL = "ftp://x" }, "vulns.osv_url"},
 		{func(c *Config) { c.Detections.MaxFindingsPerRun = 0 }, "detections.max_findings_per_run"},
 		{func(c *Config) { c.Detections.SearchBudget = -1 }, "detections.search_budget"},
 		{func(c *Config) { c.Detections.CatchUp = "30d" }, "detections.catch_up \"30d\""},

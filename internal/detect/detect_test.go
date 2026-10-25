@@ -1029,3 +1029,36 @@ func TestDataSourceStoppedTrustsOnlySignalith(t *testing.T) {
 		}
 	}
 }
+
+// sampledRunner answers like a search whose commands after the search ran
+// over only the newest events.
+type sampledRunner struct{ fakeRunner }
+
+func (f *sampledRunner) Execute(ctx context.Context, q *query.Query) (*search.Result, error) {
+	res, _ := f.fakeRunner.Execute(ctx, q)
+	res.Matched, res.Sampled = 50000, 10000
+	return res, nil
+}
+
+// SL-01: a scheduled run whose counts came from a sample says so, on the
+// run and in the rule's run state.
+func TestRunRecordsSampled(t *testing.T) {
+	lib, _, _ := NewLibrary("")
+	now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+	var mu sync.Mutex
+	clock := func() time.Time { mu.Lock(); defer mu.Unlock(); return now }
+	s := (&Scheduler{Library: lib, Engine: &sampledRunner{}, Findings: findings.NewMemory(), Now: clock}).AsNew()
+	d, _ := lib.Get("auth-brute-force")
+	res, err := s.RunManual(context.Background(), d, "")
+	if err != nil || res.Sampled != 10000 || res.SampledOf != 50000 {
+		t.Fatalf("res = %+v, %v", res, err)
+	}
+	s.RunDue(context.Background())
+	mu.Lock()
+	now = now.Add(5 * time.Minute)
+	mu.Unlock()
+	s.RunDue(context.Background())
+	if st := s.Status()["auth-brute-force"]; st.LastRun.IsZero() || st.Sampled != 10000 || st.SampledOf != 50000 {
+		t.Errorf("state = %+v", st)
+	}
+}

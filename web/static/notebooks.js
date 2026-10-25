@@ -529,6 +529,7 @@ function nbResultMeta(r) {
     const rows = (r.rows || []).length;
     bits.push(el('span', {}, r.kind === 'events' ? plural(r.matched || rows, 'matching event') : plural(rows, 'row')));
     if (r.truncated) bits.push(el('span', {}, `first ${rows} kept`));
+    if (r.sampled) bits.push(el('span', { class: 'badge badge--warning', title: `${(r.matched || 0).toLocaleString()} events matched, but the commands after the search ran over only the newest ${r.sampled.toLocaleString()}.` }, 'Sampled'));
   }
   return el('div', { class: 'nb-result__meta' }, ...bits.flatMap((b, k) => (k ? [el('span', { class: 'dotsep', 'aria-hidden': 'true' }), b] : [b])));
 }

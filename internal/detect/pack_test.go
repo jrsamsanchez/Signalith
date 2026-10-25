@@ -208,6 +208,50 @@ func TestPackDetections(t *testing.T) {
 	}
 }
 
+// DQ-04: a cloud or identity Sigma rule is about the account and the
+// address it acted from, not the Collector that read the log, so each
+// action gets its own finding instead of every action by an account
+// folding into one a day.
+func TestCloudPackDetections(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloud := 0
+	for _, d := range ds {
+		if d.Origin == nil || d.Origin.Pack != "sigmahq" {
+			continue
+		}
+		isCloud := false
+		for _, tag := range d.Tags {
+			if sigmaCloudProduct(tag) {
+				isCloud = true
+			}
+		}
+		if !isCloud {
+			if strings.HasSuffix(d.Title, " for $user$") {
+				t.Errorf("%s: host rule titled %q", d.ID, d.Title)
+			}
+			continue
+		}
+		cloud++
+		if !strings.HasSuffix(d.Title, " for $user$") {
+			t.Errorf("%s: title %q", d.ID, d.Title)
+		}
+		if want := []string{"vendor_account", "user", "src", "signature"}; !slices.Equal(d.Throttle.Fields, want) {
+			t.Errorf("%s: throttle %v, want %v", d.ID, d.Throttle.Fields, want)
+		}
+		for _, o := range d.Risk.Objects {
+			if o.Field == "host" {
+				t.Errorf("%s: risk on the Collector host", d.ID)
+			}
+		}
+	}
+	if cloud < 200 {
+		t.Errorf("%d cloud and identity rules, want 200 or more", cloud)
+	}
+}
+
 // networkPackRule reports whether a pack rule is a generic network one
 // (Sigma's dns, proxy or firewall category, or a Splunk network
 // detection over a network data model), limited to its data model.
