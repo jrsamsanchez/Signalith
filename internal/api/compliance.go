@@ -24,7 +24,9 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/endpoint/checks"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/respond"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/users"
 	"github.com/jrsamsanchez/signalith/internal/vulnscan"
@@ -286,6 +288,23 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 					n.Rules++
 				}
 			}
+			// What was delivered shows the rules work (COMP-02).
+			if s.Notify.Deliveries == nil {
+				n.Unread = true
+			} else if list, err := s.Notify.Deliveries.Recent(ctx, 300); err != nil {
+				n.Unread = true
+			} else {
+				for _, d := range list {
+					if d.Status == notify.StatusSent {
+						n.Sent++
+					}
+				}
+				for _, st := range notify.LastStatus(list) {
+					if st.Status == notify.StatusFailed {
+						n.Failing++
+					}
+				}
+			}
 			snap.Notify = n
 		}
 	}
@@ -300,6 +319,16 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 			if s.Playbooks != nil && s.Playbooks.Manager != nil {
 				if pbs, err := s.Playbooks.Manager.List(); err == nil {
 					rs.Playbooks = len(pbs)
+				}
+			}
+			// A run that worked shows the actions do (COMP-02).
+			if s.Respond.Store != nil {
+				if runs, err := s.Respond.Store.List(ctx, respond.Filter{Limit: 500}); err == nil {
+					for _, run := range runs {
+						if run.Status == respond.StatusSucceeded && now.Sub(run.Started) <= compliance.EvidenceWindow {
+							rs.Ran++
+						}
+					}
 				}
 			}
 			snap.Response = rs
@@ -362,13 +391,27 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 		for _, x := range s.Users.List() {
 			if x.Source != users.SourceBuiltin && !x.Disabled {
 				u.Named++
+				if x.LastSignIn != nil && now.Sub(*x.LastSignIn) <= compliance.EvidenceWindow {
+					u.SignedIn++
+				}
 			}
 		}
 		u.Directory = s.Directory != nil && s.Directory.Enabled()
 		snap.Users = u
 	}
 	if s.Assets != nil {
-		snap.Assets = len(s.Assets.Assets()) + len(s.Assets.Identities())
+		as, ids := s.Assets.Assets(), s.Assets.Identities()
+		snap.Assets = len(as) + len(ids)
+		for _, a := range as {
+			if a.Owner != "" || a.Priority != "" {
+				snap.AssetsRated++
+			}
+		}
+		for _, id := range ids {
+			if id.Priority != "" || id.Manager != "" {
+				snap.AssetsRated++
+			}
+		}
 	}
 	wg.Wait()
 	return snap
