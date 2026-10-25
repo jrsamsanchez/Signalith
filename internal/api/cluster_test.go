@@ -211,7 +211,7 @@ func TestOpenSearchRefusalsInHealth(t *testing.T) {
 			"cluster_monitor"},
 		{"not ready", &store.Error{Status: 503, Body: `{"error":{"type":"cluster_manager_not_discovered_exception","reason":"no cluster manager"},"status":503}`},
 			"refused", "unavailable", "OpenSearch's log says why it isn't ready. With the Docker quick start, show it with docker compose -f deploy/docker/docker-compose.yml logs opensearch"},
-		{"unreachable", errors.New("opensearch unreachable at http://os:9200: connection refused"), "unreachable", "", ""},
+		{"unreachable", errors.New("opensearch unreachable at http://os:9200: connection refused"), "unreachable", "", "Check that OpenSearch is running"},
 		// Reached, but too slow: not out of reach.
 		{"no answer in time", noAnswerErr(t), "unreachable", "timeout", "Signalith keeps trying. If this lasts more than a few minutes"},
 	} {

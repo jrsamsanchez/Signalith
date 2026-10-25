@@ -484,7 +484,7 @@ func (c *Client) doOne(ctx context.Context, e *endpoint, method, path string, ra
 		if sent.Load() && timedOut(err) && (!reused.Load() || c.reachable(e)) {
 			return &noAnswerError{msg: fmt.Sprintf("opensearch at %s did not answer in time: %v%s", e.shown, err, e.proxyHint), err: err}, fail
 		}
-		return fmt.Errorf("opensearch unreachable at %s: %w%s", e.shown, err, e.proxyHint), fail
+		return &unreachableError{msg: fmt.Sprintf("opensearch unreachable at %s: %v%s", e.shown, err, e.proxyHint), err: err}, fail
 	}
 	defer resp.Body.Close()
 	var rd2 io.Reader = resp.Body

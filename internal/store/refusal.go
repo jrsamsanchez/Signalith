@@ -141,6 +141,28 @@ func NoAnswer(err error) bool {
 	return errors.As(err, &e)
 }
 
+// unreachableError is a request that never reached OpenSearch: the
+// connection was refused, or the name or address could not be reached.
+type unreachableError struct {
+	msg string
+	err error
+}
+
+func (e *unreachableError) Error() string { return e.msg }
+func (e *unreachableError) Unwrap() error { return e.err }
+
+// Unreachable reports whether err is OpenSearch out of reach or not
+// answering in time, as opposed to a refusal or a bad request.
+func Unreachable(err error) bool {
+	var e *unreachableError
+	return errors.As(err, &e) || NoAnswer(err)
+}
+
+// DownText is what pages show in place of a result OpenSearch could not
+// give because it is out of reach (OB-6). The address and the error are
+// for the server log and the Health page, not every card.
+const DownText = "OpenSearch is not answering, so this can’t be shown right now. Signalith keeps trying; the Health page says what is wrong."
+
 // timedOut reports whether a request failed because its time ran out.
 func timedOut(err error) bool {
 	var ne net.Error

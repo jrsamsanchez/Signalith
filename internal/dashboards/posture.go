@@ -17,6 +17,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // Posture computes the built-in security posture dashboard: key
@@ -235,6 +236,10 @@ func (p *Posture) Report(ctx context.Context, rng time.Duration, rangeLabel stri
 	fail := func(section string, err error) {
 		mu.Lock()
 		defer mu.Unlock()
+		if store.Unreachable(err) {
+			rep.Errors[section] = store.DownText
+			return
+		}
 		rep.Errors[section] = err.Error()
 	}
 	run := func(ctx context.Context, src, earliest, latest string) (*search.Result, error) {

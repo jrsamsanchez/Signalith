@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // fakeExec answers queries from a function and records what it ran.
@@ -152,5 +154,23 @@ func TestPreviousPeriodAndSingleValue(t *testing.T) {
 	}
 	if f, v := SingleValue(&search.Result{Kind: "table"}, ""); f != "count" || v != int64(0) {
 		t.Errorf("empty = %s %v", f, v)
+	}
+}
+
+// OB-6: a panel whose search could not reach OpenSearch says so plainly,
+// without the address and the connection error.
+func TestRunErrOpenSearchDown(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+	_, err = store.New(store.Config{URL: "http://" + addr, Timeout: time.Second}).Health(context.Background())
+	if err == nil {
+		t.Fatal("no error from a closed port")
+	}
+	if got := runErr(err); got != store.DownText || strings.Contains(got, addr) {
+		t.Errorf("runErr = %q", got)
 	}
 }

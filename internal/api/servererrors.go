@@ -69,6 +69,8 @@ func serverErrorBody(w http.ResponseWriter, status int, err error) map[string]an
 	var he *hiddenError
 	if errors.As(err, &he) {
 		what = he.msg
+	} else if store.Unreachable(err) {
+		what = "OpenSearch is not answering. Signalith keeps trying; the Health page says what is wrong"
 	} else if unreachable(err) {
 		what = "The server could not reach a service it uses (such as OpenSearch), or it did not answer in time"
 	}
@@ -130,7 +132,7 @@ func internalDetail(err error) bool {
 func unreachable(err error) bool {
 	var ue *url.Error
 	var ne net.Error
-	return errors.As(err, &ue) || errors.As(err, &ne) || strings.Contains(strings.ToLower(err.Error()), "opensearch unreachable")
+	return store.Unreachable(err) || errors.As(err, &ue) || errors.As(err, &ne) || strings.Contains(strings.ToLower(err.Error()), "opensearch unreachable")
 }
 
 // errorRef returns a short random reference for a logged error.

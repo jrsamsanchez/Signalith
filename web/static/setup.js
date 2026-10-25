@@ -147,7 +147,8 @@
   function syncChip() {
     const chip = $('setup-chip');
     const item = $('setup-open');
-    if (item) item.classList.toggle('hidden', !S.view);
+    // Shown after a failed load too, so the guide can say why (OB-6).
+    if (item) item.classList.toggle('hidden', !S.view && !S.error);
     const all = steps().length;
     const n = left().length;
     const hint = $('setup-hint');
@@ -370,6 +371,12 @@
     // The public demo's visitor only looks around (docs/demo.md).
     if (!m || m.must_change_password || m.must_setup_mfa || m.auth === 'token' || m.demo) return;
     await load();
+    // OpenSearch may be starting or down: try again for a few minutes
+    // rather than skip the guide for this sign-in (OB-6).
+    for (let i = 0; !S.view && i < 10; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 30000));
+      await load();
+    }
     let skippedNow = false;
     try { skippedNow = sessionStorage.getItem(SKIP_KEY) === '1'; } catch (_) { /* ignore */ }
     if (!S.view || !S.view.ask || skippedNow) return;

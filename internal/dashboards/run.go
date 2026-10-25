@@ -14,6 +14,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/query"
 	"github.com/jrsamsanchez/signalith/internal/search"
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // Executor runs parsed queries; *search.Engine implements it.
@@ -148,6 +149,9 @@ func (r *Runner) previous(ctx context.Context, q *query.Query, earliest, field s
 }
 
 func runErr(err error) string {
+	if store.Unreachable(err) {
+		return store.DownText
+	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		return "timed out; try a shorter time range or a narrower search"
 	}

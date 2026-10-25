@@ -11,11 +11,12 @@ let sampleInfo = null; // last api/sample reply (admins only), or null
 let samplePoll = null; // interval id while a load or remove runs
 let sampleConfirm = false; // true while Remove is in its confirm step
 let sampleRun = null; // the running view's live parts, updated in place
+let sampleErr = ''; // why the last api/sample read failed
 
 // fetchSample reads the sample-data status for admins and caches it.
 async function fetchSample() {
   if (!can('admin')) { sampleInfo = null; return null; }
-  try { sampleInfo = await api('api/sample'); } catch (_) { sampleInfo = null; }
+  try { sampleInfo = await api('api/sample'); sampleErr = ''; } catch (e) { sampleInfo = null; sampleErr = (e && e.message) || ''; }
   return sampleInfo;
 }
 
@@ -88,8 +89,11 @@ function renderSampleCard({ checking = false, focus = null } = {}) {
   let body;
   if (checking) body = sampleBody(el('p', { class: 'muted' }, 'Checking…'));
   else if (sampleInfo === null) {
-    body = sampleBody(el('div', { class: 'sample-actions' },
-      el('button', { type: 'button', class: 'btn btn--secondary btn--sm', onclick: loadSampleCard }, icon('refresh-cw'), 'Try again')));
+    // OB-6: say why, not only Try again.
+    body = sampleBody(
+      el('p', { class: 'muted', role: 'status' }, 'Couldn’t check the sample data' + (sampleErr ? ': ' + sampleErr : '.')),
+      el('div', { class: 'sample-actions' },
+        el('button', { type: 'button', class: 'btn btn--secondary btn--sm', onclick: loadSampleCard }, icon('refresh-cw'), 'Try again')));
   } else if (!sampleInfo.available) body = sampleBody(el('p', { class: 'muted' }, 'Sample data is not available on this server.'));
   else if (sampleInfo.running) body = sampleRunningBody();
   else if (sampleInfo.partial) body = samplePartialBody();
