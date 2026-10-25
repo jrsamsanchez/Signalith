@@ -348,7 +348,8 @@ What it writes:
   and the analyzers under Zeek's `site/packages` and `plugins/packages` folders.
 - The systemd units `signalith-zeek`, `signalith-suricata`, `signalith-fluent-bit`,
   `signalith-sensor-capture`, and the timers `signalith-suricata-update`,
-  `signalith-sensor-status` and `signalith-zeekctl-cron`. The packages' own `suricata` and
+  `signalith-sensor-tuning`, `signalith-sensor-config`, `signalith-sensor-status` and
+  `signalith-zeekctl-cron`. The packages' own `suricata` and
   `fluent-bit` services are masked, so only Signalith's run (one already running stops the
   install unless you add `--take-over`).
 
@@ -376,6 +377,26 @@ old rules stay and the sensor's status says the update failed. Every 10 minutes
 `signalith-sensor-tuning.timer` also fetches the rule tuning set on Signalith. See
 [Keeping rules up to date](#keeping-rules-up-to-date) and
 [Rule tuning from Signalith](#rule-tuning-from-signalith).
+
+### The agent's configuration
+
+Every hour `signalith-sensor-config.timer` asks Signalith again for the agent's Fluent Bit
+configuration, the same one the install line fetched. When Signalith now writes a different
+one (a new release reads another Zeek log, say), the sensor writes it and restarts Fluent
+Bit, so you don't have to run the line again on every sensor.
+
+The sensor checks a new configuration before it uses it, as the
+[Signalith Agent](signalith-agent.md) does: only the `tail` input on Zeek's, Suricata's and
+the sensor's own logs, the `record_modifier` and `grep` filters, and one `http` output to the
+same server, port and certificate authority as before, with TLS and its certificate checked.
+Anything else, such as a program to run, another file, a plugin, an `@INCLUDE` or another
+destination, is refused and the configuration in use is kept. So whoever takes over
+Signalith cannot use it to make a sensor run something or send its logs elsewhere. To move
+sensors to another server or certificate authority, run the install line again.
+
+`sudo journalctl -u signalith-sensor-config -n 20` shows the last fetches, and
+`/var/lib/signalith-sensor/config.state` the last result (`unchanged`, `applied`, `refused`
+or `failed`). Start a fetch now with `sudo systemctl start signalith-sensor-config`.
 
 ### Status
 

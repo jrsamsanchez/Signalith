@@ -1,0 +1,27 @@
+# Written by the Signalith sensor install script (deploy/sensor/install.sh).
+# Fetches the sensor agent's Fluent Bit configuration from Signalith with
+# the sensor's token and, only when it changed and passes the checks in
+# config-update.sh, writes it and restarts Fluent Bit. It runs as root and
+# writes only the agent's configuration and its own state.
+[Unit]
+Description=Signalith sensor: fetch the agent configuration
+Documentation=https://github.com/jrsamsanchez/Signalith/blob/main/docs/network-sensor.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+TimeoutStartSec=5min
+ExecStart=/usr/lib/signalith-sensor/config-update.sh
+# The sensor's token, to fetch the configuration (only root reads the file).
+EnvironmentFile=/etc/signalith-sensor/token.env
+# With --docker, the docker command keeps its settings here.
+Environment=DOCKER_CONFIG=/var/lib/signalith-sensor/docker
+NoNewPrivileges=yes
+ProtectSystem=strict
+UMask=0077
+ReadWritePaths=/etc/signalith-sensor /var/lib/signalith-sensor -/run/docker.sock
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
