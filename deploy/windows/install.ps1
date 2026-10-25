@@ -11,7 +11,11 @@
 # certificate; no password is made. -OpenSearchZip uses a copy of the
 # release's .zip instead of downloading it (a computer without internet
 # access); -OpenSearchProxy downloads it through a proxy (host:port; by
-# default the computer's WinHTTP proxy setting is used). To use an OpenSearch you run yourself instead, give its address:
+# default the computer's WinHTTP proxy setting is used). -OpenSearchHeap
+# sets OpenSearch's Java heap, such as 4g (1 to 31 GB, at most half of the
+# computer's memory; by default a quarter of it, 1 to 8 GB); upgrades keep
+# it. A new install stops on a computer with under about 4 GB of memory
+# unless -OpenSearchHeap is given. To use an OpenSearch you run yourself instead, give its address:
 #   .\install.ps1 -OpenSearchUrl https://opensearch.example.com:9200
 # An upgrade upgrades the OpenSearch Signalith installed, keeping its data;
 # an OpenSearch of your own is left as it is. An upgrade of an install whose
@@ -56,6 +60,8 @@ param(
   [string]$OpenSearchUrl = "",
   [string]$OpenSearchZip = "",
   [string]$OpenSearchProxy = "",
+  # Empty: the heap chosen before, or a quarter of the memory.
+  [string]$OpenSearchHeap = "",
   # The web page and API; agents send to 7779 (server.agent_listen).
   [string]$Listen = "0.0.0.0:9000",
   # Plain, unencrypted syslog: off unless an address is given.
@@ -306,6 +312,7 @@ if ($managed) {
   $osArgs = @("opensearch", "install", "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
   if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
   if ($OpenSearchProxy) { $osArgs += @("-proxy", $OpenSearchProxy) }
+  if ($OpenSearchHeap) { $osArgs += @("-heap", $OpenSearchHeap) }
   Invoke-Checked "Installing OpenSearch" { & $exe @osArgs }
 } elseif (-not $Join -and -not $OpenSearchUrl -and -not (Get-Service | Where-Object { $_.Name -like "*opensearch*" -or $_.Name -like "*elastic*" })) {
   # An upgrade of an install made before the installer set up OpenSearch:
@@ -317,6 +324,7 @@ if ($managed) {
   $osArgs = @("opensearch", "adopt", "-c", $config, "-home", (Join-Path $InstallDir "OpenSearch"), "-data", $osDir, "-client", $osClient)
   if ($OpenSearchZip) { $osArgs += @("-zip", $OpenSearchZip) }
   if ($OpenSearchProxy) { $osArgs += @("-proxy", $OpenSearchProxy) }
+  if ($OpenSearchHeap) { $osArgs += @("-heap", $OpenSearchHeap) }
   Invoke-Checked "Setting up OpenSearch" { & $exe @osArgs }
   $managed = Test-Path -LiteralPath $osState
 }

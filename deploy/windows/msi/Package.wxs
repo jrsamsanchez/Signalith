@@ -17,6 +17,8 @@
     msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHZIP=C:\path\opensearch-3.9.0-windows-x64.zip
   behind a proxy the computer's WinHTTP setting does not name:
     msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHPROXY=proxy.example.com:3128
+  with OpenSearch's Java heap set (by default a quarter of the memory):
+    msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHHEAP=4g
   or with an OpenSearch of your own instead:
     msiexec /i signalith-0.1.0-x64.msi /qn OPENSEARCHURL=https://opensearch.example.com:9200
 -->
@@ -42,10 +44,13 @@
          existing config is always kept, and the address can be changed on
          the Settings page. OPENSEARCHZIP is the OpenSearch release's .zip
          to install instead of downloading it, and OPENSEARCHPROXY the
-         proxy to download it through (host:port, no password). -->
+         proxy to download it through (host:port, no password).
+         OPENSEARCHHEAP is OpenSearch's Java heap, such as 4g; empty keeps
+         the one chosen before, or a quarter of the memory. -->
     <Property Id="OPENSEARCHURL" Secure="yes" />
     <Property Id="OPENSEARCHZIP" Secure="yes" />
     <Property Id="OPENSEARCHPROXY" Secure="yes" />
+    <Property Id="OPENSEARCHHEAP" Secure="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="Signalith">
@@ -101,7 +106,7 @@
     <!-- install.ps1 runs as SYSTEM after the files are in place, on install,
          upgrade and repair. Its output goes to C:\Windows\Temp\signalith-install.log. -->
     <CustomAction Id="SetUpSignalith" Directory="INSTALLFOLDER" Execute="deferred" Impersonate="no" Return="check"
-                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;url:[OPENSEARCHURL]&quot; -OpenSearchZip &quot;zip:[OPENSEARCHZIP]&quot; -OpenSearchProxy &quot;proxy:[OPENSEARCHPROXY]&quot;" />
+                  ExeCommand="&quot;[System64Folder]WindowsPowerShell\v1.0\powershell.exe&quot; -NoProfile -NonInteractive -ExecutionPolicy Bypass -File &quot;[INSTALLFOLDER]msi-setup.ps1&quot; -OpenSearchUrl &quot;url:[OPENSEARCHURL]&quot; -OpenSearchZip &quot;zip:[OPENSEARCHZIP]&quot; -OpenSearchProxy &quot;proxy:[OPENSEARCHPROXY]&quot; -OpenSearchHeap &quot;heap:[OPENSEARCHHEAP]&quot;" />
     <!-- When the install fails: undoes what SetUpSignalith set up that was
          not there before, or, on an upgrade (WIX_UPGRADE_DETECTED), sets up
          the previous version's service again
