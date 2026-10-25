@@ -37,7 +37,7 @@ The computer needs systemd, `curl`, and outbound HTTPS to Signalith's agent port
 default), to `packages.fluentbit.io` and, for osquery, to `pkg.osquery.io`.
 
 On **Windows**: Windows 10 or 11 and Windows Server 2016 or later on 64-bit x86, or
-Windows 11 on ARM, with
+Windows 11 on ARM (from the release after 0.3.2), with
 outbound HTTPS to Signalith's agent port, to `packages.fluentbit.io`, for osquery to
 `pkg.osquery.io`, and for Sysmon to `download.sysinternals.com`. The line runs in Windows PowerShell 5.1 (part of Windows) or
 PowerShell 7, opened with **Run as administrator**.

@@ -8,14 +8,14 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 Signalith needs two things: **OpenSearch 2.17 or newer (3.x included)**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
-runs both for you, and so does the Windows installer from 0.3.1 on. On Linux, from 0.3.2
+runs both for you, and so does the Windows installer from 0.3.1 on. On Linux, from the release after 0.3.2,
 one command sets up OpenSearch next to Signalith; before that, and on Windows with 0.3.0,
 you install OpenSearch first and then Signalith next to it.
 
 | Way to run it | Good for | Takes |
 | --- | --- | --- |
 | [Docker quick start](#docker-quick-start) | Trying Signalith, labs, small sites | Two commands |
-| [Linux](#linux) | A systemd service on a server | A few commands (OpenSearch included from 0.3.2) |
+| [Linux](#linux) | A systemd service on a server | A few commands (OpenSearch included from the release after 0.3.2) |
 | [Windows](#windows) | A Windows service | One installer (OpenSearch included from 0.3.1) |
 
 ## Docker quick start
@@ -138,7 +138,7 @@ hand.
     (`/var/lib/signalith/keys/master.key`). Back that file up, apart from the config;
     see [Encryption](encryption.md#the-master-key).
 
-2. Set up OpenSearch on this server (from 0.3.2 on):
+2. Set up OpenSearch on this server (from the release after 0.3.2):
 
     ```sh
     sudo signalith opensearch install
