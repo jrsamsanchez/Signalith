@@ -180,7 +180,7 @@ Everything below is in Signalith now. Items named under **The next release** in 
 - [Several teams or customers](multi-tenant.md) on one install, each with its own data,
   users, detections and behavior baselines, managed on **Settings > Tenants** with a
   tenant picker in the top bar.
-- [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
+- [Several servers](servers.md) sharing one OpenSearch (a preview until 1.0): [add a server](multi-server.md)
   with one line on Linux, Windows or Docker, shared settings, users and detections,
   each server's detection health on the Servers page,
   [detections spread over the servers](servers.md#the-background-jobs) (on by default
