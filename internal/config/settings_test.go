@@ -108,7 +108,7 @@ func TestRegistryEnvMatchesTheEnvironment(t *testing.T) {
 		"SIGNALITH_PUBLIC_URL": "http://siem.example:8081", "SIGNALITH_ASSISTANT_API_KEY": "k",
 		"SIGNALITH_SYSLOG_UDP": "0.0.0.0:5514", "SIGNALITH_SYSLOG_TCP": "0.0.0.0:5514",
 		"SIGNALITH_NVD_API_KEY": "nvd-key", "SIGNALITH_M365_CLIENT_SECRET": "m365-secret", "SIGNALITH_OKTA_PRIVATE_KEY": "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----", "SIGNALITH_OKTA_API_TOKEN": "okta-token", "SIGNALITH_OIDC_CLIENT_SECRET": "oidc-secret", "SIGNALITH_NVD_URL": "https://nvd-mirror.example/rest/json/cves/2.0",
-		"SIGNALITH_KEV_URL": "https://mirror.example/kev.json", "SIGNALITH_EPSS_URL": "/srv/feeds/epss.csv.gz",
+		"SIGNALITH_KEV_URL": "https://mirror.example/kev.json", "SIGNALITH_EPSS_URL": "/srv/feeds/epss.csv.gz", "SIGNALITH_OSV_URL": "/srv/osv",
 		"SIGNALITH_NODE_URL": "https://10.0.0.5:8081", "SIGNALITH_LEADER_ELIGIBLE": "false",
 		"SIGNALITH_PROXY_PROTOCOL": "true", "SIGNALITH_SYSLOG_PROXY_PROTOCOL": "true",
 	}
@@ -790,6 +790,27 @@ func TestFeedSource(t *testing.T) {
 	} {
 		if err := FeedSource(v); (err == nil) != ok {
 			t.Errorf("FeedSource(%q) = %v, want ok %v", v, err, ok)
+		}
+	}
+}
+
+func TestOSVSource(t *testing.T) {
+	for v, ok := range map[string]bool{
+		"":                                   true,
+		"off":                                true,
+		DefaultOSVURL:                        true,
+		"https://mirror.example/osv/":        true,
+		"/srv/osv":                           true,
+		"file:///srv/osv":                    true,
+		`C:\osv`:                             true,
+		"file://osv":                         false,
+		"osv":                                false,
+		"ftp://mirror.example/osv":           false,
+		"https://user:pw@mirror.example/osv": false,
+		"https://mirror.example/osv?key=abc": false,
+	} {
+		if err := OSVSource(v); (err == nil) != ok {
+			t.Errorf("OSVSource(%q) = %v, want ok %v", v, err, ok)
 		}
 	}
 }

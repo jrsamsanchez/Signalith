@@ -474,7 +474,7 @@
           el('div', { class: 'vs-sub mono' }, h.hostname ? h.address : h.vendor || '')),
         el('td', { 'data-label': 'Worst', class: 'vs-c-worst' }, worst(h)),
         el('td', { 'data-label': 'CVEs', class: 'vs-c-cves' }, cveCounts(h.counts)),
-        el('td', { 'data-label': 'Open ports', class: 'mono vs-c-ports' }, portsText(h.ports)),
+        el('td', { 'data-label': 'Open ports', class: 'mono vs-c-ports' }, h.target_id === 'installed-packages' ? el('span', { class: 'vs-muted' }, 'Packages') : portsText(h.ports)),
         el('td', { 'data-label': 'Network', class: 'vs-c-net' }, h.target_name),
         el('td', { 'data-label': 'Seen', class: 'vs-c-seen vs-muted' }, ago(h.last_seen)));
       tr.addEventListener('click', () => openHost(h.id));
@@ -525,6 +525,7 @@
   // ransomware note and the EPSS chance, for the row's summary line.
   function exploitBadges(v) {
     const out = [];
+    if (v.source === 'package') out.push(el('span', { class: 'badge badge--accent', title: 'The installed package is older than ' + v.fixed + ', the version ' + v.ecosystem + ' fixed it in.' }, 'Package'));
     if (v.distro) out.push(el('span', { class: 'badge', title: 'Matched by version alone. ' + v.distro + ' fixes CVEs in its own builds without changing the version, so this may be fixed already: check the package’s changelog or run a signed-in OpenVAS scan.' }, 'Version only (' + v.distro + ')'));
     if (v.kev) {
       out.push(el('span', { class: 'badge vs-kev', title: 'Added to CISA’s Known Exploited Vulnerabilities catalog on ' + v.kev_added + (v.kev_due ? '; US federal agencies must fix it by ' + v.kev_due : '') }, icon('flag'), 'Exploited'));
@@ -575,7 +576,8 @@
           ...fact('Findings', total ? cveCounts(h.counts) : 'None found')),
         el('div', { class: 'vs-host__links' },
           el('a', { href: '#search', onclick: (ev) => { ev.preventDefault(); dlg.close(); openSearch('datamodel=Vulnerabilities dest_ip=' + h.address, '-30d'); } }, icon('search'), 'Scan history in Search')),
-        h.services.length ? el('div', { class: 'vs-services' }, ...h.services.map(serviceBlock)) : el('p', { class: 'vs-muted' }, 'The host answered, but none of the scanned ports was open.')),
+        h.services.length ? el('div', { class: 'vs-services' }, ...h.services.map(serviceBlock))
+          : el('p', { class: 'vs-muted' }, h.target_id === 'installed-packages' ? 'No installed package is older than the version its distribution fixed a CVE in.' : 'The host answered, but none of the scanned ports was open.')),
       el('div', { class: 'modal__foot' }, el('button', { class: 'btn btn--secondary', type: 'button', onclick: () => dlg.close() }, 'Close')));
   }
 
@@ -586,11 +588,12 @@
   }
 
   function serviceBlock(s) {
-    const what = s.port ? [s.product, s.version].filter(Boolean).join(' ') || s.name || 'Unknown service' : 'The host itself';
+    const pkg = !s.port && s.name === 'package';
+    const what = s.port || pkg ? [s.product, s.version].filter(Boolean).join(' ') || s.name || 'Unknown service' : 'The host itself';
     const vulns = s.vulns || [];
     return el('section', { class: 'vs-svc' },
       el('div', { class: 'vs-svc__head' },
-        el('span', { class: 'vs-port mono' }, s.port ? s.port + '/' + s.transport : 'Host'),
+        el('span', { class: 'vs-port mono' }, s.port ? s.port + '/' + s.transport : pkg ? 'Package' : 'Host'),
         el('div', { class: 'vs-svc__what' }, el('b', {}, what),
           el('span', { class: 'vs-muted' }, [s.port ? s.name : '', s.tunnel === 'ssl' ? 'over TLS' : '', s.extra].filter(Boolean).join(' · '))),
         vulns.length ? el('span', { class: 'badge badge--danger' }, vulns.length + (vulns.length === 1 ? ' finding' : ' findings')) : el('span', { class: 'badge badge--success' }, 'No known CVEs')),
@@ -631,7 +634,8 @@
           icon('chevron-down', 'icon--sm chev')),
         el('div', { class: 'vs-vuln__more' },
           v.description ? el('p', {}, v.description) : null,
-          el('p', { class: 'vs-muted' }, [v.published ? 'Published ' + v.published : '', ...exploitNote(v), 'Matched ' + v.cpe].filter(Boolean).join(' · ')),
+          el('p', { class: 'vs-muted' }, [v.published ? 'Published ' + v.published : '', ...exploitNote(v),
+            v.source === 'package' ? 'Fixed in ' + v.fixed + ' on ' + v.ecosystem + (v.advisory ? ' (' + v.advisory + ')' : '') : 'Matched ' + v.cpe].filter(Boolean).join(' · ')),
           el('p', {}, el('a', { href: 'https://nvd.nist.gov/vuln/detail/' + encodeURIComponent(v.cve), target: '_blank', rel: 'noopener noreferrer' }, 'Read about ' + v.cve + ' in the National Vulnerability Database', icon('external-link', 'icon--xs'))))));
   }
 

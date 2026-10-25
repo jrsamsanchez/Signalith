@@ -1475,6 +1475,12 @@ type Vulns struct {
 	// file on the server that runs the background jobs.
 	KEVURL  string `yaml:"kev_url,omitempty"`
 	EPSSURL string `yaml:"epss_url,omitempty"`
+	// OSVURL is a copy of OSV.dev's bulk downloads (<release>/all.zip), in
+	// place of https://osv-vulnerabilities.storage.googleapis.com, which
+	// osquery hosts' installed packages are checked against: an http(s)
+	// address, a folder on the server that runs the background jobs, or
+	// off.
+	OSVURL string `yaml:"osv_url,omitempty"`
 }
 
 // Intel configures threat intel feeds. Nothing is downloaded until a
@@ -2487,6 +2493,10 @@ func (c *Config) applyEnv() error {
 		c.Vulns.EPSSURL = v
 		c.fromEnv("vulns.epss_url", "SIGNALITH_EPSS_URL")
 	}
+	if v := strings.TrimSpace(os.Getenv("SIGNALITH_OSV_URL")); v != "" {
+		c.Vulns.OSVURL = v
+		c.fromEnv("vulns.osv_url", "SIGNALITH_OSV_URL")
+	}
 	if v, from, err := envSecret("SIGNALITH_M365_CLIENT_SECRET"); err != nil {
 		return err
 	} else if len(v) > 0 {
@@ -2867,6 +2877,9 @@ func (c *Config) Validate() error {
 		if err := FeedSource(f.v); err != nil {
 			p = append(p, f.key+": "+err.Error())
 		}
+	}
+	if err := OSVSource(c.Vulns.OSVURL); err != nil {
+		p = append(p, "vulns.osv_url: "+err.Error())
 	}
 	p = append(p, c.Intel.problems()...)
 	if c.Detections.MaxFindingsPerRun < 1 || c.Detections.MaxFindingsPerRun > 10000 {
@@ -3314,6 +3327,9 @@ const header = `# Signalith configuration.
 # vulns.kev_url, vulns.epss_url  copies of CISA's KEV catalog and FIRST's EPSS
 #                    scores (an address, or a file for a network with no internet);
 #                    empty uses the public ones; see docs/vulnerabilities.md
+# vulns.osv_url      a copy of OSV.dev's distribution advisories (an address, a
+#                    folder for a network with no internet, or off), which installed
+#                    packages on osquery hosts are checked against; see docs/vulnerabilities.md
 # m365.tenant_id, m365.client_id, m365.client_secret  read Microsoft 365's audit
 #                    log with an Entra ID app (SIGNALITH_M365_CLIENT_SECRET); m365.cloud
 #                    is commercial, gcc, gcc_high or dod; see docs/microsoft-365.md

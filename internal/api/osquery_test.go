@@ -80,6 +80,35 @@ func TestOsqueryEnrollConfigLog(t *testing.T) {
 	}
 }
 
+// A Linux host's package snapshot is kept for the package check, not
+// written as events.
+func TestOsqueryPackageSnapshot(t *testing.T) {
+	st, call, fos := osqueryServer(t)
+	_, body := call("POST", "/api/osquery/enroll", fmt.Sprintf(enrollBody, "tok-0123456789abcdef"), false)
+	key, _ := body["node_key"].(string)
+	_, body = call("POST", "/api/osquery/config", `{"node_key":"`+key+`"}`, false)
+	if sched, _ := body["schedule"].(map[string]any); sched["signalith_packages"] == nil {
+		t.Fatalf("no packages query: %v", body)
+	}
+	before := len(fos.bulk)
+	logBody := `{"node_key":"` + key + `","log_type":"result","data":[{"name":"signalith_packages","unixTime":` + fmt.Sprint(nowUnix()) +
+		`,"action":"snapshot","snapshot":[{"name":"openssh-server","version":"1:9.6p1-3ubuntu13.4","source":"openssh","type":"deb"},` +
+		`{"name":"ubuntu","version":"24.4","source":"debian","type":"os"}]}]}`
+	if code, body := call("POST", "/api/osquery/log", logBody, false); code != 200 {
+		t.Fatalf("log = %d %v", code, body)
+	}
+	if len(fos.bulk) != before {
+		t.Errorf("the package list was written as events: %+v", fos.bulk[before:])
+	}
+	hosts, err := st.HostPackages(t.Context())
+	if err != nil || len(hosts) != 1 {
+		t.Fatalf("package lists = %+v, %v", hosts, err)
+	}
+	if h := hosts[0]; h.Hostname != "web1" || h.OS != "ubuntu" || h.OSVersion != "24.4" || len(h.Packages) != 1 || h.Packages[0].Source != "openssh" {
+		t.Errorf("package list = %+v", h)
+	}
+}
+
 func TestOsqueryLiveQueryAndRemove(t *testing.T) {
 	_, call, _ := osqueryServer(t)
 	_, body := call("POST", "/api/osquery/enroll", fmt.Sprintf(enrollBody, "tok-0123456789abcdef"), false)

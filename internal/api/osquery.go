@@ -260,6 +260,13 @@ func (s *Server) handleOsqueryLog(w http.ResponseWriter, r *http.Request) {
 			s.Log.Debug("could not note an osquery host's addresses", "err", err)
 		}
 	}
+	if b.Packages != nil {
+		// Kept for matching to distribution advisories (vulnscan); the
+		// next snapshot comes in a few hours if this one is lost.
+		if err := s.Endpoints.SavePackages(r.Context(), n, b.Packages); err != nil {
+			s.Log.Warn("could not save an osquery host's package list", "host", n.Hostname, "err", err)
+		}
+	}
 	if len(b.Events) > 0 {
 		slot, err := s.Pipeline.Admit(r.Context(), ingestQueueWait, "osquery:"+n.ID)
 		if err != nil {

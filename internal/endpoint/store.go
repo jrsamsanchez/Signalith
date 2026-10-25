@@ -48,6 +48,7 @@ const (
 	kindQuery    = "livequery"
 	kindResult   = "liveresult"
 	kindChecks   = "checks"
+	kindPackages = "packages"
 )
 
 // Platforms osquery runs on, as Signalith names them.
@@ -395,6 +396,7 @@ func (s *Store) Enroll(ctx context.Context, n *Node) error {
 			}
 			s.forget(strings.TrimPrefix(d.ID, "node:"))
 			s.dropChecks(ctx, strings.TrimPrefix(d.ID, "node:"))
+			s.dropPackages(ctx, strings.TrimPrefix(d.ID, "node:"))
 		}
 	}
 	if _, err := s.Docs.Create(ctx, s.Index, nodeDocID(n.ID), nodeDoc{Kind: kindNode, Node: n}, true); err != nil {
@@ -532,6 +534,7 @@ func (s *Store) Remove(ctx context.Context, id string, block bool, by string) (*
 	}
 	s.forget(id)
 	s.dropChecks(ctx, id)
+	s.dropPackages(ctx, id)
 	return &n, nil
 }
 
@@ -596,6 +599,7 @@ func (s *Store) RevokeToken(ctx context.Context, tokenID string) (int, error) {
 		}
 		s.forget(strings.TrimPrefix(d.ID, "node:"))
 		s.dropChecks(ctx, strings.TrimPrefix(d.ID, "node:"))
+		s.dropPackages(ctx, strings.TrimPrefix(d.ID, "node:"))
 	}
 	return n, nil
 }
