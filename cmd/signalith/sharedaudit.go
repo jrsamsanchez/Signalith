@@ -247,7 +247,22 @@ func (r *runner) auditAPI(c *config.Config, cl *store.Client) *api.Audit {
 	sh := r.shared
 	return &api.Audit{Client: cl, Prefix: c.OpenSearch.IndexPrefix, Shared: func() bool { return on },
 		Keys:        func() audit.KeyFunc { return auditKeys(c, keys) },
-		SignedSince: func() map[string]time.Time { return auditSignedSince(sh) }}
+		SignedSince: func() map[string]time.Time { return auditSignedSince(sh) },
+		KeptFrom:    func() time.Time { return auditKeptFrom(c, time.Now()) }}
+}
+
+// auditKeptFrom returns when the audit records that retention never
+// deletes start, from this server's retention settings: now less the
+// audit category's keep_days, or long ago when it keeps them forever
+// (audit.VerifyQuery.KeptFrom).
+func auditKeptFrom(c *config.Config, now time.Time) time.Time {
+	m := &retention.Manager{Config: c.RetentionPolicies(), Store: retention.NewStore(filepath.Join(c.LookupsDir(), "retention.yaml"))}
+	s, _ := m.Settings()
+	p, _ := s.For(retention.Audit)
+	if p.KeepDays <= 0 {
+		return time.Unix(1, 0)
+	}
+	return now.AddDate(0, 0, -p.KeepDays)
 }
 
 // auditKeys returns the audit keys of every cluster key this server

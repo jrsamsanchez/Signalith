@@ -1129,6 +1129,11 @@ func TestMemory(t *testing.T) {
 				}
 			}},
 		{name: "dumps", set: func(f *Facts) { f.Memory.CoreOff = false }, state: Attention, line: "Signalith's memory could be saved in a crash dump, with passwords in it."},
+		{name: "dumpable", set: func(f *Facts) { f.Memory.NotDumpable = false }, state: Attention, line: "Signalith's memory could be saved in a crash dump, with passwords in it."},
+		// The CLI, about a service it can't tell is dumpable: only the core
+		// limit is claimed.
+		{name: "dumpable unknown", set: func(f *Facts) { f.Memory.NotDumpable, f.Memory.DumpableUnknown = false, true }, state: Good,
+			line: "Signalith's core file limit is 0, so its memory can't be saved in a crash dump. This command can't tell whether other programs can read it; the Security page in Signalith shows that."},
 		// The systemd unit's MemorySwapMax doesn't apply in a container.
 		{name: "swap in a container", set: func(f *Facts) { f.Memory.SwapOn = true; f.InContainer = true; f.ConfidentialVM = "AMD SEV-SNP" }, state: Good,
 			fix: func(t *testing.T, c *Check) {
@@ -1591,6 +1596,13 @@ func TestService(t *testing.T) {
 			line: "Signalith's container runs read-only, without extra privileges or capabilities."},
 		{name: "container missing", set: func(f *Facts) { f.InContainer = true; f.Process.ReadOnlyRoot = false }, state: Attention,
 			line: "Signalith's container is missing protections from the quick start: no capabilities and a read-only system."},
+		// A core limit that couldn't be read isn't credited.
+		{name: "container, core limit unread", set: func(f *Facts) {
+			f.InContainer = true
+			f.Process.NoCapsAtAll = true
+			f.Memory.Known, f.Memory.CoreOff = false, false
+		}, state: Attention,
+			line: "Signalith's container is missing protections from the quick start: no crash dumps."},
 		// A pod: not told to install a systemd unit, nor to turn off crash
 		// dumps, which its spec can't.
 		{name: "kubernetes", set: func(f *Facts) {

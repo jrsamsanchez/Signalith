@@ -104,7 +104,8 @@ func checkService(f *Facts) *Check {
 		add(p.NoNewPrivs, "no new privileges")
 		add(p.NoCapsAtAll, "no capabilities")
 		add(p.ReadOnlyRoot, "a read-only system")
-		add(f.Memory.CoreOff || !f.Memory.Known, "no crash dumps")
+		// Credited only when the core limit was read.
+		add(f.Memory.Known && f.Memory.CoreOff, "no crash dumps")
 		if len(missing) > 0 {
 			return &Check{State: Attention, Line: "Signalith's container is missing protections from the quick start: " + joinAnd(missing) + ".",
 				Fix: &Fix{Steps: []string{"Keep read_only: true, cap_drop: [ALL], security_opt: [no-new-privileges:true] and ulimits core: 0 for the signalith service in docker-compose.yml."},

@@ -37,12 +37,17 @@ func checkMemory(f *Facts) *Check {
 		}
 		return &Check{State: Good, Line: "Windows isn't set to keep full memory dumps of Signalith if it crashes."}
 	}
-	if !m.CoreOff || !m.NotDumpable {
+	if !m.CoreOff || (!m.NotDumpable && !m.DumpableUnknown) {
 		return &Check{State: Attention, Line: "Signalith's memory could be saved in a crash dump, with passwords in it.", Fix: &Fix{
 			Steps: []string{"Restart Signalith with this version, which turns crash dumps off. Under systemd, keep LimitCORE=0 in the unit."},
 			Docs:  doc(docEncInUse)}}
 	}
 	c := &Check{State: Good, Line: "Signalith's memory can't be saved in a crash dump, and other programs can't read it, except as root."}
+	if m.DumpableUnknown {
+		// Only the core limit was seen (the CLI, about a service running
+		// as root): say no more than that.
+		c.Line = "Signalith's core file limit is 0, so its memory can't be saved in a crash dump. This command can't tell whether other programs can read it; the Security page in Signalith shows that."
+	}
 	switch {
 	case !m.SwapOn || m.SwapOffForUs:
 		c.Details = []string{"Swap: off for Signalith."}

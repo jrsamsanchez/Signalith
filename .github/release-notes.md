@@ -17,7 +17,8 @@ Adding a server to a cluster? Use **Add a server** on the Servers page: it gives
 ## Check your download
 
 ```sh
-gh attestation verify <file> --repo jrsamsanchez/Signalith
+gh attestation verify <file> --repo jrsamsanchez/Signalith \
+  --cert-identity https://github.com/jrsamsanchez/Signalith/.github/workflows/release.yml@refs/tags/v{VERSION}
 ```
 
 or check `SHA256SUMS` against `SHA256SUMS.sigstore.json` (Sigstore), as [the docs](https://signalith.io/docs/install-packages/#check-a-download) show. See the [code signing policy](https://signalith.io/docs/code-signing/).

@@ -60,10 +60,14 @@ func probeProcess(pid string, self, systemd bool) (ProcessFacts, MemoryFacts, st
 			m.NotDumpable = d == 0
 		}
 	} else {
-		// Whether another process is dumpable can't be read from
-		// outside, so only its core limit counts.
 		off, known := coreLimitOff(hostFS, pid)
-		m.CoreOff, m.NotDumpable, m.Known = off, true, known
+		m.CoreOff, m.Known = off, known
+		owner := -1
+		var st unix.Stat_t
+		if err := unix.Stat("/proc/"+pid+"/status", &st); err == nil {
+			owner = int(st.Uid)
+		}
+		m.NotDumpable, m.DumpableUnknown = notDumpable(owner, p.UID)
 	}
 	swapFacts(hostFS, readText(hostFS, "/proc/"+pid+"/mountinfo"), pid, &m)
 	return p, m, cvm

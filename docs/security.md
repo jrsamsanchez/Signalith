@@ -457,6 +457,9 @@ Windows is set to keep full memory dumps of crashing programs.
 
 - Good: Signalith's memory can't be saved in a crash dump. A tip says when swap is on
   and not encrypted, and when a confidential VM would protect memory from the host too.
+  `signalith security` tells whether the running service is dumpable from the owner of
+  its `/proc/<pid>/status` (Linux gives it to root when the process is not dumpable);
+  for a service running as root it can't tell, so it claims only the core limit.
 - Needs attention: a crash dump could hold passwords.
 
 **To fix:** restart Signalith with this version, which turns crash dumps off; under
