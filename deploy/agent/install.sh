@@ -95,6 +95,7 @@ token=''
 dryrun=''
 uninstall=no
 osquery=no
+take_over=no
 
 os_release=${SIGNALITH_AGENT_OS_RELEASE:-/etc/os-release}
 
@@ -117,7 +118,7 @@ usage() {
   cat <<'USAGE'
 Usage: echo '<token>' | sudo sh install.sh --from https://<signalith>:7779
          [--ca-sha256 <hex>] [--next-ca-sha256 <hex>] [--version <v>] --token -
-         [--osquery] [--dry-run <folder>]
+         [--osquery] [--take-over] [--dry-run <folder>]
        sudo sh install.sh --uninstall
 
   --from              Signalith's address, which the agent sends to.
@@ -131,6 +132,10 @@ Usage: echo '<token>' | sudo sh install.sh --from https://<signalith>:7779
   --osquery           Also install osquery, from its publisher, for
                       inventory, file changes and live queries. A run again
                       keeps osquery once it is installed.
+  --take-over         Stop and mask Fluent Bit's (or osquery's) own service
+                      when it already runs here, sending somewhere else, say.
+                      Without it the script stops before changing anything.
+                      --uninstall starts it again.
   --dry-run           Write every file under this folder and print the
                       commands instead of running them.
   --uninstall         Remove what the script added.
@@ -157,6 +162,7 @@ while [ $# -gt 0 ]; do
     --dry-run=*) dryrun=${1#*=}; shift ;;
     --uninstall) uninstall=yes; shift ;;
     --osquery) osquery=yes; shift ;;
+    --take-over) take_over=yes; shift ;;
     -h | --help) usage; exit 0 ;;
     *) usage >&2; fail "Unknown option: $1" ;;
   esac
@@ -541,24 +547,66 @@ REPO
   fi
 }
 
-# mask_vendor stops and masks Fluent Bit's own service, so there is never
-# a second copy sending; --uninstall unmasks it.
+# vendor_running says whether the unit $1 runs, or is starting.
+vendor_running() {
+  case $(systemctl show -p ActiveState --value "$1" 2>/dev/null || true) in
+    active | activating | reloading) return 0 ;;
+  esac
+  return 1
+}
+
+# vendor_checks finds Fluent Bit's or osquery's own service already running
+# here (shipping logs somewhere else, say): installing stops and masks it,
+# so the agent's copies are the only ones sending. That needs --take-over;
+# a service a run before this one masked is the agent's already. A dry run
+# checks too, where this computer has systemctl.
+vendor_checks() {
+  command -v systemctl >/dev/null 2>&1 || return 0
+  vunits=fluent-bit.service
+  if [ "$osquery" = yes ] || manifest_has osquery; then vunits="$vunits osqueryd.service"; fi
+  for vu in $vunits; do
+    if manifest_has "mask $vu"; then continue; fi
+    case $(systemctl is-enabled "$vu" 2>/dev/null || true) in masked*) continue ;; esac
+    vendor_running "$vu" || continue
+    if [ "$take_over" = yes ]; then
+      warn "$vu already runs here: it will be stopped and masked, so whatever it sends elsewhere stops (--take-over). --uninstall starts it again."
+    else
+      fail "$vu already runs here, probably for something else: installing would stop it and mask it. Nothing was changed." "Add --take-over to the line to stop it and let the agent run its own copy (--uninstall starts it again), or leave this computer to that service."
+    fi
+  done
+}
+
+# mask_vendor stops and masks a package's own service before the package
+# is installed, so there is never a second copy sending; --uninstall
+# unmasks it, and starts it again if it ran before.
 mask_vendor() {
   if [ -n "$dryrun" ]; then
     manifest_has "mask $1" || run systemctl mask --now "$1"
     manifest_add "mask $1"
     return 0
   fi
-  if [ "$(systemctl is-enabled "$1" 2>/dev/null)" != masked ]; then
-    if systemctl is-active --quiet "$1"; then manifest_add "was running $1"; fi
-    systemctl mask --now "$1" >/dev/null 2>&1 || true
-    manifest_add "mask $1"
+  case $(systemctl is-enabled "$1" 2>/dev/null || true) in masked*) return 0 ;; esac
+  vwas=no
+  if vendor_running "$1"; then
+    vwas=yes
+    manifest_has "was running $1" || manifest_add "was running $1"
+  fi
+  if ! vout=$(systemctl mask --now "$1" 2>&1); then
+    fail "Could not stop and mask $1: $vout" "Stop it by hand (sudo systemctl disable --now $1) and run the line again."
+  fi
+  manifest_add "mask $1"
+  if [ "$vwas" = yes ]; then
+    if vendor_running "$1"; then
+      fail "$1 still runs after masking it." "Stop it by hand (sudo systemctl stop $1) and run the line again."
+    fi
+    info "stopped $1, which ran here before (--take-over); --uninstall starts it again"
   fi
 }
 
 upgraded=''
 fluentbit_install() {
   fluentbit_repo
+  mask_vendor fluent-bit.service
   if pkg_has fluent-bit; then
     before=$(pkg_version fluent-bit) || before=""
     if [ "$pkg" = dnf ]; then
@@ -578,7 +626,6 @@ fluentbit_install() {
   else
     pkg_add package fluent-bit
   fi
-  mask_vendor fluent-bit.service
 }
 
 # --- osquery -----------------------------------------------------------
@@ -613,6 +660,7 @@ osquery_install() {
   fi
   osquery=yes
   osquery_repo
+  mask_vendor osqueryd.service
   if pkg_has osquery; then
     before=$(pkg_version osquery) || before=""
     if [ "$pkg" = dnf ]; then
@@ -635,7 +683,6 @@ osquery_install() {
   if [ -z "$dryrun" ] && [ ! -x "$OSQUERYD" ]; then
     fail "The osquery package has no $OSQUERYD." "Run the line again without --osquery to install the agent alone."
   fi
-  mask_vendor osqueryd.service
   manifest_add osquery
   put "/etc/systemd/system/$OSQUERY_UNIT" 0644 root:root agent <<UNIT
 # Written by the Signalith Agent install script (deploy/agent/install.sh).
@@ -953,6 +1000,7 @@ say ""
 say "Signalith"
 check_ca
 check_token
+vendor_checks
 say ""
 # Left by a run that was stopped halfway (by a power cut, say).
 rm -f "$R$CONF_DIR"/*.signalith-new

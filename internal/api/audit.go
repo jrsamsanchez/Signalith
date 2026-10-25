@@ -34,6 +34,9 @@ type Audit struct {
 	// started signing its audit records (audit.VerifyQuery.SignedSince);
 	// nil is none known.
 	SignedSince func() map[string]time.Time
+	// KeptFrom returns when the audit records retention never deletes
+	// start (audit.VerifyQuery.KeptFrom); nil is not known.
+	KeptFrom func() time.Time
 
 	// verifying is held while an integrity check runs: one at a time, as
 	// each reads up to auditVerifyLimit records.
@@ -80,6 +83,9 @@ func (s *Server) handleAuditVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Audit.SignedSince != nil {
 		vq.SignedSince = s.Audit.SignedSince()
+	}
+	if s.Audit.KeptFrom != nil {
+		vq.KeptFrom = s.Audit.KeptFrom()
 	}
 	rep, err := audit.Verify(ctx, s.Audit.Client, s.Audit.Prefix, vq, keys)
 	if err != nil {

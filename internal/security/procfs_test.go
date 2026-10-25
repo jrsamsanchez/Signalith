@@ -320,3 +320,21 @@ func TestReleaseAtLeast(t *testing.T) {
 		}
 	}
 }
+
+func TestNotDumpable(t *testing.T) {
+	for _, c := range []struct {
+		owner, euid  int
+		not, unknown bool
+	}{
+		{0, 999, true, false},    // folder given to root: not dumpable
+		{999, 999, false, false}, // its own user's: dumpable
+		{0, 0, false, true},      // runs as root: can't tell
+		{-1, 999, false, true},   // folder unread
+		{1000, 999, false, true}, // someone else's: can't tell
+	} {
+		not, unknown := notDumpable(c.owner, c.euid)
+		if not != c.not || unknown != c.unknown {
+			t.Errorf("notDumpable(%d, %d) = %v, %v", c.owner, c.euid, not, unknown)
+		}
+	}
+}

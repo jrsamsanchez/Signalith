@@ -41,6 +41,11 @@ type VerifyQuery struct {
 	// cluster document): its records dated after it must be signed with a
 	// key this server holds, whatever records the check reads.
 	SignedSince map[string]time.Time
+	// KeptFrom is when the records retention never deletes start: now
+	// less the audit category's keep_days, or long ago when it keeps them
+	// forever. Zero when not known: then only the current month counts as
+	// undeletable.
+	KeptFrom time.Time
 }
 
 // Report is what Verify found. A record is OK when its MAC checks out
@@ -183,20 +188,33 @@ var verifyNow = time.Now
 // hour.
 const quietLimit = 2 * time.Hour
 
+// keptSlack is how far past KeptFrom a month must start before a month
+// with no record counts as removed: retention works in whole days and may
+// run a little early or late.
+const keptSlack = 48 * time.Hour
+
 // noneLeft reports records that must be there and are not: those of the
 // servers the cluster document says sign their records (q.SignedSince),
-// in the part of the range that is both after they started and in the
-// current month, which retention never deletes. Removing every audit
-// index, or every record in them, would otherwise look like a clean
-// report; so would putting one record of another server in their place.
-// Records of those servers that are not theirs (unsigned, or signed with
-// another key) are already counted as stripped.
+// in each month of the range that is after they started and that
+// retention keeps (from q.KeptFrom, else the current month only).
+// Removing every audit index, every record in them, or one whole month
+// would otherwise look like a clean report; so would putting one record
+// of another server in their place. Records of those servers that are
+// not theirs (unsigned, or signed with another key) are already counted
+// as stripped.
 func noneLeft(r *Report, q VerifyQuery, hits []Hit, now time.Time, noIndex bool) {
 	end := now
 	if !q.To.IsZero() && q.To.Before(end) {
 		end = q.To
 	}
-	month := time.Date(now.UTC().Year(), now.UTC().Month(), 1, 0, 0, 0, 0, time.UTC)
+	kept := monthOf(now)
+	if !q.KeptFrom.IsZero() {
+		// The first month that starts after KeptFrom: retention deletes
+		// a month only once its last day is older than keep_days.
+		if k := nextMonth(monthOf(q.KeptFrom.Add(keptSlack))); k.Before(kept) {
+			kept = k
+		}
+	}
 	var first time.Time
 	var nodes []string
 	for node, t := range q.SignedSince {
@@ -212,31 +230,52 @@ func noneLeft(r *Report, q VerifyQuery, hits []Hit, now time.Time, noIndex bool)
 		return
 	}
 	start := first
-	for _, t := range []time.Time{q.From, month} {
+	for _, t := range []time.Time{q.From, kept} {
 		if t.After(start) {
 			start = t
 		}
 	}
-	if end.Sub(start) < quietLimit {
-		return
+	sort.Strings(nodes)
+	for from := start; end.Sub(from) >= quietLimit; from = nextMonth(monthOf(from)) {
+		to := nextMonth(monthOf(from))
+		if end.Before(to) {
+			to = end
+		}
+		if to.Sub(from) < quietLimit || signedIn(q, hits, from, to) {
+			continue
+		}
+		what := "No audit record of a server that signs its records is dated"
+		if noIndex {
+			what = "There is no audit index in OpenSearch, so no audit record is dated"
+		}
+		r.Truncated++
+		r.Problems = append(r.Problems, Problem{Kind: ProblemTruncated, Time: from, NodeID: nodes[0],
+			Detail: fmt.Sprintf("%s between %s and %s, although %d %s %s signed %s records since %s (the cluster settings say so), an audit checkpoint is written every hour and retention keeps that month. Unless every server was stopped all that time, the records were removed.",
+				what, from.UTC().Format(time.RFC3339), to.UTC().Format(time.RFC3339), len(nodes), plural(int64(len(nodes)), "server", "servers"),
+				plural(int64(len(nodes)), "has", "have"), plural(int64(len(nodes)), "its", "their"), first.UTC().Format(time.RFC3339))})
 	}
+}
+
+// signedIn says whether hits holds a record of a server that signs its
+// records dated in [from, to).
+func signedIn(q VerifyQuery, hits []Hit, from, to time.Time) bool {
 	for i := range hits {
 		h := &hits[i]
-		if _, ok := q.SignedSince[h.NodeID]; ok && !h.Time.Before(start) && h.Time.Before(end) {
-			return
+		if _, ok := q.SignedSince[h.NodeID]; ok && !h.Time.Before(from) && h.Time.Before(to) {
+			return true
 		}
 	}
-	sort.Strings(nodes)
-	what := "No audit record of a server that signs its records is dated"
-	if noIndex {
-		what = "There is no audit index in OpenSearch, so no audit record is dated"
-	}
-	r.Truncated++
-	r.Problems = append(r.Problems, Problem{Kind: ProblemTruncated, Time: start, NodeID: nodes[0],
-		Detail: fmt.Sprintf("%s between %s and %s, although %d %s %s signed %s records since %s (the cluster settings say so) and an audit checkpoint is written every hour. Unless every server was stopped all that time, the records were removed.",
-			what, start.UTC().Format(time.RFC3339), end.UTC().Format(time.RFC3339), len(nodes), plural(int64(len(nodes)), "server", "servers"),
-			plural(int64(len(nodes)), "has", "have"), plural(int64(len(nodes)), "its", "their"), first.UTC().Format(time.RFC3339))})
+	return false
 }
+
+// monthOf is the start of t's month, in UTC, as audit indices are named.
+func monthOf(t time.Time) time.Time {
+	t = t.UTC()
+	return time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
+}
+
+// nextMonth is the start of the month after month m.
+func nextMonth(m time.Time) time.Time { return m.AddDate(0, 1, 0) }
 
 // readAll reads the records q selects, oldest first. With q.Server set it
 // also reads every server's audit.checkpoint records, which say what that

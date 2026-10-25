@@ -190,7 +190,10 @@ that folder and prints the commands instead of running them.
 
 Fluent Bit's own `fluent-bit` service and osquery's own `osqueryd` service are masked, so
 there is never a second copy: the agent runs Fluent Bit, and osquery runs as
-`signalith-osquery` with the agent's settings.
+`signalith-osquery` with the agent's settings. If one of them already runs on the computer
+(Fluent Bit shipping logs somewhere else, say), the script stops before changing anything
+and says so; add `--take-over` to the line to stop and mask it anyway. `--uninstall` starts
+it again.
 
 Useful commands:
 

@@ -218,8 +218,11 @@ func TestVerifyNoRecordsLeft(t *testing.T) {
 		{"started signing an hour ago", empty, VerifyQuery{SignedSince: map[string]time.Time{"n1": now.Add(-time.Hour)}}, false},
 		{"range before signing", empty, VerifyQuery{SignedSince: signed, To: now.Add(-40 * 24 * time.Hour)}, false},
 		{"range an hour long", empty, VerifyQuery{SignedSince: signed, From: now.Add(-time.Hour)}, false},
-		// Retention may have deleted months before this one.
+		// Retention may have deleted months before this one, unless it
+		// keeps them (SCC-04).
 		{"last month only", empty, VerifyQuery{SignedSince: signed, From: now.Add(-25 * 24 * time.Hour), To: now.Add(-20 * 24 * time.Hour)}, false},
+		{"last month, kept", empty, VerifyQuery{SignedSince: signed, From: now.Add(-25 * 24 * time.Hour), To: now.Add(-20 * 24 * time.Hour), KeptFrom: now.Add(-400 * 24 * time.Hour)}, true},
+		{"last month, past keep_days", empty, VerifyQuery{SignedSince: signed, From: now.Add(-25 * 24 * time.Hour), To: now.Add(-20 * 24 * time.Hour), KeptFrom: now.Add(-10 * 24 * time.Hour)}, false},
 	} {
 		r, err := Verify(context.Background(), tc.c, testPrefix, tc.q, nil)
 		if err != nil {
@@ -233,6 +236,37 @@ func TestVerifyNoRecordsLeft(t *testing.T) {
 		}
 		if tc.tampered && (r.Truncated != 1 || r.Problems[len(r.Problems)-1].Kind != ProblemTruncated || !strings.Contains(r.Problems[len(r.Problems)-1].Detail, "removed")) {
 			t.Errorf("%s: problems = %+v", tc.name, r.Problems)
+		}
+	}
+}
+
+// TestVerifyMonthRemoved: with the current month's records there, a past
+// month that retention keeps and that holds no record is reported
+// removed; one retention may have deleted is not (SCC-04).
+func TestVerifyMonthRemoved(t *testing.T) {
+	now := time.Date(2026, 10, 20, 15, 0, 0, 0, time.UTC)
+	signed := map[string]time.Time{"n1": time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}
+	hit := func(t time.Time) Hit { var h Hit; h.NodeID, h.Time = "n1", t; return h }
+	// July and October hold records; August and September were removed.
+	hits := []Hit{hit(time.Date(2026, 7, 15, 0, 0, 0, 0, time.UTC)), hit(now.Add(-time.Hour))}
+	for _, tc := range []struct {
+		name    string
+		kept    time.Time
+		missing []string
+	}{
+		{"kept forever", time.Unix(1, 0), []string{"2026-08-01T00:00:00Z", "2026-09-01T00:00:00Z"}},
+		// keep_days 60: August ended before 08-21, so may be gone.
+		{"keep 60 days", now.Add(-60 * 24 * time.Hour), []string{"2026-09-01T00:00:00Z"}},
+		{"not known", time.Time{}, nil},
+	} {
+		r := &Report{}
+		noneLeft(r, VerifyQuery{SignedSince: signed, KeptFrom: tc.kept}, hits, now, false)
+		var got []string
+		for _, p := range r.Problems {
+			got = append(got, p.Time.UTC().Format(time.RFC3339))
+		}
+		if strings.Join(got, ",") != strings.Join(tc.missing, ",") || r.Truncated != int64(len(tc.missing)) {
+			t.Errorf("%s: removed %v (%d), want %v", tc.name, got, r.Truncated, tc.missing)
 		}
 	}
 }

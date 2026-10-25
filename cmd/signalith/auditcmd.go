@@ -76,6 +76,7 @@ func cmdAudit(args []string) error {
 	keySet, rt := cliClusterKeys(c, cl)
 	keys := auditKeys(c, keySet)
 	q.SignedSince = auditSignedSince(rt)
+	q.KeptFrom = auditKeptFrom(c, time.Now())
 	if keys == nil {
 		fmt.Fprintln(os.Stderr, "This server holds no cluster key, so the records' MACs cannot be checked; only their links are.")
 	}
