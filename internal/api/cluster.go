@@ -28,7 +28,7 @@ func osTrouble(err error) (status, problem, advice string) {
 	r := store.RefusalOf(err)
 	switch r {
 	case store.NotRefused:
-		return "unreachable", "", ""
+		return "unreachable", "", "Check that OpenSearch is running and that this server can reach its address. Signalith keeps trying. " + store.OpenSearchLog
 	case store.RefusedNotInitialized:
 		advice = store.NotInitializedFix + " Signalith keeps trying, so it needs no restart."
 	case store.RefusedBusy:

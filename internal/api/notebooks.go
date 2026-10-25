@@ -526,6 +526,8 @@ func searchErrText(err error) string {
 		return err.Error()
 	case errors.Is(err, search.ErrBusy), errors.Is(err, search.ErrUserBusy):
 		return "Too many searches are running. Run it again in a moment."
+	case store.Unreachable(err):
+		return store.DownText
 	case errors.Is(err, context.DeadlineExceeded):
 		return "The search took too long. Narrow it or shorten the time range."
 	}

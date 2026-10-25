@@ -240,7 +240,7 @@ func TestNoAnswerKeptConnectionToNowhere(t *testing.T) {
 	gone.Store(true)
 	ln.Close()
 	_, err = c.Health(context.Background())
-	if err == nil || NoAnswer(err) || !strings.Contains(err.Error(), "opensearch unreachable") {
+	if err == nil || NoAnswer(err) || !Unreachable(err) || !strings.Contains(err.Error(), "opensearch unreachable") {
 		t.Errorf("gone: %v", err)
 	}
 	c.CloseIdleConnections()
