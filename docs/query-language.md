@@ -53,7 +53,7 @@ add `-explain` to see the compiled request. `signalith ask "failed logins from
 | `field>10`, `>=`, `<`, `<=` | Numeric (or text) comparison |
 | `field IN (a, b, c)` | Any of several values. In `eval` and `where` expressions, `field IN ("a", "b")` is `in(field, "a", "b")` |
 | `"a.b"=value`, `"a{}" IN (x, y)` | A field name in quotes, as Splunk writes names with dots or braces |
-| `word` or `"a phrase"` | Text anywhere in the raw event (`_raw`) |
+| `word` or `"a phrase"` | Text in the raw event (`_raw`). A word matches a whole word, or the start of a name with dots or underscores (`mimikatz` finds `mimikatz.exe`), but not text inside a word: use `*katz*` for that |
 | `NOT term`, `( ... )` | Negation and grouping |
 | `[ \| inputlookup owners \| fields user ]` | A subsearch. It runs first, and each of its result rows becomes a term: `field=value` for each of the row's fields (fields that start with `_` are skipped), ANDed within a row, ORed across rows, as in Splunk. A subsearch with no rows matches nothing, so `NOT [ ... ]` keeps everything. It may give at most 1,000 values; narrow it with `fields`, `dedup` or `head` |
 | `a OR b` | Either. As in SPL, OR binds tighter than the implicit AND, so `x a OR b` means `x AND (a OR b)` |
