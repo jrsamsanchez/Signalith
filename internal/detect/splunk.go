@@ -815,3 +815,22 @@ func formatDuration(d time.Duration) string {
 // network detections (detections/network), which read the network data
 // models from any source (splcheck.ParseOptions).
 func SplunkNetworkRule(path string) bool { return strings.HasPrefix(path, "detections/network/") }
+
+// NeedsGeoIP reports whether d runs iplocation, which needs a GeoIP
+// database: a pack rule tagged geoip, or any rule whose query has the
+// command.
+func NeedsGeoIP(d *Detection) bool {
+	if slices.Contains(d.Tags, "geoip") {
+		return true
+	}
+	q, err := query.Parse(d.Query)
+	if err != nil {
+		return false
+	}
+	for _, c := range q.Commands {
+		if _, ok := c.(*query.IPLocation); ok {
+			return true
+		}
+	}
+	return false
+}

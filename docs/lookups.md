@@ -219,8 +219,9 @@ Without a database, a search that runs `iplocation` fails with "iplocation needs
 GeoIP database" rather than returning rows without locations. That includes the
 detections that run it (the Splunk pack's rules tagged `geoip`, see
 [Detections](detections.md#geoip-and-iplocation)): each run fails, the detection shows
-the error as its last error, and that run finds nothing, so add the database before
-turning them on. Runs that start while the server is still reading its first database
+the error as its last error, and that run finds nothing. So until the server has a
+database, Signalith does not turn these rules on: turning on one says why, and turning on
+many at once leaves them off and says how many. One already on keeps running. Runs that start while the server is still reading its first database
 wait for it and are tried again.
 
 `iplocation` adds only the fields the database has a value for: an address it locates

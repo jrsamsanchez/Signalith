@@ -16,6 +16,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/geoip"
 	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
@@ -68,6 +69,24 @@ func (s *Server) routeDetections(api *router) {
 }
 
 var errDetectionsOff = errors.New("detections are not configured on this server")
+
+// errNoGeoIP refuses to turn on a rule that runs iplocation on a server
+// with no GeoIP database (DQ-03).
+var errNoGeoIP = errors.New("this rule runs iplocation, which needs a GeoIP database, and this server has none, so every run would fail. " +
+	"Add a GeoIP City database (.mmdb) to the geoip folder first (docs/lookups.md, GeoIP database for iplocation)")
+
+// needsMissingGeoIP reports whether d runs iplocation on a server with no
+// GeoIP database. A database still loading counts as there.
+func (s *Server) needsMissingGeoIP(d *detect.Detection) bool {
+	if !detect.NeedsGeoIP(d) || s.Engine == nil {
+		return false
+	}
+	if s.Engine.GeoIP == nil {
+		return true
+	}
+	_, err := s.Engine.GeoIP.Status()
+	return errors.Is(err, geoip.ErrNoDatabase)
+}
 
 func (s *Server) detectionsReady(w http.ResponseWriter) bool {
 	if s.Detections == nil || s.Scheduler == nil || s.Findings == nil {
@@ -245,6 +264,12 @@ func (s *Server) handlePutDetection(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("id in the body does not match the URL"))
 		return
 	}
+	if d.Enabled && s.needsMissingGeoIP(&d) {
+		if cur, err := s.Detections.Get(d.ID); err != nil || !cur.Enabled {
+			writeError(w, http.StatusConflict, errNoGeoIP)
+			return
+		}
+	}
 	// With If-Match, a change made since the page read the detection is
 	// not overwritten: 412 names who made it.
 	if err := s.Detections.PutIf(r.Context(), userOf(r), &d, ifMatch(r)); err != nil {
@@ -415,13 +440,31 @@ func (s *Server) handleEnableDetections(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusBadRequest, fmt.Errorf("send between 1 and %d detection ids", maxEnableIDs))
 		return
 	}
+	// DQ-03: a rule that runs iplocation fails every run without a GeoIP
+	// database, so it is left off until one is added.
+	skipped := []string{}
+	if req.Enabled {
+		ids := req.IDs[:0:0]
+		for _, id := range req.IDs {
+			if d, err := s.Detections.Get(id); err == nil && !d.Enabled && s.needsMissingGeoIP(d) {
+				skipped = append(skipped, id)
+				continue
+			}
+			ids = append(ids, id)
+		}
+		if len(ids) == 0 {
+			writeError(w, http.StatusConflict, errNoGeoIP)
+			return
+		}
+		req.IDs = ids
+	}
 	if err := s.Detections.SetEnabledBy(r.Context(), userOf(r), req.IDs, req.Enabled); err != nil {
 		writeDetectionError(w, err)
 		return
 	}
 	s.audit(r, "detection.enable: detections turned "+map[bool]string{true: "on", false: "off"}[req.Enabled],
-		"enabled", req.Enabled, "count", len(req.IDs), "detections", auditIDs(req.IDs))
-	writeJSON(w, http.StatusOK, map[string]any{"changed": len(req.IDs), "enabled": req.Enabled})
+		"enabled", req.Enabled, "count", len(req.IDs), "detections", auditIDs(req.IDs), "skipped_geoip", len(skipped))
+	writeJSON(w, http.StatusOK, map[string]any{"changed": len(req.IDs), "enabled": req.Enabled, "skipped_geoip": skipped})
 }
 
 func (s *Server) handleCoverage(w http.ResponseWriter, r *http.Request) {

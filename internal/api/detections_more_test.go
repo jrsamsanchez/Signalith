@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -240,5 +241,32 @@ func TestSigmaBodies(t *testing.T) {
 	}
 	if code, body := post("title: [", ""); code != http.StatusBadRequest {
 		t.Errorf("bad YAML: %d %s", code, body)
+	}
+}
+
+// DQ-03: a rule that runs iplocation is not turned on while the server
+// has no GeoIP database; turning on many leaves it off and says so.
+func TestGeoIPRulesStayOffWithoutADatabase(t *testing.T) {
+	ts, _ := newTestServer(t)
+	geo := `{"id":"t-geo","title":"Far sign-in","query":"datamodel=Authentication | iplocation src | stats count by Country","severity":"medium","schedule":"1h","lookback":"1h"}`
+	plain := `{"id":"t-plain","title":"Plain","query":"datamodel=Authentication | stats count by user","severity":"medium","schedule":"1h","lookback":"1h"}`
+	for _, d := range []string{geo, plain} {
+		if code, out := do(t, ts, "POST", "/api/detections", d, true); code != http.StatusCreated && code != http.StatusOK {
+			t.Fatalf("create: %d %v", code, out)
+		}
+	}
+	if code, out := do(t, ts, "POST", "/api/detections/enable", `{"ids":["t-geo"],"enabled":true}`, true); code != http.StatusConflict || !strings.Contains(fmt.Sprint(out["error"]), "GeoIP database") {
+		t.Errorf("enable alone: %d %v", code, out)
+	}
+	code, out := do(t, ts, "POST", "/api/detections/enable", `{"ids":["t-geo","t-plain"],"enabled":true}`, true)
+	if skipped, _ := out["skipped_geoip"].([]any); code != http.StatusOK || out["changed"] != float64(1) || len(skipped) != 1 || skipped[0] != "t-geo" {
+		t.Errorf("enable both: %d %v", code, out)
+	}
+	if code, out := do(t, ts, "PUT", "/api/detections/t-geo", strings.Replace(geo, `"severity"`, `"enabled":true,"severity"`, 1), true); code != http.StatusConflict {
+		t.Errorf("put enabled: %d %v", code, out)
+	}
+	// Turning off is never refused.
+	if code, out := do(t, ts, "POST", "/api/detections/enable", `{"ids":["t-geo","t-plain"],"enabled":false}`, true); code != http.StatusOK || out["changed"] != float64(2) {
+		t.Errorf("disable: %d %v", code, out)
 	}
 }

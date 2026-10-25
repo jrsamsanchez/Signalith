@@ -1735,12 +1735,16 @@ async function bulkEnable(ds, on, btn) {
   if (btn) { dxKeep(btn); btn.disabled = true; }
   const ids = ds.map((d) => d.id);
   try {
-    await api('api/detections/enable', { ids, enabled: on });
+    const res = await api('api/detections/enable', { ids, enabled: on });
+    // Rules that need a GeoIP database the server lacks stay off (DQ-03).
+    const skipped = (res && res.skipped_geoip) || [];
+    const changed = ids.filter((id) => !skipped.includes(id));
     await loadDetections();
-    dxNotify(`${dxPlural(ids.length, 'rule')} turned ${on ? 'on' : 'off'}.${ids.length > 20 ? '' : sampleNote}`, {
+    const geoNote = skipped.length ? ` ${dxPlural(skipped.length, 'rule')} that ${skipped.length === 1 ? 'needs' : 'need'} a GeoIP database stayed off: add one first.` : '';
+    dxNotify(`${dxPlural(changed.length, 'rule')} turned ${on ? 'on' : 'off'}.${geoNote}${changed.length > 20 ? '' : sampleNote}`, {
       label: 'Undo',
       run: async () => {
-        try { await api('api/detections/enable', { ids, enabled: !on }); await loadDetections(); dxNotify('Change undone.'); }
+        try { await api('api/detections/enable', { ids: changed, enabled: !on }); await loadDetections(); dxNotify('Change undone.'); }
         catch (e) { dxNotify('Couldn’t undo: ' + e.message, null, { tone: 'danger' }); }
       },
     });
