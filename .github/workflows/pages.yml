@@ -32,6 +32,11 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     environment: signing
+    # attestations: read, to check each package against its release's
+    # build provenance before signing (repo-packages.sh).
+    permissions:
+      contents: read
+      attestations: read
     outputs:
       built: ${{ steps.build.outputs.built }}
     steps:

@@ -14,7 +14,9 @@
 #
 # apt checks the signed Release file; dnf checks the signed repository
 # metadata and each package's own signature, so .rpm packages that are not
-# signed yet (releases made before the key existed) are signed here.
+# signed yet (releases made before the key existed) are signed here. The
+# Website workflow passes only packages that .github/scripts/repo-packages.sh
+# checked against their release's build provenance.
 set -eu
 pkgs=${1:?usage: build.sh PKGDIR OUTDIR URL}
 out=${2:?usage: build.sh PKGDIR OUTDIR URL}
