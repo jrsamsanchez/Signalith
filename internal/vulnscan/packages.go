@@ -87,6 +87,9 @@ type PackageCheck struct {
 	feeds   map[string]*osvFeed
 	running bool
 	lastRun time.Time
+	// gen counts address changes, so a run started before one does not
+	// mark the new address as run.
+	gen     uint64
 	hosts   int
 	written map[string]writtenEvents
 }
@@ -123,6 +126,7 @@ func (p *PackageCheck) Set(base string) {
 		// A new address is tried at once.
 		p.feeds = nil
 		p.lastRun = time.Time{}
+		p.gen++
 	}
 	p.base = base
 }
@@ -208,7 +212,7 @@ func (p *PackageCheck) Run(ctx context.Context, x *Exploits) error {
 		return nil
 	}
 	p.running = true
-	base, lastRun := p.base, p.lastRun
+	base, lastRun, gen := p.base, p.lastRun, p.gen
 	if p.feeds == nil {
 		p.feeds = map[string]*osvFeed{}
 	}
@@ -229,7 +233,9 @@ func (p *PackageCheck) Run(ctx context.Context, x *Exploits) error {
 			return err
 		}
 		p.mu.Lock()
-		p.lastRun, p.hosts = now, 0
+		if p.gen == gen {
+			p.lastRun, p.hosts = now, 0
+		}
 		p.mu.Unlock()
 		return p.putStatus(ctx, PackageStatus{Off: true, RanAt: now.UTC(), Feeds: map[string]FeedStatus{}})
 	}
@@ -343,7 +349,10 @@ func (p *PackageCheck) Run(ctx context.Context, x *Exploits) error {
 		errs = append(errs, err)
 	}
 	p.mu.Lock()
-	p.lastRun, p.hosts = now, len(hosts)
+	// A new address set during the run is tried at the next one.
+	if p.gen == gen {
+		p.lastRun, p.hosts = now, len(hosts)
+	}
 	st := PackageStatus{Hosts: len(hosts), Unsupported: unsupported, RanAt: now.UTC(), Feeds: map[string]FeedStatus{}}
 	for name, f := range feeds {
 		st.Feeds[name] = f.status
@@ -447,7 +456,7 @@ func (p *PackageCheck) fetch(ctx context.Context, base string, eco Ecosystem) (*
 		if fi.Size() > maxOSVZip {
 			return nil, fmt.Errorf("the advisories are larger than %d MB", maxOSVZip>>20)
 		}
-		return ReadOSVZip(fh, fi.Size(), eco)
+		return ReadOSVZip(ctx, fh, fi.Size(), eco)
 	}
 	src := strings.TrimRight(base, "/") + "/" + url.PathEscape(eco.Feed) + "/all.zip"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
@@ -485,7 +494,7 @@ func (p *PackageCheck) fetch(ctx context.Context, base string, eco Ecosystem) (*
 	if n > maxOSVZip {
 		return nil, fmt.Errorf("the advisories are larger than %d MB", maxOSVZip>>20)
 	}
-	return ReadOSVZip(tmp, n, eco)
+	return ReadOSVZip(ctx, tmp, n, eco)
 }
 
 // osvFolder reports whether an advisories address is a folder on this

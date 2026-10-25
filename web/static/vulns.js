@@ -575,7 +575,7 @@
           ...fact('Last scanned', new Date(h.last_seen).toLocaleString()),
           ...fact('Findings', total ? cveCounts(h.counts) : 'None found')),
         el('div', { class: 'vs-host__links' },
-          el('a', { href: '#search', onclick: (ev) => { ev.preventDefault(); dlg.close(); openSearch('datamodel=Vulnerabilities dest_ip=' + h.address, '-30d'); } }, icon('search'), 'Scan history in Search')),
+          el('a', { href: '#search', onclick: (ev) => { ev.preventDefault(); dlg.close(); openSearch('datamodel=Vulnerabilities dest_ip="' + String(h.address).replace(/["\\]/g, '') + '"', '-30d'); } }, icon('search'), 'Scan history in Search')),
         h.services.length ? el('div', { class: 'vs-services' }, ...h.services.map(serviceBlock))
           : el('p', { class: 'vs-muted' }, h.target_id === 'installed-packages' ? 'No installed package is older than the version its distribution fixed a CVE in.' : 'The host answered, but none of the scanned ports was open.')),
       el('div', { class: 'modal__foot' }, el('button', { class: 'btn btn--secondary', type: 'button', onclick: () => dlg.close() }, 'Close')));

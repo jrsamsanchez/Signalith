@@ -6,6 +6,8 @@ package vulnscan
 import (
 	"archive/zip"
 	"bytes"
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -270,6 +272,9 @@ func TestOSVFixedAfter(t *testing.T) {
 		{[][]osvEvent{evs("i:0", "f:2.0-1"), evs("i:0", "f:2.0-3")}, "1.0-1", "2.0-3"},
 		{[][]osvEvent{evs("i:0", "f:1.0~rc1-1")}, "1.0~beta-1", "1.0~rc1-1"},
 	} {
+		for _, r := range c.ranges {
+			sortEvents(r, e.Compare)
+		}
 		got, ok := osvAffected{ranges: c.ranges}.fixedAfter(c.version, e.Compare)
 		if got != c.fixed || ok != (c.fixed != "") {
 			t.Errorf("fixedAfter(%v, %s) = %q %v, want %q", c.ranges, c.version, got, ok, c.fixed)
@@ -346,18 +351,49 @@ func TestReadOSVZip(t *testing.T) {
 		"broken.json": "{not json", "README.txt": "not an advisory",
 		"big.json": `{"id":"CVE-2099-9999","details":"` + strings.Repeat("x", maxOSVRecord) + `"}`,
 	})
-	x, err := ReadOSVZip(bytes.NewReader(z), int64(len(z)), e)
+	x, err := ReadOSVZip(context.Background(), bytes.NewReader(z), int64(len(z)), e)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if x.Advisories != 2 || len(x.pkgs["openssh"]) != 2 {
 		t.Errorf("advisories = %d, openssh = %d", x.Advisories, len(x.pkgs["openssh"]))
 	}
-	if _, err := ReadOSVZip(bytes.NewReader([]byte("not a zip")), 9, e); err == nil {
+	if _, err := ReadOSVZip(context.Background(), bytes.NewReader([]byte("not a zip")), 9, e); err == nil {
 		t.Error("read a file that is not a zip")
 	}
 	empty := osvZip(t, map[string]string{"README.txt": "x"})
-	if _, err := ReadOSVZip(bytes.NewReader(empty), int64(len(empty)), e); err == nil {
+	if _, err := ReadOSVZip(context.Background(), bytes.NewReader(empty), int64(len(empty)), e); err == nil {
 		t.Error("read a zip with no advisories")
+	}
+
+	// What the files inflate to together is capped.
+	old := maxOSVInflate
+	maxOSVInflate = int64(len(osvDebianCVE))
+	defer func() { maxOSVInflate = old }()
+	if _, err := ReadOSVZip(context.Background(), bytes.NewReader(z), int64(len(z)), e); err == nil || !strings.Contains(err.Error(), "inflate") {
+		t.Errorf("over the inflate cap = %v", err)
+	}
+	maxOSVInflate = old
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ReadOSVZip(ctx, bytes.NewReader(z), int64(len(z)), e); err == nil {
+		t.Error("read with a cancelled context")
+	}
+}
+
+func TestMatchCapsVersions(t *testing.T) {
+	e, _ := EcosystemFor("debian", "12")
+	x := NewOSVIndex(e)
+	if err := x.Add([]byte(osvDebianDSA)); err != nil {
+		t.Fatal(err)
+	}
+	var pkgs []endpoint.Package
+	for i := 0; i < 1000; i++ {
+		v := fmt.Sprintf("1:9.2p1-2+deb12u2~%d", i%(maxPackageVersions+5))
+		pkgs = append(pkgs, endpoint.Package{Name: "openssh-server", Version: v, Source: "openssh", Type: "deb"})
+	}
+	svcs := x.Match(pkgs)
+	if len(svcs) != 1 || len(svcs[0].Vulns) == 0 {
+		t.Fatalf("services = %+v", svcs)
 	}
 }

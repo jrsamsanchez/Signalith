@@ -806,6 +806,7 @@ func TestOSVSource(t *testing.T) {
 		"file://osv":                         false,
 		"osv":                                false,
 		"ftp://mirror.example/osv":           false,
+		"http://mirror.example/osv":          false,
 		"https://user:pw@mirror.example/osv": false,
 		"https://mirror.example/osv?key=abc": false,
 	} {

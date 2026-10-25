@@ -5,6 +5,7 @@ package vulnscan
 
 import (
 	"archive/zip"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -208,7 +209,7 @@ func (x *OSVIndex) Add(raw []byte) error {
 			}
 			// A range with no fix can never be reported (fixedAfter).
 			if fix {
-				ranges = append(ranges, evs)
+				ranges = append(ranges, sortEvents(evs, x.Ecosystem.Compare))
 			}
 		}
 		if len(ranges) == 0 {
@@ -318,24 +319,30 @@ func distroSeverity(ubuntu, urgency, summary string) string {
 	return "unknown"
 }
 
+// sortEvents puts a range's events in version order, an introduced 0
+// first. It is done once, as an advisory is read.
+func sortEvents(evs []osvEvent, cmp func(a, b string) int) []osvEvent {
+	sort.SliceStable(evs, func(i, j int) bool {
+		x, y := evs[i], evs[j]
+		if x.kind == 'i' && x.version == "0" {
+			return !(y.kind == 'i' && y.version == "0")
+		}
+		if y.kind == 'i' && y.version == "0" {
+			return false
+		}
+		return cmp(x.version, y.version) < 0
+	})
+	return evs
+}
+
 // fixedAfter returns the version the distribution fixed a package in,
 // when version is in one of its affected ranges and a fix exists. A
 // range with no fix yet (only introduced, or last_affected) is not
-// reported: the point is a package that an update would fix.
+// reported: the point is a package that an update would fix. The
+// ranges are already sorted (sortEvents).
 func (a osvAffected) fixedAfter(version string, cmp func(a, b string) int) (string, bool) {
 	best := ""
-	for _, evs := range a.ranges {
-		sorted := append([]osvEvent(nil), evs...)
-		sort.SliceStable(sorted, func(i, j int) bool {
-			x, y := sorted[i], sorted[j]
-			if x.kind == 'i' && x.version == "0" {
-				return !(y.kind == 'i' && y.version == "0")
-			}
-			if y.kind == 'i' && y.version == "0" {
-				return false
-			}
-			return cmp(x.version, y.version) < 0
-		})
+	for _, sorted := range a.ranges {
 		affected, fix := false, ""
 	events:
 		for _, e := range sorted {
@@ -368,16 +375,19 @@ func (a osvAffected) fixedAfter(version string, cmp func(a, b string) int) (stri
 	return best, best != ""
 }
 
-// Limits on one bulk download.
+// Limits on one bulk download. maxOSVInflate caps what all its files
+// inflate to together: a zip's entries can all point at the same data.
 const (
 	maxOSVFiles  = 500000
 	maxOSVRecord = 4 << 20
 )
 
+var maxOSVInflate int64 = 6 << 30
+
 // ReadOSVZip reads a bulk download (all.zip, one JSON advisory a file)
 // into an index for a release. Advisories larger than maxOSVRecord, or
 // that are not valid, are skipped.
-func ReadOSVZip(r io.ReaderAt, size int64, e Ecosystem) (*OSVIndex, error) {
+func ReadOSVZip(ctx context.Context, r io.ReaderAt, size int64, e Ecosystem) (*OSVIndex, error) {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return nil, fmt.Errorf("the advisories are not a zip file: %w", err)
@@ -387,7 +397,11 @@ func ReadOSVZip(r io.ReaderAt, size int64, e Ecosystem) (*OSVIndex, error) {
 	}
 	x := NewOSVIndex(e)
 	read := 0
-	for _, f := range zr.File {
+	var inflated int64
+	for i, f := range zr.File {
+		if i%1000 == 0 && ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		if !strings.HasSuffix(f.Name, ".json") || f.UncompressedSize64 > maxOSVRecord {
 			continue
 		}
@@ -397,6 +411,9 @@ func ReadOSVZip(r io.ReaderAt, size int64, e Ecosystem) (*OSVIndex, error) {
 		}
 		b, err := io.ReadAll(io.LimitReader(rc, maxOSVRecord+1))
 		rc.Close()
+		if inflated += int64(len(b)); inflated > maxOSVInflate {
+			return nil, fmt.Errorf("the advisories inflate to more than %d GB", maxOSVInflate>>30)
+		}
 		if err != nil || len(b) > maxOSVRecord {
 			continue
 		}
@@ -418,6 +435,10 @@ const SourcePackage = "package"
 // distribution fixed it in.
 const ConfidencePackage = "package"
 
+// maxPackageVersions is how many versions of one package are matched for
+// a host. Several kernels can be installed at once, never hundreds.
+const maxPackageVersions = 16
+
 // Match returns the CVEs that apply to a host's packages: one service
 // (port 0, named package) per source package, with its CVEs and the
 // version that fixes each.
@@ -427,6 +448,11 @@ func (x *OSVIndex) Match(pkgs []endpoint.Package) []HostService {
 		vulns map[string]*Vuln
 	}
 	groups := map[string]*group{}
+	// Each package and version is matched once, and at most
+	// maxPackageVersions versions of one package: a forged list of
+	// thousands of versions of one package cannot make a run slow.
+	seen := map[[2]string]bool{}
+	versions := map[string]int{}
 	for _, p := range pkgs {
 		if p.Type != x.Ecosystem.Kind {
 			continue
@@ -438,6 +464,11 @@ func (x *OSVIndex) Match(pkgs []endpoint.Package) []HostService {
 		} else if s := rpmSourceName(p.Source); s != "" {
 			name = s
 		}
+		if seen[[2]string{key, ver}] || versions[key] >= maxPackageVersions || len(x.pkgs[key]) == 0 {
+			continue
+		}
+		seen[[2]string{key, ver}] = true
+		versions[key]++
 		for _, a := range x.pkgs[key] {
 			fixed, ok := a.fixedAfter(ver, x.Ecosystem.Compare)
 			if !ok {

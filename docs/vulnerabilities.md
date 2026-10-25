@@ -156,7 +156,8 @@ distribution has not fixed yet is not reported: no update would fix it.
 
 Other systems, such as CentOS Stream, Amazon Linux, SUSE and Alpine, are not checked
 yet. Ubuntu Pro (ESM) fixes are not checked either: a host with ESM updates can show a CVE
-that its ESM version has fixed.
+that its ESM version has fixed. Hosts enrolled in a tenant are not checked yet, only the
+provider's own.
 
 The advisories come from [OSV.dev](https://osv.dev), which publishes all of them in one
 format. The server that runs the background jobs downloads only the releases your hosts
@@ -189,7 +190,7 @@ It runs while **Look up CVEs in the National Vulnerability Database** is on in *
 setup**, and needs no scan network. **Scanner setup** shows how it stands. To stop it, set
 **Distribution advisories address** in [Settings](settings.md), on the **Server** tab under
 **Vulnerability scans**, to `off` (or `SIGNALITH_OSV_URL=off`, or `vulns.osv_url: off` in
-`signalith.yaml`). The same setting takes a mirror's address, or, on a network with no
+`signalith.yaml`). The same setting takes a mirror's https address, or, on a network with no
 internet, the full path of a folder on the server that runs the background jobs that holds
 each release's file, as `Debian:12/all.zip`. On Windows, which allows no `:` in a folder
 name, use `_` instead: `Debian_12/all.zip`.

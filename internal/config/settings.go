@@ -655,7 +655,7 @@ var Registry = []Setting{
 		check: func(v any) error { return FeedSource(v.(string)) }},
 	{Key: "vulns.osv_url", Scope: ScopeCluster, Section: "vulns", Label: "Distribution advisories address", Type: TypeText,
 		Help: "Where the Debian, Ubuntu, Red Hat, AlmaLinux and Rocky Linux advisories that installed packages are checked against come from: " +
-			"a copy of OSV.dev's downloads on your own network, or, with no internet, a folder on the server that runs the background jobs holding <release>/all.zip. " +
+			"an https copy of OSV.dev's downloads on your own network, or, with no internet, a folder on the server that runs the background jobs holding <release>/all.zip. " +
 			"off stops checking installed packages. Signalith downloads only the releases your Linux hosts run, once a day.",
 		Placeholder: DefaultOSVURL, EmptyMeans: "OSV.dev", Env: "SIGNALITH_OSV_URL",
 		check: func(v any) error { return OSVSource(v.(string)) }},
@@ -1475,7 +1475,7 @@ func FeedSource(v string) error {
 const DefaultOSVURL = "https://osv-vulnerabilities.storage.googleapis.com"
 
 // OSVSource checks the distribution advisories address: empty, off, an
-// http(s) address with no password or key in it, or the absolute path of
+// https address with no password or key in it, or the absolute path of
 // a folder (file:///path works too).
 func OSVSource(v string) error {
 	v = strings.TrimSpace(v)
@@ -1493,8 +1493,9 @@ func OSVSource(v string) error {
 		return nil
 	}
 	u, err := url.Parse(v)
-	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return errors.New("must be http(s)://host/path, the path of a folder, or off")
+	// Over plain http anyone on the way could hide CVEs or invent them.
+	if err != nil || u.Scheme != "https" || u.Host == "" {
+		return errors.New("must be https://host/path, the path of a folder, or off")
 	}
 	if hasSecret(v) {
 		return errors.New("leave passwords and keys out of the address")
