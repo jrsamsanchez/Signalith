@@ -23,7 +23,13 @@ Ideas and requests are welcome as
 
 **The next release**
 :   Finished and waiting for the next release: [case](cases.md) templates and tasks,
-    files attached to a case, and case reports signed with SHA-256 fingerprints.
+    files attached to a case, and case reports signed with SHA-256 fingerprints;
+    `signalith opensearch install`, which sets up OpenSearch on Linux in one command;
+    scheduled OpenSearch [snapshots](backup.md) with a Backups card; a
+    [Prometheus metrics](metrics.md) endpoint; signed monthly
+    [compliance](compliance.md) evidence records; and, for the
+    [Signalith Agent](signalith-agent.md), Windows 11 on ARM, staged updates, an alert
+    when an agent goes silent and a check of Fluent Bit configuration.
 
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
@@ -180,7 +186,7 @@ Everything below is in Signalith now. Items named under **The next release** in 
 - [Several teams or customers](multi-tenant.md) on one install, each with its own data,
   users, detections and behavior baselines, managed on **Settings > Tenants** with a
   tenant picker in the top bar.
-- [Several servers](servers.md) sharing one OpenSearch: [add a server](multi-server.md)
+- [Several servers](servers.md) sharing one OpenSearch (a preview until 1.0): [add a server](multi-server.md)
   with one line on Linux, Windows or Docker, shared settings, users and detections,
   each server's detection health on the Servers page,
   [detections spread over the servers](servers.md#the-background-jobs) (on by default

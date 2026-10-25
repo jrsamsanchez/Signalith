@@ -40,7 +40,7 @@ nor the server's `install.ps1` checks the Windows version, so they install on Se
 ## Agent
 
 The [Signalith Agent](signalith-agent.md#what-it-runs-on) is built for Linux (amd64,
-arm64), Windows (amd64) and macOS (amd64, arm64). Its install line checks the system
+arm64), Windows (amd64, and arm64 on Windows 11 from the release after 0.3.2) and macOS (amd64, arm64). Its install line checks the system
 before it changes anything and stops on any other.
 
 | System | Versions | Processors |
@@ -49,10 +49,10 @@ before it changes anything and stops on any other.
 | Debian | 12, 13 | amd64, arm64 |
 | Red Hat Enterprise Linux, Rocky Linux, AlmaLinux, Oracle Linux | 8, 9 | amd64, arm64 |
 | Amazon Linux | 2023 | amd64, arm64 |
-| Windows | 10, 11, Server 2016 and later (build 14393 or later) | x64 only |
+| Windows | 10, 11, Server 2016 and later (build 14393 or later); Windows 11 on ARM from the release after 0.3.2 | x64; arm64 on Windows 11 |
 | macOS | 12 and later | Apple silicon, Intel |
 
-Linux needs systemd. Windows on ARM is refused. On any other system, send logs with
+Linux needs systemd. Windows 10 on ARM is refused, and so is Windows 11 on ARM up to 0.3.2. On any other system, send logs with
 Fluent Bit or osquery set up by hand ([Agents and syslog](sending-data.md),
 [Endpoints](endpoints.md)).
 

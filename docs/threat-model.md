@@ -6,9 +6,10 @@ trusts and what it leaves to you. Use it to judge whether Signalith fits your
 environment, and to decide what to check before putting it on a network that matters.
 
 !!! warning "No independent audit yet"
-    Signalith has not had an independent security audit. Its code is reviewed before
-    each change is merged (see [How it is reviewed](#how-it-is-reviewed)), but no outside
-    firm has looked at it yet. An outside review is planned. Until then, treat
+    Signalith has not had an independent security audit. It has one maintainer, and its
+    code is reviewed with AI assistance before each change is merged (see
+    [How it is reviewed](#how-it-is-reviewed)), but no second person approves changes and
+    no outside firm has looked at it yet. An outside review is planned. Until then, treat
     Signalith as you would any young security tool: run it on a network you control, keep
     it up to date, and report anything you find (see [SECURITY.md](https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md)).
 
@@ -209,8 +210,9 @@ Each arrow is a boundary where data from the other side is not trusted:
 - Every change that touches sign-in, sessions, tokens, agents, ingest, the cluster, keys,
   uploads or the search language gets a security review before it is merged. Most of
   Signalith's code is written with an AI coding assistant, and these reviews are
-  AI-assisted too, so they are not a substitute for an independent audit. Findings and
-  their fixes are in the public pull request history.
+  AI-assisted too, so they are not a substitute for an independent audit. Signalith has
+  one maintainer, so no second person approves a change before it is merged. Findings
+  and their fixes are in the public pull request history.
 - The baselines are OWASP ASVS, NIST SP 800-63B for authentication, CIS and NIST SSDF.
 - CI runs CodeQL, OpenSSF Scorecard, govulncheck, Trivy image scans, 70+ fuzz targets
   (longer every night), race tests and a two-server cluster test.

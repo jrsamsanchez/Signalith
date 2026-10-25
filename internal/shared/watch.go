@@ -868,6 +868,10 @@ func (h *Hub) Restore(d CacheData) {
 	}
 }
 
+// acceptRestoreTries is how many times AcceptRestore writes a document
+// that another writer changed meanwhile.
+const acceptRestoreTries = 5
+
 // AcceptRestore makes this server, and every other, accept the documents
 // now in OpenSearch after an intentional snapshot restore lowered their
 // revisions: every document of the config index whose MAC verifies,
@@ -893,19 +897,38 @@ func (h *Hub) AcceptRestore(ctx context.Context, by string, peerMaxRev int64) er
 	var errs []error
 	var refused []string
 	for _, d := range docs {
-		var e Envelope
-		if json.Unmarshal(d.Source, &e) != nil || Verify(keys, d.ID, &e) != nil || e.ID != d.ID {
-			refused = append(refused, d.ID)
-			continue
-		}
-		// Extra, the fields this version does not know, is kept.
-		e.Rev, e.UpdatedAt, e.UpdatedBy, e.WriteID = rev, h.now(), By{User: by, Node: h.opts.NodeName}, ""
-		if err := Sign(k, d.ID, &e); err != nil {
-			errs = append(errs, err)
-			continue
-		}
-		if _, err := c.PutIf(ctx, index, d.ID, &e, d.Version, false); err != nil {
-			errs = append(errs, fmt.Errorf("%s: %w", d.ID, err))
+		// A running server may write its own documents (its nodecfg)
+		// meanwhile: on a conflict the document is read again and
+		// written at rev again, a few times.
+		for try := 1; ; try++ {
+			var e Envelope
+			if json.Unmarshal(d.Source, &e) != nil || Verify(keys, d.ID, &e) != nil || e.ID != d.ID {
+				refused = append(refused, d.ID)
+				break
+			}
+			// Extra, the fields this version does not know, is kept.
+			e.Rev, e.UpdatedAt, e.UpdatedBy, e.WriteID = rev, h.now(), By{User: by, Node: h.opts.NodeName}, ""
+			if err := Sign(k, d.ID, &e); err != nil {
+				errs = append(errs, err)
+				break
+			}
+			_, err := c.PutIf(ctx, index, d.ID, &e, d.Version, false)
+			if err == nil {
+				break
+			}
+			if !errors.Is(err, store.ErrConflict) || try == acceptRestoreTries {
+				errs = append(errs, fmt.Errorf("%s: %w", d.ID, err))
+				break
+			}
+			again, rerr := c.MGet(ctx, []store.Ref{{Index: index, ID: d.ID}})
+			if rerr != nil {
+				errs = append(errs, fmt.Errorf("%s: %w", d.ID, rerr))
+				break
+			}
+			if len(again) == 0 || !again[0].Found {
+				break // deleted meanwhile: nothing to accept
+			}
+			d.Source, d.Version = again[0].Source, again[0].Version
 		}
 	}
 	if len(refused) > 0 {

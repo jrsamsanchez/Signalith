@@ -43,6 +43,9 @@ Elastic Security and others, including where it is weaker ·
 > Signalith is a personal project by Samuel Sanchez Jr., written with Claude Code, and
 > it is early software: it has not had an independent security audit yet, and the
 > Windows installer is not code signed yet. Issues and feedback are welcome.
+>
+> Release GPG key fingerprint: `58F0 AF4F 674A 5391 431C  1D5F 580C B767 9DAF 957A`
+> ([how to check a download](docs/install-packages.md#check-a-download)).
 
 ## What's inside
 
@@ -85,7 +88,7 @@ release and upgrading an older quick start.
 
 | | |
 | --- | --- |
-| Install | [Getting started](https://signalith.io/docs/getting-started/) · [Packages](https://signalith.io/docs/install-packages/) · [Supported platforms](https://signalith.io/docs/platforms/) · [Kubernetes](https://signalith.io/docs/kubernetes/) · [More than one server](https://signalith.io/docs/multi-server/) |
+| Install | [Getting started](https://signalith.io/docs/getting-started/) · [Packages](https://signalith.io/docs/install-packages/) · [Supported platforms](https://signalith.io/docs/platforms/) · [Kubernetes](https://signalith.io/docs/kubernetes/) · [More than one server (preview)](https://signalith.io/docs/multi-server/) |
 | Collect | [Agents and syslog](https://signalith.io/docs/sending-data/) · [Signalith Agent](https://signalith.io/docs/signalith-agent/) · [OpenTelemetry](https://signalith.io/docs/opentelemetry/) · [Any other log](https://signalith.io/docs/custom-logs/) |
 | Detect and respond | [Detections](https://signalith.io/docs/detections/) · [Cases](https://signalith.io/docs/cases/) · [Investigate with AI](https://signalith.io/docs/investigate/) · [Response actions](https://signalith.io/docs/response-actions/) · [Playbooks](https://signalith.io/docs/playbooks/) |
 | Search | [Query language](https://signalith.io/docs/query-language/) · [Dashboards](https://signalith.io/docs/dashboards/) · [Hunting notebooks](https://signalith.io/docs/hunting-notebooks/) |

@@ -5,6 +5,12 @@ detections and dashboards, take turns running the background jobs, and keep work
 one of them stops. [Servers](servers.md) explains how they work together. This page is about
 adding one.
 
+!!! note "Preview"
+    Running several servers is a preview in the 0.x releases. It is tested in CI and in
+    the lab, but it is newer than the rest of Signalith and has not run for long outside
+    the lab. One server is the recommended setup for now; keep a
+    [backup](backup.md) before adding a second.
+
 The short version: on the Servers page, click **Add a server**, pick what you are adding
 and where it runs, and run the line it gives you on the new computer. The dialog checks first that
 OpenSearch is ready for a second server, and says what to change if it isn't.
