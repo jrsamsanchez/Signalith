@@ -76,6 +76,20 @@ server:
     # Local keeps each client's own address, which sign-in limits and the
     # audit log use.
     externalTrafficPolicy: ""
+  # The agent port on a Service of its own (signalith-agents), for when
+  # the web page goes through an Ingress (ingress, below), which never
+  # carries the agent port. Agents need a TCP Service of their own, such
+  # as this LoadBalancer: point a name at its address and enter it under
+  # Agents send to on the Add data page. With networkPolicy.webFrom set,
+  # set networkPolicy.agentsFrom too (it is webFrom's when not set).
+  agentService:
+    enabled: false
+    # LoadBalancer, NodePort or ClusterIP.
+    type: LoadBalancer
+    annotations: {}
+    # The agents' networks (empty: any). Agents still need a token.
+    loadBalancerSourceRanges: []
+    externalTrafficPolicy: ""
   # Syslog from firewalls, switches and servers without an agent, on its
   # own Service: syslog over TLS on 6514.
   syslog:
@@ -100,6 +114,35 @@ server:
     # With more than one replica, keep at least one running during node
     # drains.
     enabled: true
+
+# The web page and API through an ingress controller (off by default).
+# Only the web port goes through it: agents send to the agent port, which
+# an Ingress never carries, so give them server.agentService (above).
+# Signalith serves HTTPS on the web port, and the controller must connect
+# to it over HTTPS: ingress-nginx needs the annotation below (other
+# controllers ignore it); Traefik uses HTTPS by itself, as the Service's
+# port is named https. See docs/kubernetes.md, An ingress controller. With
+# networkPolicy.webFrom set, list the controller's namespace there.
+ingress:
+  enabled: false
+  # The IngressClass, such as nginx or traefik. Empty: the cluster's
+  # default class.
+  className: ""
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+  # The names the web page is reached at. Signalith serves from / only,
+  # so keep the path at /. For example:
+  #   - host: siem.example.com
+  #     paths:
+  #       - path: /
+  #         pathType: Prefix
+  hosts: []
+  # The certificates the controller serves, as kubernetes.io/tls Secrets
+  # (from cert-manager, for example). Without one the controller may serve
+  # the web page over plain HTTP. For example:
+  #   - secretName: siem-example-com-tls
+  #     hosts: [siem.example.com]
+  tls: []
 
 # Vulnerability scanners: servers that only scan the networks picked for
 # them on the Vulnerabilities page, from inside the cluster, and never run
@@ -179,7 +222,8 @@ setup:
 # syslog ports. Needs a network plugin that enforces them (Calico, Cilium, ...).
 networkPolicy:
   enabled: true
-  # Who may reach the web port (UI and API). Empty: anyone. For example,
+  # Who may reach the web port (UI and API). Empty: anyone. With ingress
+  # on and this set, list the ingress controller's namespace. For example,
   # only an ingress controller's namespace and the admins' network:
   #   - namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
   #   - ipBlock: { cidr: 10.20.0.0/16 }

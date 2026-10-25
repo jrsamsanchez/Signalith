@@ -56,7 +56,8 @@ each with a comment. Change them with a file of your own (`-f my-values.yaml`) o
 | Scanners | StatefulSet `signalith-scanner`, off unless `scanner.enabled` | [Scanners](multi-server.md#cluster-servers-and-scanners) scan networks from inside the cluster and never run the background jobs |
 | OpenSearch | StatefulSet `signalith-opensearch`, 1 or 3+ nodes | Off with `opensearch.enabled: false` |
 | Setup | A Job before each install and upgrade | Makes the secrets (below), then is deleted with its rights |
-| Services | `signalith` (web and API on 9000, agents on 7779), `signalith-syslog`, `signalith-pods`, `signalith-opensearch` | |
+| Services | `signalith` (web and API on 9000, agents on 7779), `signalith-syslog`, `signalith-pods`, `signalith-opensearch` | `signalith-agents` (agents only) with `server.agentService.enabled` |
+| Ingress | `signalith`, off unless `ingress.enabled` | The web page and API only ([An ingress controller](#an-ingress-controller)) |
 | Network policies | Around OpenSearch and the servers | Need a network plugin that enforces them |
 
 ## Exposing Signalith
@@ -80,14 +81,75 @@ The web Service is `ClusterIP` by default. To reach it from outside the cluster:
   up in the cluster). `helm template`, Argo CD and Flux render without the cluster, so
   they render a new install: set `server.syslog.plain: true` there if devices send to 514. The chart sets it in the
   servers' environment, so their Settings and Add data pages show it as set there.
-- **An ingress controller**: Signalith serves HTTPS itself and agents send their own token,
-  so pass connections through (TLS passthrough, such as ingress-nginx's
-  `nginx.ingress.kubernetes.io/ssl-passthrough`) rather than ending TLS in the ingress.
-  Agents send to port 7779 at the same host, so expose that port too.
+- **An ingress controller**: for the web page only, with `ingress.enabled` (below).
 
 Signalith makes and renews its own HTTPS certificate from a CA the servers share
 ([HTTPS](https.md)). To serve one of your own, such as one from cert-manager, name its
 `kubernetes.io/tls` Secret in `server.tls.existingSecret`.
+
+### An ingress controller
+
+The chart can add an Ingress for the web page and API. It is off by default:
+
+```yaml
+server:
+  publicURL: https://siem.example.com
+  # The agent port on a LoadBalancer Service of its own (signalith-agents).
+  agentService:
+    enabled: true
+    loadBalancerSourceRanges: [10.30.0.0/16]   # the agents' networks
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    nginx.ingress.kubernetes.io/proxy-body-size: 20m
+  hosts:
+    - host: siem.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: siem-example-com-tls   # from cert-manager, for example
+      hosts: [siem.example.com]
+```
+
+- **Only the web port goes through it.** An Ingress carries HTTP to the web port, never the
+  agent port, 7779. Agents outside the cluster need a TCP Service of their own:
+  `server.agentService.enabled: true` adds `signalith-agents`, a LoadBalancer for the
+  agent port alone. Point a name at its address and enter that name under **Agents send
+  to** on the Add data page, which also adds it to Signalith's own certificate. (The web
+  Service, `signalith`, carries both ports; making it a LoadBalancer would expose the web
+  port as well.)
+- **The controller must connect to Signalith over HTTPS.** Signalith serves HTTPS on the
+  web port by default, and plain `http://` there only answers health checks and redirects.
+  The chart's default annotation, `nginx.ingress.kubernetes.io/backend-protocol: HTTPS`,
+  does this for ingress-nginx, and other controllers ignore it. Traefik uses HTTPS by
+  itself, since the Service's port is named `https`. For other controllers, see their
+  documentation for HTTPS to the backend (such as `haproxy.org/server-ssl: "true"`). The
+  controller then serves its own certificate, from `ingress.tls`, to browsers. Without
+  `ingress.tls` it may serve the sign-in page over plain HTTP, and the install notes warn.
+- **Plain HTTP inside the cluster** is possible but not recommended: with
+  `server.config.server.tls.mode: off`, Signalith speaks plain HTTP on the web port **and**
+  the agent port, so agents' events and tokens would cross the cluster unencrypted. Keep
+  the default.
+- **Network policies**: with `networkPolicy.webFrom` set, list the ingress controller's
+  namespace there, such as
+  `- namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }`.
+  `networkPolicy.agentsFrom` is the same as `webFrom` when not set, which would leave
+  agents out, so set it to the agents' networks. Use
+  `server.agentService.externalTrafficPolicy: Local` so the policy sees the agents' own
+  addresses.
+- **Each person's address**: Signalith sees the controller's pods as the client. So that
+  sign-in limits and the audit log use each person's address, list the controller's pod
+  network under `server.trusted_proxies` and `server.shared_addresses` and set
+  `server.client_header: x-forwarded-for` in `server.config` (see
+  [Behind a reverse proxy](https.md#behind-a-reverse-proxy)).
+- Signalith serves from `/` only, so keep the path at `/`.
+
+Instead of an Ingress, a controller can also pass connections through without ending TLS
+(TLS passthrough, such as ingress-nginx's `nginx.ingress.kubernetes.io/ssl-passthrough`),
+so browsers see Signalith's own certificate.
 
 ## Several servers
 
@@ -189,6 +251,60 @@ kubectl -n signalith patch secret signalith-secrets --type=json \
 ```
 
 Turn on [two-factor sign-in](users.md) for every admin.
+
+## Backup and volumes
+
+Each pod keeps its data on a volume of its own (a PersistentVolumeClaim), which
+`helm uninstall` keeps:
+
+| Volume | Holds | Size |
+| --- | --- | --- |
+| `data-signalith-0`, `-1`, ... | Each server's **master key** (which decrypts the passwords and keys Signalith keeps) and its **identity** among the servers, with its detections, lookups, dashboards and archived days | `server.persistence.size` |
+| `data-signalith-scanner-0`, ... | Each scanner's master key and identity | `scanner.persistence.size` |
+| `data-signalith-opensearch-0`, ... | OpenSearch's data: events, findings, cases and settings | `opensearch.persistence.size` |
+
+Losing a server's volume loses its master key, so the passwords and keys it encrypted
+must be entered again. Back up both halves:
+
+- **OpenSearch**: turn on [scheduled snapshots](backup.md#scheduled-snapshots), with a
+  snapshot repository registered in OpenSearch that lives outside the cluster, such as an
+  S3 bucket.
+- **Each server's files**: `signalith backup` in each server's pod, then copy the zip and
+  its master key file out and keep them apart
+  ([Signalith's files](backup.md#signaliths-files), [The master key](backup.md#the-master-key)):
+
+    ```sh
+    kubectl -n signalith exec signalith-0 -- signalith backup -c /etc/signalith/signalith.yaml -o /tmp/backup.zip
+    kubectl -n signalith exec signalith-0 -- cat /tmp/backup.zip > signalith-0-backup.zip
+    kubectl -n signalith exec signalith-0 -- cat /tmp/backup.master-key.zip > signalith-0-master-key.zip
+    kubectl -n signalith exec signalith-0 -- rm /tmp/backup.zip /tmp/backup.master-key.zip
+    ```
+
+**The size can't change with `helm upgrade`.** The volumes come from the StatefulSets'
+`volumeClaimTemplates`, which Kubernetes does not let an upgrade change, so a new
+`persistence.size` makes the upgrade fail. To grow a volume, when its StorageClass
+allows it (`allowVolumeExpansion: true` in `kubectl get storageclass -o yaml`):
+
+1. Ask for the new size on each pod's claim:
+
+    ```sh
+    kubectl -n signalith patch pvc data-signalith-opensearch-0 \
+      -p '{"spec":{"resources":{"requests":{"storage":"100Gi"}}}}'
+    ```
+
+    `kubectl -n signalith get pvc` shows the new size once the storage has grown it; some
+    storage needs the pod restarted first.
+2. So new pods get the same size, delete the StatefulSet but keep its pods, then upgrade
+   with the new size, which makes it again:
+
+    ```sh
+    kubectl -n signalith delete statefulset signalith-opensearch --cascade=orphan
+    helm upgrade signalith oci://ghcr.io/jrsamsanchez/charts/signalith --version <release> -n signalith \
+      --reset-then-reuse-values --set opensearch.persistence.size=100Gi
+    ```
+
+A StorageClass that does not allow expansion needs a new volume: restore a backup onto
+a new install with the larger size.
 
 ## Security
 
