@@ -40,8 +40,11 @@ The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such 
 
 **Run workflow** on the Release workflow's page (Actions > Release) is a dry run: it
 builds and tests everything for the version you enter and keeps the files as a workflow
-artifact named `release`, and publishes nothing. Its summary shows the release notes the
-version would get.
+artifact named `release`, and publishes nothing: no image, no Sigstore signature and no
+build provenance, which only a tag gets. Its summary shows the release notes the version
+would get. On a tag, publishing also waits for a Trivy scan of the release image, which
+fails on a known critical vulnerability that has a fix; the **Image (main)** workflow
+scans every build of `main` the same way, so one shows up there first.
 
 ## Making a release
 
