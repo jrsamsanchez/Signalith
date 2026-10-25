@@ -152,7 +152,7 @@ check() {
         if (l ~ /^\[/) { sec = toupper(l) ; continue }
         if (sec != "[OUTPUT]") continue
         k = tolower(l); sub(/[ \t].*/, "", k); v = l; sub(/^[^ \t]+[ \t]*/, "", v)
-        if (k == "host" || k == "port" || k == "tls.vhost" || k == "tls.ca_file") was[k] = v
+        if (k == "host" || k == "port" || k == "tls.vhost" || k == "tls.ca_file" || k == "tls.verify_hostname") was[k] = v
       }
       close(old)
       sec = ""
@@ -197,6 +197,8 @@ check() {
       }
       if (sec == "[FILTER]" && k == "record") { r = v; sub(/\$\{HOSTNAME\}$/, "", r); vv = r }
       if (vv ~ /\$/) bad("the value of " k " is not allowed")
+      # Fluent Bit logs HTTP headers, the token among them, at debug and trace.
+      if (sec == "[SERVICE]" && k == "log_level" && tolower(v) !~ /^(off|error|warn|warning|info)$/) bad("log_level " v " is not allowed")
       if (sec == "[SERVICE]" && k == "storage.path" && !under(v, buffer)) bad("storage.path " v " is outside the agent folder")
       if (sec == "[INPUT]" && (k == "db") && !under(v, buffer)) bad("db " v " is outside the agent folder")
       if (sec == "[INPUT]" && k == "path") { np = split(v, ps, ","); for (i = 1; i <= np; i++) if (!under(ps[i], logs)) bad("path " ps[i] " is not one of the sensor logs") }
@@ -213,7 +215,7 @@ check() {
       if (n["[INPUT]"] < 1 || n["[OUTPUT]"] != 1) { print "it must have inputs and one output"; exit }
       if (tolower(o["tls"]) != "on" || tolower(o["tls.verify"]) != "on") { print "the output must use TLS and check the certificate"; exit }
       if (o["host"] == "" || ("tls.ca_file" in was) != ("tls.ca_file" in o) || ("tls.vhost" in was) != ("tls.vhost" in o)) { print "the output does not send where the sensor sends now"; exit }
-      if (("tls.verify_hostname" in o) && tolower(o["tls.verify_hostname"]) != "on") { print "the output must check the host name"; exit }
+      if ((("tls.verify_hostname" in o) || tolower(was["tls.verify_hostname"]) == "on") && tolower(o["tls.verify_hostname"]) != "on") { print "the output must check the host name"; exit }
     }
   ' "$1"
 }

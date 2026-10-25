@@ -168,6 +168,8 @@ func TestSensorConfigRefused(t *testing.T) {
 		"second output":     {out, "[OUTPUT]\n    Name                 http\n    Match                *\n    Host                 siem.example.com\n\n" + out},
 		"storage elsewhere": {"storage.path         /var/lib/signalith-sensor/agent/buffer", "storage.path         /etc/signalith-sensor"},
 		"http server":       {"[SERVICE]\n", "[SERVICE]\n    HTTP_Server          On\n"},
+		"debug log level":   {"Log_Level            info", "Log_Level            debug"},
+		"no hostname check": {"    tls.verify_hostname  On\n", ""},
 		"lua filter":        {"    Name                 record_modifier\n    Match                zeek.*", "    Name                 lua\n    Match                zeek.*\n    script               /tmp/x.lua"},
 	} {
 		t.Run(name, func(t *testing.T) {
