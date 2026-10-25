@@ -1,5 +1,5 @@
 id: vuln-critical
-title: Critical vulnerability $cve$ on $dest$
+title: Critical vulnerability $signature_id$ on $dest$
 name: Critical vulnerability found
 description: A vulnerability scan found software with a critical vulnerability (CVSS 9 or higher) that is not yet known to be used by attackers. Critical vulnerabilities can often be exploited over the network without a password. Known exploited ones raise their own, higher finding. A match by version alone on a build a Linux distribution made (vuln_confidence=version_only) does not raise it, since distributions fix CVEs without changing the version; it stays on the Vulnerabilities page.
 query: |
@@ -9,7 +9,7 @@ lookback: 30m
 severity: medium
 mitre: [T1190, T1210]
 throttle:
-  fields: [dest, cve]
+  fields: [dest, signature_id]
   window: 7d
 risk:
   score: 25
