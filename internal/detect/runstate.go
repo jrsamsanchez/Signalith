@@ -62,6 +62,10 @@ type DetState struct {
 	ErrorKind string `json:"error_kind"`
 	TimedOut  bool   `json:"timed_out"`
 	Capped    bool   `json:"capped"`
+	// Sampled and SampledOf: the last run counted only the newest
+	// Sampled of SampledOf matching events.
+	Sampled   int   `json:"sampled,omitempty"`
+	SampledOf int64 `json:"sampled_of,omitempty"`
 	// Attempts counts the runs of the slot after LastSlot that timed out.
 	Attempts int       `json:"attempts"`
 	LagMS    int64     `json:"lag_ms"`
@@ -517,6 +521,7 @@ func runStateOf(st DetState) RunState {
 		LastResults: st.LastResults, LastFindings: st.LastFindings, LastRisk: st.LastRisk,
 		LastThrottled: st.LastThrottled, LastDuplicates: st.LastDuplicates, LastSuppressed: st.LastSuppressed,
 		LastError: st.LastError, ErrorKind: st.ErrorKind, TimedOut: st.TimedOut, Capped: st.Capped,
+		Sampled: st.Sampled, SampledOf: st.SampledOf,
 		Lag: st.LagMS, LateRuns: st.LateRuns, LastLate: st.LastLate, LateNode: st.LateNode, Node: st.Node,
 		Since: st.Created,
 	}

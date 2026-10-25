@@ -88,6 +88,9 @@ func writeResult(b *strings.Builder, r *Result, rows int) {
 	if r.Truncated {
 		b.WriteString(", more not kept")
 	}
+	if r.Sampled > 0 {
+		fmt.Fprintf(b, ", sampled from the newest %d of %d matching events", r.Sampled, r.Matched)
+	}
 	if len(shown) < len(r.Rows) {
 		fmt.Fprintf(b, "; the first %d shown", len(shown))
 	}

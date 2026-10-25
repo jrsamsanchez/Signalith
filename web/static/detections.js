@@ -1993,6 +1993,7 @@ function renderDetectionInspector() {
           st.last_risk ? dxPlural(st.last_risk, 'risk event') : '',
           st.last_suppressed ? `${st.last_suppressed} matched an exception` : '',
         ].filter(Boolean).join(', ') + (st.capped ? '. Stopped at the most findings one run may raise.' : '')] : null,
+        st.sampled ? ['Sampled', `${(st.sampled_of || 0).toLocaleString()} events matched, but the commands after the search counted only the newest ${st.sampled.toLocaleString()}, so counts may be low. Put stats right after the search, or narrow it, to count every event.`] : null,
         st.last_error ? ['Problem', errorKindLabel(st)] : null,
         lagText(st) || dxSkipped(st) ? ['Behind schedule', [lagText(st), dxSkipped(st) ? skippedText(st) : ''].filter(Boolean).join(' ')] : null,
         st.manual ? ['Last run now', manualText(st.manual)] : null,
