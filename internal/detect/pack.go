@@ -368,6 +368,17 @@ func packThrottle(category, datamodel string) []string {
 	return []string{"host", "user", "process"}
 }
 
+// sigmaCloudProduct is whether a Sigma product is a cloud or identity
+// provider's log (AWS, Azure and Entra ID, Google Cloud, GitHub,
+// Kubernetes, Microsoft 365, Okta) rather than a host's.
+func sigmaCloudProduct(product string) bool {
+	switch strings.ToLower(product) {
+	case "aws", "azure", "gcp", ingest.GitHubProduct, ingest.KubernetesService, "m365", ingest.OktaService:
+		return true
+	}
+	return false
+}
+
 // PackDetection converts one pack rule, strictly, into an off detection
 // with the pack's defaults: a title naming the host, one finding a day per
 // host, program and what it acted on (packThrottle), and risk on the user
@@ -448,6 +459,14 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 			d.Title = strings.TrimSpace(meta.Title) + " seen by $host$"
 			d.Risk.Objects = []RiskObject{{Field: "host", Type: "system"}}
 		}
+	}
+	if sigmaCloudProduct(meta.Logsource.Product) {
+		// A cloud or identity provider's action is the account's, from an
+		// address; the host is only the Collector that read it. One
+		// finding a day per account, address and action (DQ-04).
+		d.Title = strings.TrimSpace(meta.Title) + " for $user$"
+		d.Throttle.Fields = []string{"vendor_account", "user", "src", "signature"}
+		d.Risk.Objects = []RiskObject{{Field: "user", Type: "user"}, {Field: "src", Type: "system"}}
 	}
 	tags := []string{"sigma", p.Name}
 	if meta.Logsource.Product != "" {
