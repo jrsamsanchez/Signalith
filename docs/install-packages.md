@@ -129,7 +129,8 @@ It sets up OpenSearch for Signalith the same way the Windows installer does
   HTTPS with certificates from a CA of its own. There are no passwords and no demo users;
   the CA's key and the admin certificate stay in `/var/lib/signalith-opensearch/ca`, which
   only root can read. Signalith's certificate goes to `/etc/signalith/opensearch`.
-- Its Java heap is a quarter of the server's memory, from 1 to 8 GB, and it sets
+- Its Java heap is a quarter of the server's memory, from 1 to 8 GB, unless you choose
+  another with `-heap` ([OpenSearch's memory](#opensearchs-memory)), and it sets
   `vm.max_map_count` to 262144 (in `/etc/sysctl.d/90-signalith-opensearch.conf`).
 - It sets Signalith's OpenSearch address and certificate on the **Settings** page and
   restarts Signalith.
@@ -143,7 +144,8 @@ removes the service and program, keeping `/var/lib/signalith-opensearch`.
 
 !!! note "Before you start"
     - Windows Server 2019 or later, or Windows 10/11, 64-bit; 8 GB of memory or more is best
-      (OpenSearch takes a quarter of it, from 1 to 8 GB).
+      (OpenSearch takes a quarter of it, from 1 to 8 GB). With under about 4 GB a new
+      install stops ([OpenSearch's memory](#opensearchs-memory)).
     - About 3.5 GB free on the system drive for the install, plus room for your data.
     - The installer downloads OpenSearch from `https://artifacts.opensearch.org` (port 443).
       It uses the computer's proxy setting (`netsh winhttp show proxy`; its bypass list is not
@@ -241,7 +243,8 @@ does:
   security tools. There are no passwords and no demo users; the CA's key and the admin
   certificate stay in `C:\ProgramData\SignalithOpenSearch\ca`, which neither service can
   read. The download is checked and unpacked from a folder only administrators can change.
-- Its Java heap is a quarter of the computer's memory, from 1 to 8 GB.
+- Its Java heap is a quarter of the computer's memory, from 1 to 8 GB, unless you choose
+  another with `OPENSEARCHHEAP` ([OpenSearch's memory](#opensearchs-memory)).
 
 A computer without internet access: download
 `opensearch-3.9.0-windows-x64.zip` from
@@ -263,6 +266,37 @@ before changing anything when there is not.
 
 `signalith opensearch status`, in PowerShell as Administrator, shows what is installed.
 OpenSearch's own log is `C:\ProgramData\SignalithOpenSearch\logs\signalith.log`.
+
+### OpenSearch's memory
+
+The OpenSearch that Signalith installs, on Windows or on Linux, gets a Java heap of a
+quarter of the computer's memory, from 1 to 8 GB. The rest is left for the files OpenSearch
+keeps in the system's cache, for Signalith and for other programs. To choose the heap
+yourself:
+
+```powershell
+# Windows, on a new install or an upgrade
+msiexec /i signalith-<version>-x64.msi OPENSEARCHHEAP=4g
+# Windows, once installed: in PowerShell as Administrator
+signalith opensearch install -heap 4g
+```
+
+```sh
+# Linux
+sudo signalith opensearch install -heap 4g
+```
+
+- The heap is a size such as `4g` or `6144m`, from 1 GB to 31 GB, and at most half of the
+  computer's memory. Above 31 GB Java stops using compressed pointers, so a larger heap
+  holds less. Anything else is refused before OpenSearch is changed.
+- The heap you choose is kept: upgrades and repairs without `-heap` (or `OPENSEARCHHEAP`)
+  keep it. `-heap auto` goes back to a quarter of the memory. If the computer later has
+  too little memory for it, the installer warns and uses a quarter of the memory instead.
+- Changing it restarts OpenSearch. `signalith opensearch status` shows the heap in use.
+- OpenSearch and Signalith together need at least 4 GB of memory, and 8 GB or more is
+  best. With less, a new install stops and says so. To install anyway, such as on a small
+  test machine, choose the heap yourself (`-heap 1g`, or `OPENSEARCHHEAP=1g`). An upgrade
+  on such a computer only warns.
 
 ## Docker image
 

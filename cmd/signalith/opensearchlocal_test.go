@@ -42,6 +42,8 @@ type fakeOpenSearch struct {
 	failHome string
 	// slow is how long the service takes to answer once started.
 	slow time.Duration
+	// memory is the computer's memory in MB (0: 8192).
+	memory uint64
 }
 
 func (f *fakeOpenSearch) prepare(l oslocal.Layout, home string) error {
@@ -62,7 +64,12 @@ func (f *fakeOpenSearch) install(l oslocal.Layout, home string) error {
 	f.installed = home
 	return nil
 }
-func (f *fakeOpenSearch) memoryMB() uint64 { return 8192 }
+func (f *fakeOpenSearch) memoryMB() uint64 {
+	if f.memory == 0 {
+		return 8192
+	}
+	return f.memory
+}
 func (f *fakeOpenSearch) securityAdmin(oslocal.Layout, string, int) error {
 	f.adminRuns++
 	f.loaded.Store(true)
@@ -180,7 +187,7 @@ func TestInstallOpenSearch(t *testing.T) {
 	var out strings.Builder
 	// OpenSearch does not load its security settings by itself: they are
 	// loaded with its tool.
-	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if sys.adminRuns != 1 || sys.installed != l.VersionHome(oslocal.Version) {
@@ -202,7 +209,7 @@ func TestInstallOpenSearch(t *testing.T) {
 	// Run again (a repair or an upgrade of Signalith alone): kept as it is.
 	sys.stop()
 	out.Reset()
-	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if !strings.Contains(out.String(), "is installed; checking it runs") {
@@ -223,7 +230,7 @@ func TestInstallOpenSearch(t *testing.T) {
 	yml = append(yml, "# before\n"...)
 	os.WriteFile(filepath.Join(l.Config(), "opensearch.yml"), yml, 0o600)
 	out.Reset()
-	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if !strings.Contains(sys.stoppedYML, "# before") {
@@ -271,7 +278,7 @@ func TestInstallOpenSearchSaysItIsStarting(t *testing.T) {
 	sys := &fakeOpenSearch{t: t, l: l, slow: time.Second}
 	sys.loaded.Store(true)
 	var out strings.Builder
-	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil); err != nil {
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	if strings.Count(out.String(), "Waiting for OpenSearch to answer") != 1 || !strings.Contains(out.String(), "  still starting (") {
@@ -301,7 +308,7 @@ func TestInstallOpenSearchGoesBack(t *testing.T) {
 	oslocal.SaveState(l, oslocal.State{Version: "3.0.0", Port: port})
 	sys.installed = l.VersionHome("3.0.0")
 	var out strings.Builder
-	err = installOpenSearch(context.Background(), &out, sys, l, "", nil)
+	err = installOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept)
 	if err == nil || !strings.Contains(err.Error(), "OpenSearch 3.0.0 runs again") {
 		t.Fatalf("got %v\n%s", err, out.String())
 	}
@@ -316,12 +323,113 @@ func TestInstallOpenSearchGoesBack(t *testing.T) {
 	}
 }
 
+// -heap sets the Java heap, which later runs without it keep; a heap
+// that does not suit the computer is refused before anything changes.
+func TestInstallOpenSearchHeap(t *testing.T) {
+	shortWaits(t)
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
+	d := t.TempDir()
+	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "client")}
+	fakeUnpack(t, l)
+	sys := &fakeOpenSearch{t: t, l: l, memory: 16384}
+	sys.loaded.Store(true)
+	heapFile := filepath.Join(l.Config(), "jvm.options.d", "heap.options")
+	check := func(what string, wantMB, wantState int) {
+		t.Helper()
+		b, _ := os.ReadFile(heapFile)
+		if !strings.Contains(string(b), "-Xmx"+strconv.Itoa(wantMB)+"m") || !strings.Contains(string(b), "-Xms"+strconv.Itoa(wantMB)+"m") {
+			t.Fatalf("%s: heap.options:\n%s", what, b)
+		}
+		if st, _ := oslocal.LoadState(l); st == nil || st.HeapMB != wantState {
+			t.Fatalf("%s: state %+v, want heap %d", what, st, wantState)
+		}
+	}
+	run := func(heap int) (string, error) {
+		var out strings.Builder
+		sys.stop()
+		err := installOpenSearch(context.Background(), &out, sys, l, "", nil, heap)
+		return out.String(), err
+	}
+
+	// Too large for this computer: refused, and nothing installed.
+	if _, err := run(9 * 1024); err == nil || !strings.Contains(err.Error(), "at most half") {
+		t.Fatalf("a heap over half the memory: %v", err)
+	}
+	if st, _ := oslocal.LoadState(l); st != nil {
+		t.Fatal("a refused heap still installed OpenSearch")
+	}
+	if out, err := run(6144); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	check("new install", 6144, 6144)
+
+	// A repair or an upgrade keeps it, and only checks it runs.
+	if out, err := run(heapKept); err != nil || !strings.Contains(out, "checking it runs") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	check("repair", 6144, 6144)
+
+	// A new heap writes the settings again; auto goes back to a quarter.
+	if out, err := run(0); err != nil || strings.Contains(out, "checking it runs") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	check("auto", 4096, 0)
+	if out, err := run(5 * 1024); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	check("5g", 5120, 5120)
+
+	// The computer has less memory now: the heap chosen before gives way
+	// to the automatic one, with a warning.
+	sys.memory = 8192
+	if out, err := run(heapKept); err != nil || !strings.Contains(out, "no longer suits") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	check("less memory", 2048, 0)
+
+	// Under 4 GB: an upgrade warns.
+	sys.memory = 3072
+	if out, err := run(heapKept); err != nil || !strings.Contains(out, "Warning: this computer has 3072 MB") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+}
+
+// A new install on a computer with under about 4 GB of memory stops,
+// unless a heap is chosen for it.
+func TestInstallOpenSearchLittleMemory(t *testing.T) {
+	shortWaits(t)
+	bits := ospki.KeyBits
+	ospki.KeyBits = 2048
+	t.Cleanup(func() { ospki.KeyBits = bits })
+	d := t.TempDir()
+	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "client")}
+	fakeUnpack(t, l)
+	sys := &fakeOpenSearch{t: t, l: l, memory: 3072}
+	sys.loaded.Store(true)
+	err := installOpenSearch(context.Background(), io.Discard, sys, l, "", nil, heapKept)
+	if err == nil || !strings.Contains(err.Error(), "-heap 1g") || !strings.Contains(err.Error(), "OPENSEARCHHEAP") {
+		t.Fatalf("got %v", err)
+	}
+	if _, err := os.Stat(l.Data); err == nil {
+		t.Fatal("a refused install changed Data")
+	}
+	if err := installOpenSearch(context.Background(), io.Discard, sys, l, "", nil, 2048); err == nil {
+		t.Fatal("a heap over half of 3 GB was taken")
+	}
+	var out strings.Builder
+	if err := installOpenSearch(context.Background(), &out, sys, l, "", nil, 1024); err != nil || !strings.Contains(out.String(), "Warning: this computer has") {
+		t.Fatalf("%v\n%s", err, out.String())
+	}
+}
+
 func TestInstallOpenSearchRefusesFolderNotItsOwn(t *testing.T) {
 	d := t.TempDir()
 	l := oslocal.Layout{Home: filepath.Join(d, "home"), Data: filepath.Join(d, "data"), Client: filepath.Join(d, "client")}
 	os.MkdirAll(l.Data, 0o700)
 	os.WriteFile(filepath.Join(l.Data, "planted.yml"), []byte("x"), 0o600)
-	err := installOpenSearch(context.Background(), io.Discard, &fakeOpenSearch{t: t, l: l}, l, "", nil)
+	err := installOpenSearch(context.Background(), io.Discard, &fakeOpenSearch{t: t, l: l}, l, "", nil, heapKept)
 	if err == nil || !strings.Contains(err.Error(), "already has files") {
 		t.Fatalf("got %v", err)
 	}
@@ -368,7 +476,7 @@ func TestAdoptOpenSearch(t *testing.T) {
 		cfg := load()
 		cfg.OpenSearch.URL = c.url
 		var out strings.Builder
-		if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, path, cfg, func(string) bool { return c.answers }); err != nil {
+		if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept, path, cfg, func(string) bool { return c.answers }); err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
 		if !strings.Contains(out.String(), "Keeping the OpenSearch") || sys.installed != "" {
@@ -381,9 +489,20 @@ func TestAdoptOpenSearch(t *testing.T) {
 		t.Fatal("a config with a username was taken for the old default")
 	}
 
-	// Set up: the old default, with nothing there.
+	// Kept on a computer with too little memory, unless a heap is chosen.
+	sys.memory = 3072
 	var out strings.Builder
-	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, path, load(), nothing); err != nil {
+	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept, path, load(), nothing); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := oslocal.LoadState(l); st != nil || !strings.Contains(out.String(), "Not installing OpenSearch") {
+		t.Fatalf("adopted with 3 GB of memory:\n%s", out.String())
+	}
+	sys.memory = 0
+
+	// Set up: the old default, with nothing there.
+	out.Reset()
+	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept, path, load(), nothing); err != nil {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 	st, err := oslocal.LoadState(l)
@@ -409,7 +528,7 @@ func TestAdoptOpenSearch(t *testing.T) {
 
 	// Again (a repair): nothing more to do.
 	out.Reset()
-	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, path, load(), nothing); err != nil || out.Len() != 0 {
+	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept, path, load(), nothing); err != nil || out.Len() != 0 {
 		t.Fatalf("%v\n%s", err, out.String())
 	}
 }

@@ -34,6 +34,41 @@ spec:
       port: {{ include "signalith.agentPort" . }}
       targetPort: agents
       protocol: TCP
+{{- $as := .Values.server.agentService | default dict }}
+{{- if $as.enabled }}
+---
+# The agent port alone (HTTPS, and each agent sends its token), for agents
+# outside the cluster when the web page goes through an Ingress, which
+# never carries the agent port.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $full }}-agents
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  {{- with $as.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $as.type | default "LoadBalancer" }}
+  {{- if and (ne ($as.type | default "LoadBalancer") "ClusterIP") $as.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ $as.externalTrafficPolicy }}
+  {{- end }}
+  {{- if and (eq ($as.type | default "LoadBalancer") "LoadBalancer") $as.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $as.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  selector:
+    {{- include "signalith.selector" (dict "ctx" . "component" "server") | nindent 4 }}
+  ports:
+    - name: agents
+      port: {{ include "signalith.agentPort" . }}
+      targetPort: agents
+      protocol: TCP
+{{- end }}
 ---
 # Each server and scanner by name ($(POD_NAME).<this>), for the servers
 # to reach each other, ready or not.

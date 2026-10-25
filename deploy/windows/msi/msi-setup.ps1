@@ -5,9 +5,9 @@
 # repair, keeping a new install's admin password for
 # "signalith initial-password". Everything it prints goes to
 # C:\Windows\Temp\signalith-install.log, since an installer shows no output.
-# The installer passes its OPENSEARCHURL, OPENSEARCHZIP and OPENSEARCHPROXY
-# properties as "url:<value>", "zip:<value>" and "proxy:<value>", so an
-# empty one is still an argument.
+# The installer passes its OPENSEARCHURL, OPENSEARCHZIP, OPENSEARCHPROXY and
+# OPENSEARCHHEAP properties as "url:<value>", "zip:<value>", "proxy:<value>"
+# and "heap:<value>", so an empty one is still an argument.
 # With -Rollback (the installer's rollback, when the install fails) it
 # undoes what this run set up: on a new install, the Signalith service,
 # the OpenSearch service and program (its data is kept) and the firewall
@@ -17,10 +17,11 @@
 # this makes sure its service is there and starts it a minute later, once
 # they are.
 param([string]$OpenSearchUrl = "url:", [string]$OpenSearchZip = "zip:", [string]$OpenSearchProxy = "proxy:", [switch]$Rollback,
-  [string]$Upgrade = "up:")
+  [string]$Upgrade = "up:", [string]$OpenSearchHeap = "heap:")
 $OpenSearchUrl = $OpenSearchUrl -replace '^url:', ''
 $OpenSearchZip = $OpenSearchZip -replace '^zip:', ''
 $OpenSearchProxy = $OpenSearchProxy -replace '^proxy:', ''
+$OpenSearchHeap = $OpenSearchHeap -replace '^heap:', ''
 $Upgrade = $Upgrade -replace '^up:', ''
 $exe = Join-Path $PSScriptRoot "signalith.exe"
 $config = Join-Path $env:ProgramData "Signalith\signalith.yaml"
@@ -78,7 +79,7 @@ try {
   @{ signalith = [bool](Get-Service Signalith -ErrorAction SilentlyContinue)
      opensearch = [bool](Get-Service SignalithOpenSearch -ErrorAction SilentlyContinue) } |
     ConvertTo-Json | Set-Content -LiteralPath $before -Encoding ascii -ErrorAction Stop
-  & (Join-Path $PSScriptRoot "install.ps1") -OpenSearchUrl $OpenSearchUrl -OpenSearchZip $OpenSearchZip -OpenSearchProxy $OpenSearchProxy -InstallDir $PSScriptRoot -SavePassword
+  & (Join-Path $PSScriptRoot "install.ps1") -OpenSearchUrl $OpenSearchUrl -OpenSearchZip $OpenSearchZip -OpenSearchProxy $OpenSearchProxy -OpenSearchHeap $OpenSearchHeap -InstallDir $PSScriptRoot -SavePassword
   # Set up: the note is not left for a later run's rollback to misread.
   Remove-Item -LiteralPath $before -Force -ErrorAction SilentlyContinue
 } catch {

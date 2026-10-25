@@ -200,6 +200,67 @@ func TestHeapMB(t *testing.T) {
 	}
 }
 
+func TestParseHeap(t *testing.T) {
+	for in, want := range map[string]int{"4g": 4096, "4G": 4096, "4gb": 4096, "4": 4096, "1536m": 1536, "2048MB": 2048, "auto": 0, " Auto ": 0} {
+		if got, err := ParseHeap(in); err != nil || got != want {
+			t.Errorf("ParseHeap(%q) = %d, %v; want %d", in, got, err, want)
+		}
+	}
+	for _, in := range []string{"", "0", "-1g", "4x", "g", "1.5g", "999999999g"} {
+		if got, err := ParseHeap(in); err == nil {
+			t.Errorf("ParseHeap(%q) = %d, want an error", in, got)
+		}
+	}
+}
+
+func TestCheckHeap(t *testing.T) {
+	for _, c := range []struct {
+		mb    int
+		total uint64
+		want  string
+	}{
+		{1024, 4096, ""},
+		{4096, 8192, ""},
+		{31 * 1024, 128 * 1024, ""},
+		{2048, 0, ""},
+		{512, 8192, "at least 1 GB"},
+		{32 * 1024, 128 * 1024, "at most 31 GB"},
+		{4097, 8192, "at most half"},
+		{1024, 1536, "at most half"},
+	} {
+		err := CheckHeap(c.mb, c.total)
+		if (c.want == "") != (err == nil) || (err != nil && !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("CheckHeap(%d, %d) = %v, want %q", c.mb, c.total, err, c.want)
+		}
+	}
+	if MemoryWarning(8192) != "" || MemoryWarning(0) != "" || MemoryWarning(MinMemoryMB) != "" {
+		t.Error("a warning for enough memory, or for memory not known")
+	}
+	if w := MemoryWarning(2048); !strings.Contains(w, "2048 MB") || !strings.Contains(w, "4 GB") {
+		t.Errorf("MemoryWarning(2048) = %q", w)
+	}
+}
+
+// The heap chosen with -heap is kept in the state; a state from before
+// has none, which is automatic.
+func TestStateHeap(t *testing.T) {
+	l := Layout{Data: t.TempDir()}
+	if err := SaveState(l, State{Version: "3.9.0", Port: 9200, HeapMB: 4096}); err != nil {
+		t.Fatal(err)
+	}
+	if st, err := LoadState(l); err != nil || st.HeapMB != 4096 {
+		t.Fatalf("%+v, %v", st, err)
+	}
+	os.WriteFile(l.stateFile(), []byte(`{"version": "3.9.0", "port": 9200}`), 0o600)
+	if st, err := LoadState(l); err != nil || st.HeapMB != 0 {
+		t.Fatalf("%+v, %v", st, err)
+	}
+	os.WriteFile(l.stateFile(), []byte(`{"version": "3.9.0", "port": 9200, "heap_mb": -1}`), 0o600)
+	if _, err := LoadState(l); err == nil {
+		t.Fatal("a negative heap was taken")
+	}
+}
+
 func TestFreePort(t *testing.T) {
 	p, err := FreePort(FirstPort)
 	if err != nil {

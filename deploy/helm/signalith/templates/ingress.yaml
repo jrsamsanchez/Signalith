@@ -1,0 +1,55 @@
+{{- $ing := .Values.ingress | default dict -}}
+{{- if $ing.enabled }}
+{{- $full := include "signalith.fullname" . -}}
+{{- if not $ing.hosts }}
+{{- fail "ingress.hosts needs at least one host when ingress.enabled is true" }}
+{{- end }}
+# The web page and API through an ingress controller. Never the agent
+# port: an Ingress carries HTTP to the web port only, so agents outside
+# the cluster use server.agentService (or a LoadBalancer web Service).
+# Signalith serves HTTPS on the web port, so the controller must connect
+# to it over HTTPS (docs/kubernetes.md, An ingress controller).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $full }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "signalith.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+  {{- with $ing.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- with $ing.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with $ing.tls }}
+  tls:
+    {{- range . }}
+    - hosts:
+        {{- range .hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      {{- with .secretName }}
+      secretName: {{ . }}
+      {{- end }}
+    {{- end }}
+  {{- end }}
+  rules:
+    {{- range $ing.hosts }}
+    - host: {{ required "each entry of ingress.hosts needs a host" .host | quote }}
+      http:
+        paths:
+          {{- range (.paths | default (list (dict "path" "/"))) }}
+          - path: {{ .path | default "/" }}
+            pathType: {{ .pathType | default "Prefix" }}
+            backend:
+              service:
+                name: {{ $full }}
+                port:
+                  name: https
+          {{- end }}
+    {{- end }}
+{{- end }}

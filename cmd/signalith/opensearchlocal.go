@@ -26,7 +26,7 @@ import (
 )
 
 const opensearchUsage = `usage:
-  signalith opensearch install [-zip FILE] [-proxy HOST:PORT]
+  signalith opensearch install [-zip FILE] [-proxy HOST:PORT] [-heap SIZE]
                                              install or upgrade the OpenSearch Signalith runs on this computer
   signalith opensearch remove                remove it, keeping its data
   signalith opensearch status                show what is installed
@@ -37,7 +37,10 @@ installing Signalith's package (docs/install-packages.md). install
 downloads OpenSearch ` + oslocal.Version + ` for this system and checks its SHA-512;
 -zip uses a copy of that file instead, for a computer without internet
 access; -proxy downloads through a proxy (by default the computer's own
-proxy setting is used). adopt installs it the same way, and points CONFIG at it, only when
+proxy setting is used). -heap sets OpenSearch's Java heap, such as 4g
+(1 GB to 31 GB, at most half of this computer's memory), or auto for a
+quarter of the memory, 1 to 8 GB; later runs without -heap keep it.
+adopt installs it the same way, and points CONFIG at it, only when
 CONFIG still has the address older installers wrote (plain http on this
 computer, port 9200, no sign-in) and nothing answers there. On Linux,
 install also sets Signalith to use it.
@@ -73,8 +76,17 @@ func cmdOpenSearch(args []string) error {
 	fs.StringVar(&l.Client, "client", def.Client, "folder for Signalith's certificate for OpenSearch")
 	zip := fs.String("zip", "", "the OpenSearch "+oslocal.Version+" release file for this system ("+oslocal.File()+") to install, instead of downloading it")
 	proxy := fs.String("proxy", "", "the proxy to download through (host:port); by default the computer's own proxy setting")
+	heapFlag := fs.String("heap", "", "OpenSearch's Java heap, such as 4g or 4096m, or auto (a quarter of this computer's memory, 1 to 8 GB); empty keeps the one chosen before")
 	path := configFlag(fs)
 	fs.Parse(args)
+	heap := heapKept
+	if *heapFlag != "" {
+		mb, err := oslocal.ParseHeap(*heapFlag)
+		if err != nil {
+			return err
+		}
+		heap = mb
+	}
 	sys, err := newLocalOpenSearch()
 	if err != nil {
 		return err
@@ -85,7 +97,7 @@ func cmdOpenSearch(args []string) error {
 	}
 	switch cmd {
 	case "install":
-		if err := installOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client); err != nil {
+		if err := installOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client, heap); err != nil {
 			return err
 		}
 		return afterOpenSearchInstall(os.Stdout, l)
@@ -95,7 +107,7 @@ func cmdOpenSearch(args []string) error {
 		if err != nil {
 			return err
 		}
-		return adoptOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client, *path, c, answers)
+		return adoptOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client, heap, *path, c, answers)
 	case "remove":
 		return removeOpenSearch(os.Stdout, sys, l)
 	case "status":
@@ -109,6 +121,11 @@ func cmdOpenSearch(args []string) error {
 			return nil
 		}
 		fmt.Printf("OpenSearch %s at %s, the %s service (there: %v)\n", st.Version, st.URL(), oslocal.ServiceName, sys.exists())
+		if st.HeapMB > 0 {
+			fmt.Printf("Java heap: %d MB, chosen with -heap\n", st.HeapMB)
+		} else {
+			fmt.Printf("Java heap: %d MB, a quarter of this computer's memory (choose another with -heap)\n", oslocal.HeapMB(sys.memoryMB()))
+		}
 		if oslocal.Newer(oslocal.Version, st.Version) {
 			fmt.Printf("This Signalith installs OpenSearch %s; upgrade to it with: signalith opensearch install\n", oslocal.Version)
 		}
@@ -121,13 +138,19 @@ func cmdOpenSearch(args []string) error {
 // installOpenSearch installs OpenSearch, or upgrades the one installed
 // before to the pinned version, and waits until it answers with its
 // security settings loaded. Its config, data and certificates are kept.
-func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client) error {
-	return installOpenSearchFrom(ctx, out, sys, l, zip, client, oslocal.FirstPort)
+// heap is the Java heap in MB chosen with -heap, 0 for automatic, or
+// heapKept for the one chosen before.
+func installOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client, heap int) error {
+	return installOpenSearchFrom(ctx, out, sys, l, zip, client, heap, oslocal.FirstPort)
 }
+
+// heapKept is installOpenSearch's heap when -heap is not given: the heap
+// chosen before, or automatic on a new install.
+const heapKept = -1
 
 // installOpenSearchFrom is installOpenSearch with a new install taking
 // the first free port from firstPort.
-func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client, firstPort int) error {
+func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client, heap, firstPort int) error {
 	st, err := oslocal.LoadState(l)
 	if err != nil {
 		return err
@@ -135,6 +158,47 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 	// fresh is a new install: it unpacks the release it checked, never a
 	// program someone left in Home.
 	fresh := st == nil
+	// The heap, checked before anything is changed: one given with -heap
+	// must suit this computer, and one chosen before that no longer does
+	// (the computer has less memory now) gives way to the automatic one.
+	total := sys.memoryMB()
+	kept := 0
+	if st != nil {
+		kept = st.HeapMB
+	}
+	chosen := kept
+	if heap != heapKept {
+		chosen = heap
+		if heap > 0 {
+			if err := oslocal.CheckHeap(heap, total); err != nil {
+				return err
+			}
+		}
+	} else if kept > 0 {
+		if err := oslocal.CheckHeap(kept, total); err != nil {
+			fmt.Fprintf(out, "Warning: the Java heap chosen before, %d MB, no longer suits this computer (%v); using a quarter of its memory instead.\n", kept, err)
+			chosen = 0
+		}
+	}
+	// Too little memory: a new install stops unless a heap was chosen for
+	// it, and an upgrade or a repair carries on with a warning.
+	if w := oslocal.MemoryWarning(total); w != "" {
+		if fresh && heap == heapKept {
+			return fmt.Errorf("%s. Give OpenSearch more memory, or to install anyway choose its heap: "+
+				"signalith opensearch install -heap 1g (the Windows installer: OPENSEARCHHEAP=1g)", w)
+		}
+		fmt.Fprintln(out, "Warning: "+w+".")
+	}
+	heapMB, keptMB := chosen, kept
+	if heapMB == 0 {
+		heapMB = oslocal.HeapMB(total)
+	}
+	if keptMB == 0 {
+		keptMB = oslocal.HeapMB(total)
+	}
+	if fresh || chosen != kept {
+		fmt.Fprintf(out, "OpenSearch's Java heap: %d MB.\n", heapMB)
+	}
 	if fresh {
 		// A new install starts from an empty folder: files someone left
 		// there are not trusted.
@@ -152,7 +216,7 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 		// From here on, this is an OpenSearch Signalith installs: a run
 		// again (after a failure, an upgrade or a repair) carries on with
 		// it, on the same port.
-		st = &oslocal.State{Version: oslocal.Version, Port: port}
+		st = &oslocal.State{Version: oslocal.Version, Port: port, HeapMB: chosen}
 		if err := oslocal.SaveState(l, *st); err != nil {
 			return err
 		}
@@ -165,7 +229,7 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 		version = st.Version
 	}
 	home := l.VersionHome(version)
-	if !fresh && st.Version == version && sys.exists() {
+	if !fresh && st.Version == version && chosen == kept && sys.exists() {
 		if _, err := os.Stat(filepath.Join(home, "bin")); err == nil {
 			fmt.Fprintf(out, "OpenSearch %s is installed; checking it runs.\n", version)
 			if err := sys.prepare(l, home); err != nil {
@@ -211,10 +275,10 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 	if err := oslocal.MakeCerts(l, time.Now()); err != nil {
 		return fmt.Errorf("making OpenSearch's certificates: %w", err)
 	}
-	if err := oslocal.WriteConfig(l, home, port, oslocal.HeapMB(sys.memoryMB())); err != nil {
+	if err := oslocal.WriteConfig(l, home, port, heapMB); err != nil {
 		return fmt.Errorf("writing OpenSearch's settings: %w", err)
 	}
-	if err := startService(out, sys, l, home, version, port); err != nil {
+	if err := startService(out, sys, l, home, version, port, chosen); err != nil {
 		if previous == "" {
 			return err
 		}
@@ -223,9 +287,9 @@ func installOpenSearchFrom(ctx context.Context, out io.Writer, sys localOpenSear
 			sys.stop()
 			sys.remove()
 		}
-		back := oslocal.WriteConfig(l, l.VersionHome(previous), port, oslocal.HeapMB(sys.memoryMB()))
+		back := oslocal.WriteConfig(l, l.VersionHome(previous), port, keptMB)
 		if back == nil {
-			back = startService(out, sys, l, l.VersionHome(previous), previous, port)
+			back = startService(out, sys, l, l.VersionHome(previous), previous, port, kept)
 		}
 		if back != nil {
 			return fmt.Errorf("upgrading OpenSearch to %s failed (%w), and going back to %s failed too (%v). "+
@@ -278,7 +342,7 @@ const oldDefaultOpenSearch = "127.0.0.1:9200"
 // address with no sign-in and nothing answers there, Signalith has never
 // reached an OpenSearch, so this installs one as a new install does and
 // points the config file at it. Any other config is left as it is.
-func adoptOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client, path string, c *config.Config, answers func(addr string) bool) error {
+func adoptOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l oslocal.Layout, zip string, client *http.Client, heap int, path string, c *config.Config, answers func(addr string) bool) error {
 	if st, err := oslocal.LoadState(l); err != nil || st != nil {
 		return err
 	}
@@ -286,10 +350,16 @@ func adoptOpenSearch(ctx context.Context, out io.Writer, sys localOpenSearch, l 
 		fmt.Fprintf(out, "Keeping the OpenSearch in %s: %s.\n", path, why)
 		return nil
 	}
+	// Too little memory: the upgrade carries on, with the config as it is,
+	// rather than failing on an OpenSearch the install never had.
+	if w := oslocal.MemoryWarning(sys.memoryMB()); w != "" && heap == heapKept {
+		fmt.Fprintf(out, "Not installing OpenSearch: %s. To install it anyway, choose its heap: signalith opensearch adopt -c %s -heap 1g\n", w, path)
+		return nil
+	}
 	fmt.Fprintf(out, "Nothing answers at http://%s, the OpenSearch address in %s, so Signalith installs OpenSearch on this computer.\n", oldDefaultOpenSearch, path)
 	// From the next port, so an OpenSearch of the user's that is only
 	// stopped now can still start on 9200 later.
-	if err := installOpenSearchFrom(ctx, out, sys, l, zip, client, oslocal.FirstPort+1); err != nil {
+	if err := installOpenSearchFrom(ctx, out, sys, l, zip, client, heap, oslocal.FirstPort+1); err != nil {
 		return err
 	}
 	st, err := oslocal.LoadState(l)
@@ -348,11 +418,11 @@ func answers(addr string) bool {
 
 // startService installs and starts the service for the version in home,
 // and records it as the one installed.
-func startService(out io.Writer, sys localOpenSearch, l oslocal.Layout, home, version string, port int) error {
+func startService(out io.Writer, sys localOpenSearch, l oslocal.Layout, home, version string, port, heap int) error {
 	if err := sys.install(l, home); err != nil {
 		return err
 	}
-	if err := oslocal.SaveState(l, oslocal.State{Version: version, Port: port}); err != nil {
+	if err := oslocal.SaveState(l, oslocal.State{Version: version, Port: port, HeapMB: heap}); err != nil {
 		return err
 	}
 	fmt.Fprintf(out, "Starting OpenSearch %s (the %s service)...\n", version, oslocal.ServiceName)

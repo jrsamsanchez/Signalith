@@ -197,6 +197,10 @@ func (l Layout) stateFile() string { return filepath.Join(l.Data, "installed.jso
 type State struct {
 	Version string `json:"version"`
 	Port    int    `json:"port"`
+	// HeapMB is the Java heap chosen with -heap, in MB; 0 is automatic
+	// (HeapMB of the computer's memory). Runs without -heap, such as an
+	// upgrade or a repair, keep it.
+	HeapMB int `json:"heap_mb,omitempty"`
 }
 
 // URL is the address Signalith reaches it at.
@@ -216,7 +220,7 @@ func LoadState(l Layout) (*State, error) {
 	if err := json.Unmarshal(b, &s); err != nil {
 		return nil, fmt.Errorf("%s: %w", l.stateFile(), err)
 	}
-	if s.Port <= 0 || s.Port > 65535 || !versionRE.MatchString(s.Version) {
+	if s.Port <= 0 || s.Port > 65535 || !versionRE.MatchString(s.Version) || s.HeapMB < 0 {
 		return nil, fmt.Errorf("%s does not hold a version and port", l.stateFile())
 	}
 	return &s, nil
@@ -603,6 +607,69 @@ func HeapMB(total uint64) int {
 	return max(1024, min(h, 8192))
 }
 
+// Limits on a heap chosen with -heap. Above 31 GB Java stops using
+// compressed object pointers, so a larger heap holds less, not more.
+const (
+	MinHeapMB = 1024
+	MaxHeapMB = 31 * 1024
+)
+
+// MinMemoryMB is the least memory a computer should have for OpenSearch
+// and Signalith together: about 4 GB (a 4 GB computer reports a little
+// less than that as its total).
+const MinMemoryMB = 3584
+
+// ParseHeap reads a heap size given to -heap: a number of GB or MB, such
+// as 4g, 4096m or 4 (GB), or auto for a quarter of the computer's memory
+// (HeapMB), returned as 0.
+func ParseHeap(s string) (int, error) {
+	v := strings.ToLower(strings.TrimSpace(s))
+	if v == "auto" {
+		return 0, nil
+	}
+	mult := 1024
+	switch {
+	case strings.HasSuffix(v, "gb"):
+		v = strings.TrimSuffix(v, "gb")
+	case strings.HasSuffix(v, "g"):
+		v = strings.TrimSuffix(v, "g")
+	case strings.HasSuffix(v, "mb"):
+		v, mult = strings.TrimSuffix(v, "mb"), 1
+	case strings.HasSuffix(v, "m"):
+		v, mult = strings.TrimSuffix(v, "m"), 1
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n <= 0 || n > MaxHeapMB*4 {
+		return 0, fmt.Errorf("the heap %q isn't a size like 4g or 4096m, or auto", s)
+	}
+	return n * mult, nil
+}
+
+// CheckHeap says why a heap of mb MB chosen with -heap does not suit a
+// computer with total MB of memory (0: not known), or nil when it does.
+func CheckHeap(mb int, total uint64) error {
+	switch {
+	case mb < MinHeapMB:
+		return fmt.Errorf("the heap must be at least 1 GB, not %d MB", mb)
+	case mb > MaxHeapMB:
+		return fmt.Errorf("the heap must be at most 31 GB, not %d MB: above that Java cannot use compressed pointers, and the heap holds less", mb)
+	case total > 0 && uint64(mb) > total/2:
+		return fmt.Errorf("the heap must be at most half of this computer's memory, %d MB of %d MB, not %d MB: "+
+			"OpenSearch needs the rest for the files it keeps in the system's cache, and Signalith runs here too", total/2, total, mb)
+	}
+	return nil
+}
+
+// MemoryWarning says why a computer with total MB of memory is too small
+// for OpenSearch and Signalith together, or "" when it is not.
+func MemoryWarning(total uint64) string {
+	if total == 0 || total >= MinMemoryMB {
+		return ""
+	}
+	return fmt.Sprintf("this computer has %d MB of memory; OpenSearch and Signalith together need at least 4 GB, and 8 GB or more is best. "+
+		"OpenSearch may stop or be slow, and searches may fail", total)
+}
+
 // MakeCerts makes the CA, OpenSearch's node and admin certificates and
 // Signalith's client certificate, when there are none yet: on the first
 // install. They are kept on upgrades. When only Signalith's are missing,
@@ -804,7 +871,8 @@ func WriteConfig(l Layout, home string, port, heapMB int) error {
 			return err
 		}
 	}
-	heap := fmt.Sprintf("# Written by Signalith: a quarter of this computer's memory, 1 to 8 GB.\n-Xms%dm\n-Xmx%dm\n", heapMB, heapMB)
+	heap := fmt.Sprintf("# Written by Signalith: by default a quarter of this computer's memory, 1 to 8 GB.\n"+
+		"# Choose another with: signalith opensearch install -heap 4g\n-Xms%dm\n-Xmx%dm\n", heapMB, heapMB)
 	if err := put(filepath.Join("jvm.options.d", "heap.options"), []byte(heap)); err != nil {
 		return err
 	}
