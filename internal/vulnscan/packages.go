@@ -431,7 +431,11 @@ func findingsSig(h *Host) string {
 // as a zip is read from its end, or from a folder on this server.
 func (p *PackageCheck) fetch(ctx context.Context, base string, eco Ecosystem) (*OSVIndex, error) {
 	if dir, ok := osvFolder(base); ok {
+		// Windows allows no : in a folder name, so Debian_12 also works.
 		fh, err := os.Open(filepath.Join(dir, eco.Feed, "all.zip"))
+		if err != nil {
+			fh, err = os.Open(filepath.Join(dir, strings.ReplaceAll(eco.Feed, ":", "_"), "all.zip"))
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -533,7 +537,7 @@ func (c *Checker) packagesCheck(ctx context.Context, lookups bool) Check {
 			ck.Detail += " The last download failed for " + strings.Join(bad, "; ") + "."
 			ck.Fix = []string{
 				"Allow outbound HTTPS (port 443) from the server that runs the background jobs to " + OSVHost + ", or set HTTPS_PROXY for the Signalith service.",
-				"With no internet, copy each release's all.zip into a folder on that server, as <release>/all.zip, and enter the folder as Distribution advisories address in Settings, under Vulnerability scans.",
+				"With no internet, copy each release's all.zip into a folder on that server, as <release>/all.zip (Debian:12/all.zip, or Debian_12/all.zip on Windows), and enter the folder as Distribution advisories address in Settings, under Vulnerability scans.",
 				"Signalith tries again every hour; meanwhile the last results stay.",
 			}
 		}

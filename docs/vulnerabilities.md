@@ -191,7 +191,8 @@ setup**, and needs no scan network. **Scanner setup** shows how it stands. To st
 **Vulnerability scans**, to `off` (or `SIGNALITH_OSV_URL=off`, or `vulns.osv_url: off` in
 `signalith.yaml`). The same setting takes a mirror's address, or, on a network with no
 internet, the full path of a folder on the server that runs the background jobs that holds
-each release's file, as `Debian:12/all.zip`.
+each release's file, as `Debian:12/all.zip`. On Windows, which allows no `:` in a folder
+name, use `_` instead: `Debian_12/all.zip`.
 
 ## Networks
 

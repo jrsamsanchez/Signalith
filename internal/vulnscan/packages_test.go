@@ -223,11 +223,11 @@ func TestPackageCheck(t *testing.T) {
 
 func TestPackageCheckFolderAndLimits(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "Ubuntu:22.04:LTS"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "Ubuntu_22.04_LTS"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	z := osvZip(t, map[string]string{"UBUNTU-CVE-2023-38408.json": osvUbuntu})
-	if err := os.WriteFile(filepath.Join(dir, "Ubuntu:22.04:LTS", "all.zip"), z, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "Ubuntu_22.04_LTS", "all.zip"), z, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now().UTC()
@@ -265,10 +265,10 @@ func TestScannerRunsPackageCheck(t *testing.T) {
 	var args []string
 	s, ev := newScanner(t, "http://127.0.0.1:1", nmapXML, &args)
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "Debian:12"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(dir, "Debian_12"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "Debian:12", "all.zip"), osvZip(t, map[string]string{"a.json": osvLog4j}), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "Debian_12", "all.zip"), osvZip(t, map[string]string{"a.json": osvLog4j}), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	inv := &fakeInventory{hosts: []*endpoint.HostPackages{pkgHost("n1", "app1", "debian", "12", time.Now(),
