@@ -12,7 +12,9 @@ After=network-online.target
 [Service]
 Type=oneshot
 TimeoutStartSec=5min
-ExecStart=/usr/lib/signalith-sensor/config-update.sh
+# Run through sh, so the unit is valid even where the helper is not in
+# place yet (systemd-analyze verify).
+ExecStart=/bin/sh /usr/lib/signalith-sensor/config-update.sh
 # The sensor's token, to fetch the configuration (only root reads the file).
 EnvironmentFile=/etc/signalith-sensor/token.env
 # With --docker, the docker command keeps its settings here.
