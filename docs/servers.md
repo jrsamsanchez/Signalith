@@ -5,6 +5,12 @@ behind a load balancer. Each one is a whole Signalith: it serves the web pages,
 receives agent and syslog data, and searches. They find each other through
 OpenSearch, so there is nothing to connect between them.
 
+!!! note "Preview"
+    Running several servers is a preview in the 0.x releases. It is tested in CI and in
+    the lab, but it is newer than the rest of Signalith and has not run for long outside
+    the lab. One server is the recommended setup for now; keep a
+    [backup](backup.md) before adding a second.
+
 One thing they do not all do: the **background jobs**. Exactly one server at a
 time runs them. The **Servers** page shows which one.
 

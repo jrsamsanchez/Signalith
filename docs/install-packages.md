@@ -47,6 +47,9 @@ sudo apt install signalith
 sudo signalith initial-password
 ```
 
+To check the key you downloaded, `gpg --show-keys --with-fingerprint /etc/apt/keyrings/signalith.asc`
+must print the fingerprint in [The release key's fingerprint](#the-release-keys-fingerprint).
+
 Or install a downloaded package (upgrades are then by hand, with the next one):
 
 ```sh
@@ -56,7 +59,8 @@ sudo apt install ./signalith_0.3.2-1_amd64.deb
 ## Red Hat, Rocky, Alma, Fedora and SUSE
 
 Add Signalith's repository once, then install. `dnf upgrade` brings each new release
-from then on (`dnf` asks you to accept the Signalith key the first time):
+from then on (`dnf` asks you to accept the Signalith key the first time; accept it only if the
+fingerprint it shows matches [The release key's fingerprint](#the-release-keys-fingerprint)):
 
 ```sh
 sudo curl -fsSL -o /etc/yum.repos.d/signalith.repo https://signalith.io/rpm/signalith.repo
@@ -294,9 +298,12 @@ own Sigstore signature as well:
 
 ```sh
 cosign verify ghcr.io/jrsamsanchez/signalith:0.3.2 \
-  --certificate-identity-regexp '^https://github.com/jrsamsanchez/Signalith/' \
+  --certificate-identity https://github.com/jrsamsanchez/Signalith/.github/workflows/release.yml@refs/tags/v0.3.2 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+The identity names the release workflow at that version's tag, so an image signed by any
+other workflow or branch, such as the nightly `:main` image or a test run, does not pass.
 
 ## Supported upgrade paths
 
@@ -380,8 +387,10 @@ what you downloaded is exactly what it built.
 **With the GitHub CLI** (any file from the release, or the image):
 
 ```sh
-gh attestation verify signalith_0.3.2-1_amd64.deb --repo jrsamsanchez/Signalith
-gh attestation verify oci://ghcr.io/jrsamsanchez/signalith:0.3.2 --repo jrsamsanchez/Signalith
+gh attestation verify signalith_0.3.2-1_amd64.deb --repo jrsamsanchez/Signalith \
+  --cert-identity https://github.com/jrsamsanchez/Signalith/.github/workflows/release.yml@refs/tags/v0.3.2
+gh attestation verify oci://ghcr.io/jrsamsanchez/signalith:0.3.2 --repo jrsamsanchez/Signalith \
+  --cert-identity https://github.com/jrsamsanchez/Signalith/.github/workflows/release.yml@refs/tags/v0.3.2
 ```
 
 **With the checksums**: download `SHA256SUMS` and its signatures from the release, then
@@ -390,9 +399,10 @@ check the signature and the files.
 ```sh
 # Sigstore (no key to fetch: the signature names the workflow that made it)
 cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
-  --certificate-identity-regexp '^https://github.com/jrsamsanchez/Signalith/' \
+  --certificate-identity https://github.com/jrsamsanchez/Signalith/.github/workflows/release.yml@refs/tags/v0.3.2 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
-# or GPG, with the release key published with each release
+# or GPG, with the release key: check its fingerprint (below) before you trust it
+gpg --show-keys --with-fingerprint signalith-release-key.asc
 gpg --import signalith-release-key.asc
 gpg --verify SHA256SUMS.asc SHA256SUMS
 
@@ -401,6 +411,23 @@ sha256sum --check --ignore-missing SHA256SUMS
 
 On Windows, `Get-FileHash signalith-0.3.2-x64.msi` prints the SHA-256 to compare with the
 line in `SHA256SUMS`.
+
+### The release key's fingerprint
+
+The release key comes with each release and from the apt and dnf repositories, so a copy
+from either place proves nothing on its own: compare its fingerprint with the one here,
+which is also in [SECURITY.md](https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md)
+and the README.
+
+```text
+pub   rsa4096 2026-10-14 [SC] [expires: 2029-10-13]
+      58F0 AF4F 674A 5391 431C  1D5F 580C B767 9DAF 957A
+uid   Signalith releases <releases@signalith.io>
+```
+
+If the fingerprints differ, don't install, and report it as SECURITY.md says. A new key
+would be announced in a release's notes and here, signed with the old key while it is
+still valid.
 
 The `.rpm` packages are signed with the same GPG key, so `dnf` and `rpm -K` can check
 them once it is imported (`sudo rpm --import signalith-release-key.asc`). The apt and
