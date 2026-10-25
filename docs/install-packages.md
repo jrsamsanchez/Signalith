@@ -21,7 +21,7 @@ Signalith keeps its events in [OpenSearch](https://opensearch.org) 2.17 or newer
 Windows installer sets it up for you from 0.3.1 on ([OpenSearch on Windows](#opensearch-on-windows));
 with 0.3.0 and older, install OpenSearch first and give the installer its address with
 `OPENSEARCHURL`.
-On Linux, from 0.3.2 on, `sudo signalith opensearch install` sets it up on the same server
+On Linux, from the release after 0.3.2, `sudo signalith opensearch install` sets it up on the same server
 after you install the package ([OpenSearch on Linux](#opensearch-on-linux)). To use an
 OpenSearch you run yourself instead
 ([instructions](https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/)),
@@ -103,7 +103,7 @@ sudo dnf install ./signalith-0.3.2-1.x86_64.rpm
 ### OpenSearch on Linux
 
 After installing the package, set up OpenSearch on the same server with one command
-(from 0.3.2 on):
+(from the release after 0.3.2):
 
 ```sh
 sudo signalith opensearch install

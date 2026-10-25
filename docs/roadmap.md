@@ -23,7 +23,13 @@ Ideas and requests are welcome as
 
 **The next release**
 :   Finished and waiting for the next release: [case](cases.md) templates and tasks,
-    files attached to a case, and case reports signed with SHA-256 fingerprints.
+    files attached to a case, and case reports signed with SHA-256 fingerprints;
+    `signalith opensearch install`, which sets up OpenSearch on Linux in one command;
+    scheduled OpenSearch [snapshots](backup.md) with a Backups card; a
+    [Prometheus metrics](metrics.md) endpoint; signed monthly
+    [compliance](compliance.md) evidence records; and, for the
+    [Signalith Agent](signalith-agent.md), Windows 11 on ARM, staged updates, an alert
+    when an agent goes silent and a check of Fluent Bit configuration.
 
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
