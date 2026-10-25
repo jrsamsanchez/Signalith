@@ -1839,12 +1839,22 @@ function searchRangeText(query) {
   const opt = $('time').selectedOptions[0];
   return $('time').value === '0' ? 'at any time' : 'in the ' + opt.textContent.toLowerCase();
 }
+// bareWord returns the first plain word searched as text (not field=value,
+// a keyword or a wildcard) in a query's search, or ''.
+function bareWord(query) {
+  const words = (splitPipes(query)[0] || '').trim().split(/\s+/);
+  return words.find((w) => /^[\p{L}\p{N}_]+$/u.test(w) && !/^(AND|OR|NOT|IN)$/.test(w)) || '';
+}
 function noResults(query) {
   const opts = [...$('time').options];
   const next = /\b(earliest|latest)\s*=/i.test(splitPipes(query)[0]) ? null : opts[$('time').selectedIndex + 1];
   return stateBox({
     iconName: 'search', title: 'No matching events',
-    text: ['Nothing matched ' + searchRangeText(query) + '. Try a longer range, or check on the ', el('a', { href: '#health', 'data-page': 'health' }, 'Health'), ' page that data is arriving.'],
+    text: bareWord(query)
+      // LP-04: a word that finds nothing is more often part of a longer
+      // word than out of range.
+      ? ['Nothing matched ' + searchRangeText(query) + `. A word matches whole words in the event text, and the start of names such as ${bareWord(query)}.exe, but not text inside a word: try *${bareWord(query)}* to find it anywhere, or a longer range.`]
+      : ['Nothing matched ' + searchRangeText(query) + '. Try a longer range, or check on the ', el('a', { href: '#health', 'data-page': 'health' }, 'Health'), ' page that data is arriving.'],
     hint: typeof samplePointer === 'function' ? samplePointer() : null,
     action: next ? el('button', {
       type: 'button', class: 'btn btn--secondary btn--sm',

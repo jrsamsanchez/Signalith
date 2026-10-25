@@ -183,6 +183,12 @@ func TestEndToEnd(t *testing.T) {
 		if res := run(t, eng, `"failed password" root`); res.Matched != 3 {
 			t.Errorf("text search matched %d", res.Matched)
 		}
+		// LP-04: a plain word finds the dotted name it starts, as in
+		// Splunk: explorer finds C:\Windows\explorer.exe.
+		whole := run(t, eng, `explorer.exe`).Matched
+		if res := run(t, eng, `explorer`); whole == 0 || res.Matched != whole {
+			t.Errorf("explorer matched %d, explorer.exe %d", res.Matched, whole)
+		}
 	})
 	t.Run("wildcard, range, IN and NOT", func(t *testing.T) {
 		if res := run(t, eng, `datamodel=Endpoint process_name=power* process="*-enc*"`); res.Matched != 1 {
