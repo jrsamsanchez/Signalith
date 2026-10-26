@@ -14,7 +14,7 @@ security teams and anyone who wants a real SIEM without a big budget or weeks of
 
 - **Collect** Windows, Linux and macOS logs with one install line per computer, plus
   syslog, OpenTelemetry, cloud audit logs (AWS, Azure, Microsoft 365, Google) and more.
-- **Detect** with 2,644 SigmaHQ rules and 1,330 rules from Splunk's open-source
+- **Detect** with 2,641 SigmaHQ rules and 1,332 rules from Splunk's open-source
   security_content, each tested in CI against sample events, tagged with 181 ATT&CK
   techniques. High and critical rules turn on in one click. Signalith also ships 60
   built-in detections (brute force, password spray, encoded PowerShell, credential

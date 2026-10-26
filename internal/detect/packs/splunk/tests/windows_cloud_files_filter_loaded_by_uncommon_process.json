@@ -1,0 +1,14 @@
+{"rule": "77b85062-274e-43a5-9dab-c25862b85291", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ImageLoaded":"x \\cldapi.dlm","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"x \\box.exe","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"x \\dropbox.exe","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"x \\googledrivefs.exe","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"x \\icloud.exe","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"x \\onedrive .exe","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\explorer.exe","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\System32\\ x","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\Syswow64\\ x","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"7","data":{"Image":"C:\\Windows\\WinSxS\\ x","ImageLoaded":"x \\cldapi.dll","ProcessGuid":"{6f1b4c2e-0d3a-4b8e-9c71-2a5d8e4f9b10}","ProcessId":"4242"}}
+]}

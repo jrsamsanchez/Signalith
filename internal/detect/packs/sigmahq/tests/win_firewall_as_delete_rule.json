@@ -2,7 +2,10 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":"x"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":""}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":"C:\\Program Files\\"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":"x","ModifyingUser":"S-1-5-18"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":"C:\\Windows\\System32\\msiexec.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\ \\MsMpEng.exe"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":"C:\\Windows\\System32\\svchost.exe"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":"C:\\ProgramData\\Microsoft\\Windows Defender\\Platform\\\\MsMpEng.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{"ModifyingApplication":"C:\\Windows\\SystemTemp\\GoogleUpdater\\setup.exe"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Windows Firewall With Advanced Security/Firewall","event_id":"2052","data":{}}
 ]}
