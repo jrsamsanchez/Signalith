@@ -87,7 +87,8 @@ jobs:
           "$RUNNER_TEMP/signalith" content sign dist/signalith-content.tar.gz
           pub=$("$RUNNER_TEMP/signalith" content pubkey)
           echo "Signed with public key $pub"
-          if ! grep -qxF "$pub" internal/content/trusted.keys; then
+          # The key column only: a line may end in a comment, as Signalith reads it.
+          if ! sed 's/#.*//' internal/content/trusted.keys | awk '{print $1}' | grep -qxF "$pub"; then
             echo "::error::The signing key's public key $pub is not in internal/content/trusted.keys, so Signalith would refuse this bundle. Add it there and release before publishing with this key."
             exit 1
           fi
