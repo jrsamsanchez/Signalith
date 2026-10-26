@@ -3,8 +3,8 @@ name: splunk
 title: Splunk Security Content
 description: Windows detections for process, file and registry events, macOS detections for the program starts osquery reports, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.
 source: https://github.com/splunk/security_content
-version: 13bf1750b21768c03a2237ecfd27b54644bc6de9
-date: "2026-10-19"
+version: a3f6523eabf696d66e20fdd80766bfae95575577
+date: "2026-10-26"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.
@@ -1158,6 +1158,10 @@ rules:
     rule_id: d6e464e4-5c6a-474e-82d2-aed616a3a492
     file: impacket_lateral_movement_wmiexec_commandline_parameters.yml
     path: detections/endpoint/impacket_lateral_movement_wmiexec_commandline_parameters.yml
+  - id: splunk-inline-php-code-execution
+    rule_id: 312567b0-4e9b-4f3a-b842-a3ba17a89975
+    file: inline_php_code_execution.yml
+    path: detections/endpoint/inline_php_code_execution.yml
   - id: splunk-interactive-session-on-remote-endpoint-with-powershell
     rule_id: a4e8f3a4-48b2-11ec-bcfc-3e22fbd008af
     file: interactive_session_on_remote_endpoint_with_powershell.yml
@@ -3234,6 +3238,10 @@ rules:
     rule_id: ab73289e-2246-4de0-a14b-67006c72a893
     file: windows_clipboard_data_via_get_clipboard.yml
     path: detections/endpoint/windows_clipboard_data_via_get_clipboard.yml
+  - id: splunk-windows-cloud-files-filter-loaded-by-uncommon-process
+    rule_id: 77b85062-274e-43a5-9dab-c25862b85291
+    file: windows_cloud_files_filter_loaded_by_uncommon_process.yml
+    path: detections/endpoint/windows_cloud_files_filter_loaded_by_uncommon_process.yml
   - id: splunk-windows-cloud-files-filter-log-created-by-non-system-proc
     rule_id: 2e0042b9-8a75-49ca-b3a2-948f04b752bf
     file: windows_cloud_files_filter_log_created_by_non_system_process.yml

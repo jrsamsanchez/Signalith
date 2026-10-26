@@ -1,5 +1,6 @@
 {"rule": "970007b7-ce32-49d0-a4a4-fbef016950bd", "cases": [
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"querywinlogon\\","Image":"\\reg.exe"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x query winlogon\\","Image":"\\reg.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"C:\\Windows\\system32\\reg.exe QUERY HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run /v Yammer","Image":"\\reg.exe","ParentImage":"\\Yammer.exe"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"Image":"\\reg.exe"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"querywinlogon\\"}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"x query winlogon\\"}}
 ]}

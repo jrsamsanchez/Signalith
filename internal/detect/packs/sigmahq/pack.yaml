@@ -3,8 +3,8 @@ name: sigmahq
 title: SigmaHQ community rules
 description: Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, macOS rules for the program starts osquery reports, network rules for Zeek's logs and for DNS, web proxy and firewall data, and antivirus rules for any antivirus product's alerts, from the SigmaHQ project, converted to Signalith detections. Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.
 source: https://github.com/SigmaHQ/sigma
-version: 42478221b1a062411b8185732c82caa439271122
-date: "2026-10-20"
+version: 05d1031f537e830b76da53bae2400c5814c89165
+date: "2026-10-26"
 license: DRL-1.1
 license_url: https://github.com/SigmaHQ/Detection-Rule-License
 notice: The rules in this pack are by the SigmaHQ authors named in each rule and are licensed under the Detection Rule License (DRL) 1.1. Findings from them name the rule's author.
@@ -3717,10 +3717,6 @@ rules:
     rule_id: ddf36b67-e872-4507-ab2e-46bda21b842c
     file: proc_creation_macos_local_account.yml
     path: rules/macos/process_creation/proc_creation_macos_local_account.yml
-  - id: sigma-proc-creation-macos-network-service-scanning
-    rule_id: 84bae5d4-b518-4ae0-b331-6d4afd34d00f
-    file: proc_creation_macos_network_service_scanning.yml
-    path: rules/macos/process_creation/proc_creation_macos_network_service_scanning.yml
   - id: sigma-proc-creation-macos-nscurl-usage
     rule_id: 6d8a7cf1-8085-423b-b87d-7e880faabbdf
     file: proc_creation_macos_nscurl_usage.yml
@@ -8161,10 +8157,6 @@ rules:
     rule_id: d2e3f2f6-7e09-4bf2-bc5d-90186809e7fb
     file: posh_ps_script_with_upload_capabilities.yml
     path: rules/windows/powershell/powershell_script/posh_ps_script_with_upload_capabilities.yml
-  - id: sigma-ps-sensitive-file-discovery
-    rule_id: 7d416556-6502-45b2-9bad-9d2f05f38997
-    file: posh_ps_sensitive_file_discovery.yml
-    path: rules/windows/powershell/powershell_script/posh_ps_sensitive_file_discovery.yml
   - id: sigma-ps-set-acl
     rule_id: cae80281-ef23-44c5-873b-fd48d2666f49
     file: posh_ps_set_acl.yml
@@ -9173,10 +9165,6 @@ rules:
     rule_id: 4f281b83-0200-4b34-bf35-d24687ea57c2
     file: registry_set_services_etw_tamper.yml
     path: rules/windows/registry/registry_set/registry_set_services_etw_tamper.yml
-  - id: sigma-reg-set-set-nopolicies-user
-    rule_id: 1c3121ed-041b-4d97-a075-07f54f20fb4a
-    file: registry_set_set_nopolicies_user.yml
-    path: rules/windows/registry/registry_set/registry_set_set_nopolicies_user.yml
   - id: sigma-reg-set-sip-persistence
     rule_id: 5a2b21ee-6aaa-4234-ac9d-59a59edf90a1
     file: registry_set_sip_persistence.yml
