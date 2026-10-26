@@ -27,9 +27,12 @@ Ideas and requests are welcome as
     `signalith opensearch install`, which sets up OpenSearch on Linux in one command;
     scheduled OpenSearch [snapshots](backup.md) with a Backups card; a
     [Prometheus metrics](metrics.md) endpoint; signed monthly
-    [compliance](compliance.md) evidence records; and, for the
+    [compliance](compliance.md) evidence records; for the
     [Signalith Agent](signalith-agent.md), Windows 11 on ARM, staged updates, an alert
-    when an agent goes silent and a check of Fluent Bit configuration.
+    when an agent goes silent and a check of Fluent Bit configuration;
+    [vulnerability](vulnerabilities.md) matching of installed Linux packages against
+    distribution advisories; and an Ingress and an agent Service in the
+    [Helm chart](kubernetes.md).
 
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
