@@ -3,7 +3,7 @@ module github.com/jrsamsanchez/signalith
 go 1.26.10
 
 require (
-	github.com/beevik/etree v1.7.0
+	github.com/beevik/etree v1.8.1
 	github.com/go-asn1-ber/asn1-ber v1.5.8
 	github.com/go-ldap/ldap/v3 v3.4.15
 	github.com/go-webauthn/webauthn v0.18.2
