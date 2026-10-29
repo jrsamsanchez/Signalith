@@ -181,7 +181,7 @@ s = c.setdefault("server", {})
 s["listen"] = "127.0.0.1:9000"
 s["agent_listen"] = "127.0.0.1:7779"
 s["public_url"] = public
-s["trusted_proxies"] = ["127.0.0.1"]
+s["trusted_proxies"] = ["127.0.0.1", "::1"]
 s["client_header"] = "x-forwarded-for"
 tls = s.setdefault("tls", {})
 tls["names"] = sorted(set(tls.get("names") or []) | {domain, "localhost"})
@@ -232,7 +232,7 @@ $DOMAIN {
 
 	# Agents, senders and joining servers use tokens rather than a
 	# sign-in: the test lab takes no data from outside.
-	@closed path /api/ingest* /api/otlp/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /metrics*
+	@closed path /api/ingest* /api/otlp/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /metrics*
 	respond @closed 404
 
 	reverse_proxy https://127.0.0.1:9000 {
@@ -456,7 +456,9 @@ EOF
 }
 
 # Nothing on this server needs the cloud's metadata service after the
-# first boot, and no service may reach it.
+# first boot, and no service may reach it. OpenSearch talks to this server
+# only. Signalith may reach the internet over HTTPS (feeds, content,
+# vulnerability data), never a private or link-local address.
 outbound() {
   cat >/etc/nftables.conf <<'EOF'
 #!/usr/sbin/nft -f
@@ -465,9 +467,16 @@ table inet testlab {
 	chain output {
 		type filter hook output priority 0; policy accept;
 		ip daddr 169.254.169.254 drop
+		oif lo accept
+		meta skuid "opensearch" drop
+		meta skuid "signalith" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
+		meta skuid "signalith" ip6 daddr { fc00::/7, fe80::/10 } drop
+		meta skuid "signalith" tcp dport 443 accept
+		meta skuid "signalith" drop
 	}
 }
 EOF
+  nft -c -f /etc/nftables.conf
   systemctl enable -q nftables
   systemctl restart nftables
 }
