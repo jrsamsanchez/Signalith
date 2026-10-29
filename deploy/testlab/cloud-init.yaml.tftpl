@@ -1,0 +1,44 @@
+#cloud-config
+# The test lab's first boot: puts the setup script in place and starts it
+# (see testlab-setup.sh).
+hostname: signalith-testlab
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - jq
+  - python3-yaml
+  - nftables
+  - unattended-upgrades
+write_files:
+  - path: /root/testlab/settings.json
+    permissions: "0600"
+    encoding: b64
+    content: ${base64encode(settings)}
+  - path: /usr/local/sbin/testlab-setup
+    permissions: "0755"
+    encoding: gz+b64
+    content: ${setup}
+  # Keys only, for root as well.
+  - path: /etc/ssh/sshd_config.d/10-testlab.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+  - path: /etc/systemd/system/testlab-setup.service
+    content: |
+      [Unit]
+      Description=Signalith test lab setup
+      After=network-online.target cloud-final.service
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/testlab-setup
+      StandardOutput=append:/var/log/testlab-setup.log
+      StandardError=append:/var/log/testlab-setup.log
+      TimeoutStartSec=infinity
+runcmd:
+  - systemctl reload ssh
+  - systemctl daemon-reload
+  - systemctl start --no-block testlab-setup.service
