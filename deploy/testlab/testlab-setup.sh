@@ -232,7 +232,7 @@ $DOMAIN {
 
 	# Agents, senders and joining servers use tokens rather than a
 	# sign-in: the test lab takes no data from outside.
-	@closed path /api/ingest* /api/otlp/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /metrics*
+	@closed path /api/ingest* /api/otlp/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics*
 	respond @closed 404
 
 	reverse_proxy https://127.0.0.1:9000 {
@@ -368,8 +368,15 @@ live_feed() {
   gov=$(awk '$1 == "go" { print $2 }' "$LAB/src/go.mod")
   arch=$(dpkg --print-architecture)
   if ! /usr/local/go/bin/go version 2>/dev/null | grep -q "go$gov "; then
+    # Unpacked only if its SHA-256 is the one go.dev publishes.
+    local file="go$gov.linux-$arch.tar.gz" want
+    want=$(curl -fsSL 'https://go.dev/dl/?mode=json&include=all' | jq -r --arg f "$file" '.[].files[] | select(.filename == $f) | .sha256')
+    [ -n "$want" ] || fail "go.dev lists no checksum for $file"
+    curl -fsSL -o "$LAB/$file" "https://go.dev/dl/$file"
+    echo "$want  $LAB/$file" | sha256sum -c --quiet - || fail "$file does not match its published checksum"
     rm -rf /usr/local/go
-    curl -fsSL "https://go.dev/dl/go$gov.linux-$arch.tar.gz" | tar -C /usr/local -xz
+    tar -C /usr/local -xzf "$LAB/$file"
+    rm -f "$LAB/$file"
   fi
   (cd "$LAB/src" && CGO_ENABLED=0 /usr/local/go/bin/go build -trimpath -o /usr/local/bin/signalith-loadgen ./cmd/signalith-loadgen)
   rm -rf /usr/local/go "$LAB/src" /root/go /root/.cache/go-build
@@ -458,7 +465,8 @@ EOF
 # Nothing on this server needs the cloud's metadata service after the
 # first boot, and no service may reach it. OpenSearch talks to this server
 # only. Signalith may reach the internet over HTTPS (feeds, content,
-# vulnerability data), never a private or link-local address.
+# vulnerability data) and mail submission (alerts), never a private or
+# link-local address.
 outbound() {
   cat >/etc/nftables.conf <<'EOF'
 #!/usr/sbin/nft -f
@@ -471,7 +479,7 @@ table inet testlab {
 		meta skuid "opensearch" drop
 		meta skuid "signalith" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
 		meta skuid "signalith" ip6 daddr { fc00::/7, fe80::/10 } drop
-		meta skuid "signalith" tcp dport 443 accept
+		meta skuid "signalith" tcp dport { 443, 465, 587 } accept
 		meta skuid "signalith" drop
 	}
 }

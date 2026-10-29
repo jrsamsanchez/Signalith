@@ -10,13 +10,13 @@ variable "domain" {
 }
 
 variable "public" {
-  description = "false: only admin_ip reaches the web page, while the lab is set up and checked. true: anyone reaches port 443 (and 80, which only redirects and answers Let's Encrypt)."
+  description = "false: only admin_ip reaches port 443, while the lab is set up and checked. true: anyone does. Port 80 only redirects and answers Let's Encrypt, so it is always open."
   type        = bool
   default     = false
 }
 
 variable "admin_ip" {
-  description = "The only address SSH (and, while public is false, the web page) is open to. Empty: this computer's public IPv4 address, looked up when you run terraform."
+  description = "The only address SSH (and, while public is false, the web page) is open to. Best given explicitly; empty: this computer's public IPv4 address, looked up when you run terraform (shown by the ssh_open_to output)."
   type        = string
   default     = ""
 }

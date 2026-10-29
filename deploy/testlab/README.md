@@ -14,16 +14,17 @@ deleted between sessions.
 
 ## What is reachable
 
-- Port 443 (and 80, which redirects and answers Let's Encrypt) through Caddy,
-  only from `admin_ip` until `public=true`. Caddy refuses the token routes
+- Port 443 through Caddy, only from `admin_ip` until `public=true`; port 80,
+  which only redirects and answers Let's Encrypt, from anyone. Caddy refuses the token routes
   agents and senders use (`/api/ingest`, OTLP, HEC, osquery, sensor, agent,
-  join, syslog, SCIM and `/metrics`), so the lab takes no data from outside.
+  join, syslog, SCIM, chat and `/metrics`), so the lab takes no data from outside.
 - SSH from `admin_ip` only, with keys only.
 - Signalith (9000), its agent port (7779) and OpenSearch (9200) listen on
   127.0.0.1. Signalith trusts Caddy's `X-Forwarded-For` only from
   loopback, and Caddy sets it to the client's own address.
 - Outbound: nothing reaches the cloud metadata service; OpenSearch reaches
-  nothing; Signalith reaches only HTTPS on public addresses.
+  nothing; Signalith reaches only HTTPS and mail submission (465, 587) on
+  public addresses.
 
 ## Build it
 
@@ -31,7 +32,7 @@ From this folder, with `HCLOUD_TOKEN` set to the Hetzner API token:
 
 ```sh
 terraform init
-terraform apply -var admin_email=you@example.com
+terraform apply -var admin_ip=203.0.113.7 -var admin_email=you@example.com
 ```
 
 Add the `dns_record` output where `signalith.io`'s DNS is kept, and follow

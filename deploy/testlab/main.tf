@@ -39,11 +39,11 @@ resource "hcloud_firewall" "testlab" {
     source_ips  = local.web_from
   }
   rule {
-    description = "HTTP: redirects to HTTPS and answers Let's Encrypt"
+    description = "HTTP: only redirects to HTTPS and answers Let's Encrypt, so open even before public"
     direction   = "in"
     protocol    = "tcp"
     port        = "80"
-    source_ips  = local.web_from
+    source_ips  = ["0.0.0.0/0", "::/0"]
   }
   rule {
     description = "SSH, from the admin only"

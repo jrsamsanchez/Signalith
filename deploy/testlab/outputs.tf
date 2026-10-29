@@ -19,3 +19,8 @@ output "web_open_to" {
   description = "Who reaches the web page."
   value       = var.public ? "everyone" : local.admin_ip
 }
+
+output "ssh_open_to" {
+  description = "The only address SSH is open to: check it is yours."
+  value       = local.admin_ip
+}
