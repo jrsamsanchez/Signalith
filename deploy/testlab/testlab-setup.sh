@@ -18,14 +18,19 @@
 #   6. this server's own logs (sign-ins, journal, audit) sent to Signalith;
 #   7. sample data and a small live feed of recorded attack events;
 #   8. nightly snapshots and backups, outbound limits, automatic updates.
-set -euo pipefail
-umask 077
+set -Eeuo pipefail
+# A failed command inside $(...) stops the setup too.
+shopt -s inherit_errexit
+# Services read what this writes (apt as _apt, Caddy, OpenSearch, the
+# feed): secrets get their own modes below instead.
+umask 022
 export HOME=/root
 export DEBIAN_FRONTEND=noninteractive
 
 LAB=/root/testlab
 DONE=$LAB/done
 mkdir -p "$DONE"
+chmod 700 "$LAB"
 
 DOMAIN=$(jq -r .domain "$LAB/settings.json")
 EMAIL=$(jq -r '.admin_email // ""' "$LAB/settings.json")
@@ -34,12 +39,14 @@ DATA=/srv/data
 CA=/var/lib/signalith/tls/ca.pem
 
 say() { printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+# Failures go to standard error, which the log keeps even where a step's
+# output is thrown away.
 fail() {
-  say "FAILED: $*"
-  say "Fix the cause, then run: sudo testlab-setup"
+  say "FAILED: $*" >&2
+  say "Fix the cause, then run: sudo testlab-setup" >&2
   exit 1
 }
-trap 'say "FAILED at line $LINENO. Run sudo testlab-setup again to carry on."' ERR
+trap 'say "FAILED at line $LINENO. Run sudo testlab-setup again to carry on." >&2' ERR
 
 step() {
   local name=$1
@@ -101,11 +108,12 @@ signalith_package() {
 
 # ---- 3. OpenSearch ----
 
-opensearch() {
-  rm -rf "$LAB/pki"
-  signalith opensearch-certs -out "$LAB/pki" -node localhost -san localhost -san 127.0.0.1 >/dev/null
+opensearch_setup() {
+  # Made once: a run again keeps the CA that OpenSearch already trusts.
+  [ -d "$LAB/pki" ] || signalith opensearch-certs -out "$LAB/pki" -node localhost -san localhost -san 127.0.0.1 >/dev/null
   local series="${OPENSEARCH_VERSION%%.*}.x"
   curl -fsSL https://artifacts.opensearch.org/publickeys/opensearch-release.pgp | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
+  chmod 644 /usr/share/keyrings/opensearch-keyring
   echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/$series/apt stable main" >"/etc/apt/sources.list.d/opensearch-$series.list"
   apt-get update -q
   if ! dpkg -s opensearch >/dev/null 2>&1; then
@@ -152,7 +160,7 @@ YML
   install -d -m 700 "$LAB/os-admin"
   cp "$LAB/pki/opensearch/certs/root-ca.pem" "$LAB/pki/opensearch/certs/admin.pem" "$LAB/pki/opensearch/certs/admin-key.pem" "$LAB/os-admin/"
   rm -f /etc/opensearch/certs/admin.pem /etc/opensearch/certs/admin-key.pem
-  os_admin -X PUT /_snapshot/testlab -H 'Content-Type: application/json' \
+  os_admin /_snapshot/testlab -X PUT -H 'Content-Type: application/json' \
     -d "{\"type\": \"fs\", \"settings\": {\"location\": \"$DATA/snapshots\"}}" >/dev/null
 }
 
@@ -180,6 +188,14 @@ s = c.setdefault("server", {})
 # Only Caddy, on this server, reaches Signalith.
 s["listen"] = "127.0.0.1:9000"
 s["agent_listen"] = "127.0.0.1:7779"
+# Syslog over TLS (the package's default) on loopback too: nothing sends
+# syslog to the lab from outside.
+sl = c.get("syslog") or {}
+for k in ("tls", "udp", "tcp"):
+    if sl.get(k):
+        sl[k] = "127.0.0.1:" + str(sl[k]).rsplit(":", 1)[-1]
+if sl:
+    c["syslog"] = sl
 s["public_url"] = public
 s["trusted_proxies"] = ["127.0.0.1", "::1"]
 s["client_header"] = "x-forwarded-for"
@@ -206,8 +222,9 @@ EOF
 
 # ---- 5. Caddy ----
 
-caddy() {
+caddy_setup() {
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor --batch --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  chmod 644 /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" >/etc/apt/sources.list.d/caddy-stable.list
   apt-get update -q
   apt-get install -y -q caddy
@@ -239,13 +256,15 @@ $DOMAIN {
 		# The client's own address, never one it sent.
 		header_up X-Forwarded-For {remote_host}
 		transport http {
-			tls_trusted_ca_certs /etc/caddy/signalith-ca.pem
+			tls_trust_pool file /etc/caddy/signalith-ca.pem
 			tls_server_name localhost
 		}
 	}
 }
 EOF
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+  # As caddy: validating opens the log file, which the service must own.
+  chown -R caddy:caddy /var/log/caddy
+  runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
   systemctl enable -q caddy
   systemctl reload-or-restart caddy
 }
@@ -311,6 +330,7 @@ own_logs() {
   cfg=$(api "/api/agents/config?os=linux&server=https://localhost:9000")
   . /etc/os-release
   curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor --batch --yes -o /usr/share/keyrings/fluentbit-keyring.gpg
+  chmod 644 /usr/share/keyrings/fluentbit-keyring.gpg
   echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/$VERSION_CODENAME $VERSION_CODENAME main" >/etc/apt/sources.list.d/fluent-bit.list
   apt-get update -q >/dev/null
   apt-get install -y -q fluent-bit auditd >/dev/null
@@ -380,7 +400,10 @@ live_feed() {
   fi
   (cd "$LAB/src" && CGO_ENABLED=0 /usr/local/go/bin/go build -trimpath -o /usr/local/bin/signalith-loadgen ./cmd/signalith-loadgen)
   rm -rf /usr/local/go "$LAB/src" /root/go /root/.cache/go-build
-  install -d -m 700 /etc/signalith-feed
+  # The folder is readable by the feed; its token is root's, handed over
+  # by LoadCredential.
+  install -d -m 755 /etc/signalith-feed
+  install -m 600 /dev/null /etc/signalith-feed/token.txt
   sg tokens create -purpose windows "Test lab live feed $(date +%m%d-%H%M%S)" >/etc/signalith-feed/token.txt
   install -m 644 "$CA" /etc/signalith-feed/ca.pem
   # One recorded event every ten seconds, sent as recorded: enough for the
@@ -388,6 +411,7 @@ live_feed() {
   cat >/etc/signalith-feed/feed.yaml <<'EOF'
 name: testlab-feed
 description: The test lab's live feed of recorded Windows and Sysmon events.
+targets: [https://localhost:9000]
 agent_targets: [https://localhost:7779]
 ca_file: /etc/signalith-feed/ca.pem
 credentials:
@@ -485,6 +509,9 @@ table inet testlab {
 }
 EOF
   nft -c -f /etc/nftables.conf
+  # cloud-init has done its work and would wait for the metadata service
+  # on every boot.
+  touch /etc/cloud/cloud-init.disabled
   systemctl enable -q nftables
   systemctl restart nftables
 }
@@ -506,9 +533,9 @@ EOF
 
 step volume volume
 step signalith signalith_package
-step opensearch opensearch
+step opensearch opensearch_setup
 step signalith-config signalith_config
-step caddy caddy
+step caddy caddy_setup
 step own-logs own_logs
 step sample-data sample_data
 step live-feed live_feed
