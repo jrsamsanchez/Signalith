@@ -221,6 +221,11 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 	return old, step(5)
 }
 
+// ErrBuiltinOffLevel refuses to turn the built-in admin off below
+// shared.LevelBuiltinOff, where a server of an older version would still
+// let it sign in.
+var ErrBuiltinOffLevel = errors.New("turning off the built-in admin needs every server on a version that supports it: upgrade the others first")
+
 // BuiltinDisabled reports whether the built-in admin is turned off.
 func (b *UsersBackend) BuiltinDisabled() bool {
 	v, _, ok := b.Docs.BuiltinUser()
@@ -234,6 +239,9 @@ func (b *UsersBackend) ChangeBuiltinDisabled(ctx context.Context, by string, off
 	v, _, ok := b.Docs.BuiltinUser()
 	if !ok {
 		return false, errors.New("the built-in admin is not in the shared settings yet")
+	}
+	if c, ok := b.Docs.clusterBody(); off && (!ok || c.Level < shared.LevelBuiltinOff) {
+		return false, ErrBuiltinOffLevel
 	}
 	changed := false
 	_, err := b.Docs.Users().Mutate(ctx, by, v.Username, func(v *UserBody) error {

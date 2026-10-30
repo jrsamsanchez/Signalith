@@ -63,14 +63,13 @@ func TestTurningOffTheBuiltinAdmin(t *testing.T) {
 	if code, _, _ := call(t, ts, "GET", "/api/me", "", "", "", c); code != 401 {
 		t.Errorf("session after turning off = %d", code)
 	}
-	if code, body, _ := login(t, ts, "admin", adminPass); code != 403 || body["code"] != "disabled" || !strings.Contains(body["error"].(string), "signalith passwd") {
+	// The right password is refused as a wrong one: the well-known name
+	// never confirms a guessed password.
+	if code, body, _ := login(t, ts, "admin", adminPass); code != 401 || body["code"] != "wrong_credentials" {
 		t.Errorf("sign-in while off = %d %v", code, body)
 	}
-	if code, _ := doAs(t, ts, "admin", adminPass, "GET", "/api/me", ""); code != 403 {
+	if code, _ := doAs(t, ts, "admin", adminPass, "GET", "/api/me", ""); code != 401 {
 		t.Errorf("basic while off = %d", code)
-	}
-	if code, _, _ := login(t, ts, "admin", "wrong-password"); code != 401 {
-		t.Errorf("wrong password while off = %d (should not reveal the state)", code)
 	}
 	if u := builtinRow(); u["disabled"] != true || actions(u) != `["enable"]` {
 		t.Errorf("built-in admin row while off = %v", u)
@@ -124,10 +123,10 @@ func TestTurningOffTheSharedBuiltinAdmin(t *testing.T) {
 	}
 	c.b.cycle()
 	waitFor(t, "the built-in admin's session on B to end", func() bool { return c.b.me(onB) == http.StatusUnauthorized })
-	if _, code := c.b.signIn("admin", "s3cret-pass"); code != http.StatusForbidden {
+	if _, code := c.b.signIn("admin", "s3cret-pass"); code != http.StatusUnauthorized {
 		t.Errorf("sign-in on B while off: %d", code)
 	}
-	if code := c.b.basic("admin", "s3cret-pass"); code != http.StatusForbidden {
+	if code := c.b.basic("admin", "s3cret-pass"); code != http.StatusUnauthorized {
 		t.Errorf("basic on B while off: %d", code)
 	}
 	if code, out, _ := c.a.call("PUT", "/api/users/admin", `{"disabled":false}`, ann, nil); code != 200 {

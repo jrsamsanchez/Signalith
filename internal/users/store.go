@@ -367,6 +367,13 @@ type Store struct {
 	// off the move of the users file into the shared settings with it.
 	Hold func() (release func(), err error)
 	Now  func() time.Time
+	// offMu guards seenOff, whether the last copy had the built-in admin
+	// turned off, ownOff, a change this store is making, and noticed (see
+	// SetBuiltinNoticed).
+	offMu   sync.Mutex
+	seenOff *bool
+	ownOff  *bool
+	noticed func(off bool, why string)
 
 	b    Backend
 	path string
@@ -450,6 +457,7 @@ func (s *Store) load() error {
 	s.mu.Lock()
 	s.users, s.hashes, s.etags, s.mfa = people, hashes, etags, mfa
 	s.mu.Unlock()
+	s.builtinAfterLoad()
 	return nil
 }
 

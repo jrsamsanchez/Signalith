@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -616,7 +617,7 @@ func (s *Server) setBuiltinDisabled(w http.ResponseWriter, r *http.Request, off 
 	case errors.Is(err, users.ErrBuiltinLastAdmin):
 		writeError(w, http.StatusConflict, err)
 		return
-	case errors.Is(err, users.ErrNoBuiltinOff):
+	case errors.Is(err, users.ErrNoBuiltinOff), errors.Is(err, clusterauth.ErrBuiltinOffLevel):
 		writeError(w, http.StatusConflict, err)
 		return
 	case err != nil:

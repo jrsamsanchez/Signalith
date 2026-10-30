@@ -139,21 +139,46 @@ as you can.
   While it is off, that last local admin cannot be disabled, demoted or deleted.
   Give that admin two-step sign-in or a passkey.
 - **What happens.** Its sessions end on every server at once, and its password,
-  passkeys and HTTP Basic credentials stop working: signing in answers `403` with
-  `"code": "disabled"`. On servers that share their users, the `signalith passwd -local`
-  password stops working too while the server still has its copy of the shared
-  settings. API tokens are their own accounts and keep working; revoke them on the API
-  tokens tab if they should stop too. The audit log records `user disabled` (and
-  `user enabled`) with `source=builtin` and who did it.
+  passkeys and HTTP Basic credentials stop working. A password sign-in is answered as
+  a wrong password (`401`, `"code": "wrong_credentials"`), so the well-known name never
+  confirms a guessed password; a passkey gets `403` with `"code": "disabled"`. API
+  tokens are their own accounts and keep working; revoke them on the API tokens tab if
+  they should stop too. The audit log records `user disabled` (and `user enabled`) with
+  `source=builtin` and who did it.
+- **Never without an admin.** Each server checks for the other admin on its own copy of
+  the users, so two changes made at the same moment on two servers (one turns the
+  built-in admin off while another disables the last other admin) could both pass.
+  Whenever a server then sees the built-in admin off and no other enabled local admin,
+  it turns the built-in admin on again, within seconds, and the audit log records
+  `user enabled` with `reason="no other enabled local admin was left"`. A change made
+  to users.json by hand is recorded too.
 - **Turn it on again** on the Users page (**Turn on**), as any admin.
 - **Locked out?** If every other admin is locked out, run `signalith passwd` on a
   server, as above: setting the built-in admin's password from the server also turns it
   on again, and says so. On servers that share their users this works at once on every
-  server; elsewhere restart the server, as `signalith passwd` says. Sign in, fix what
-  went wrong, and turn it off again.
+  server. A server that keeps its own users uses the new password only from its next
+  start, so the built-in admin stays off until then (the old password must not work
+  again meanwhile) and turns on as the server starts, with `user enabled` and
+  `by=signalith passwd` in the audit log; restart the server, as `signalith passwd`
+  says. Sign in, fix what went wrong, and turn it off again. `signalith passwd -local`
+  does not turn it on.
+- **While OpenSearch is down.** On servers that share their users, the
+  `signalith passwd -local` break-glass password stops working too while the built-in
+  admin is off, as long as the server still has its copy of the shared settings. Local
+  admins whose copy is recent can still sign in then (see
+  [When OpenSearch cannot be used](#when-opensearch-cannot-be-used)); after a long
+  outage, with no recent copy, nobody can, until OpenSearch answers again or you run
+  `signalith passwd` once it does. A server that has no copy of the shared settings at
+  all still takes the `-local` password.
 - **On several servers** it can be turned off once every server runs a version that
   supports it (the cluster's level 12). Until then the Users page says to upgrade the
-  others first.
+  others first. A server that keeps its own users and is turned into a member of a
+  cluster brings the built-in admin in turned off once the cluster is at that level;
+  below it, it comes in on, with `user enabled` in the audit log, so turn it off again
+  later.
+- **Going back to an older version** on a server that keeps its own users drops the
+  setting, so the built-in admin is on again there; turn it off again after the next
+  upgrade.
 
 ## Managing local users
 

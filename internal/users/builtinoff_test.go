@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 )
 
 // The built-in admin is turned off only while another enabled local admin
@@ -108,5 +110,80 @@ func TestBuiltinDisabledNoBuiltin(t *testing.T) {
 	s := NewMemory()
 	if _, err := s.SetBuiltinDisabled(context.Background(), true); !errors.Is(err, ErrNoBuiltinOff) {
 		t.Errorf("SetBuiltinDisabled = %v, want ErrNoBuiltinOff", err)
+	}
+}
+
+// When a copy of the users shows the built-in admin off and no other
+// enabled local admin (two servers each made a change the other's copy
+// did not show yet), the built-in admin is turned on again, and that is
+// reported for the audit log.
+func TestBuiltinOnAgainWithNoAdminLeft(t *testing.T) {
+	ctx := context.Background()
+	s := NewMemory()
+	s.BuiltinAdmin = "admin"
+	type note struct {
+		off bool
+		why string
+	}
+	notes := make(chan note, 4)
+	s.SetBuiltinNoticed(func(off bool, why string) { notes <- note{off, why} })
+	if _, err := s.Create(ctx, newUser("kim", Admin)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetBuiltinDisabled(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	// Another server, whose copy still had the built-in admin on,
+	// disables kim.
+	if _, err := s.b.Change(ctx, "ann", "kim", "", func(r *Record) error { r.Disabled = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case n := <-notes:
+		if n.off || !strings.Contains(n.why, "no other enabled local admin") {
+			t.Errorf("noticed %+v", n)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the built-in admin was not turned on again")
+	}
+	if s.BuiltinDisabled() {
+		t.Error("still off")
+	}
+}
+
+// A change made to the users file outside this store is reported.
+func TestBuiltinChangeInTheFileNoticed(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "users.json")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.BuiltinAdmin = "admin"
+	notes := make(chan bool, 4)
+	s.SetBuiltinNoticed(func(off bool, why string) { notes <- off })
+	if _, err := s.Create(ctx, newUser("kim", Admin)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SetBuiltinDisabled(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SetFileBuiltinDisabled(path, false); err != nil {
+		t.Fatal(err)
+	}
+	s.recheck = 0
+	s.BuiltinDisabled()
+	select {
+	case off := <-notes:
+		if off {
+			t.Error("noticed as turned off")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the change in the file was not noticed")
+	}
+	select {
+	case off := <-notes:
+		t.Errorf("this store's own change was reported too: off %v", off)
+	default:
 	}
 }

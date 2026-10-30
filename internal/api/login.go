@@ -89,6 +89,7 @@ func (s *Server) sessions() SessionStore {
 		if s.Users.BuiltinAdmin == "" {
 			s.Users.BuiltinAdmin = s.conf().Auth.AdminUser
 		}
+		s.Users.SetBuiltinNoticed(s.builtinNoticed)
 		if s.Directory == nil {
 			s.Directory, _ = users.OpenDirectory("", nil)
 		}

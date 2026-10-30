@@ -33,10 +33,6 @@ func checkBuiltinPassword(f *Facts) *Check {
 	}
 	removeEnv := "Then remove SIGNALITH_ADMIN_PASSWORD from where Signalith is started."
 	switch {
-	case f.Users.BuiltinOff && !a.Public:
-		// Its password cannot sign in; signalith passwd sets a new one
-		// when it is turned on again from a server.
-		return &Check{State: Good, Line: "The built-in admin is turned off, so its password can't be used to sign in."}
 	case a.Public:
 		fix.Steps = append(fix.Steps, removeEnv)
 		return &Check{State: Risk, Line: "The built-in admin's password is change-me-please, an example anyone can look up.", Fix: fix}
@@ -71,7 +67,14 @@ func checkBuiltinPassword(f *Facts) *Check {
 func checkBuiltinUse(f *Facts) *Check {
 	u := f.Users
 	last := u.BuiltinLastSignIn
-	turnOff := "Turn the built-in admin off on the Users page (Actions, Disable). Turn it on again there when you need it; if every admin is ever locked out, signalith passwd on a server turns it on again."
+	turnOff := "Turn the built-in admin off on the Users page (Actions, Turn off). Turn it on again there when you need it; if every admin is ever locked out, signalith passwd on a server turns it on again."
+	if u.BuiltinOff && u.LocalAdmins == 0 {
+		// Signalith turns it on again by itself once it sees this.
+		return &Check{State: Risk, Line: "The built-in admin is turned off, and no enabled local admin is left to manage Signalith.",
+			Fix: &Fix{Steps: []string{"Run signalith passwd on a server: it sets a new password for the built-in admin and turns it on again."},
+				Commands: cmds("sudo signalith passwd"+configArg(f, "linux"), winExe+" passwd"+configArg(f, "windows"), dockerCompose+" exec signalith signalith passwd"),
+				Docs:     doc(docUsersBuiltin)}}
+	}
 	if u.BuiltinOff {
 		n := u.OtherAdmins
 		return &Check{State: Good, Line: "The built-in admin is turned off, and " + itoa(n) +

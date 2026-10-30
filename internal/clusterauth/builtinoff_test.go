@@ -7,7 +7,9 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -51,5 +53,47 @@ func TestBuiltinTurnedOff(t *testing.T) {
 	}
 	if on, err := b.ub.ChangeBuiltinDisabled(ctx, "root", false, nil); err != nil || on {
 		t.Errorf("turn on again = %v, %v; want no change", on, err)
+	}
+}
+
+// Two servers each make a change the other's copy does not show yet: A
+// turns the built-in admin off while B disables kim, the only other
+// admin. Once the copies show both, the built-in admin is on again.
+func TestBuiltinOnAgainAfterChangesAtOnce(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("kim", users.Admin)
+	b.cycle()
+	// B's change, as its copy allowed it: the built-in admin was on there.
+	if _, err := b.ub.Change(ctx, "ann", "kim", "", func(r *users.Record) error { r.Disabled = true; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.store.SetBuiltinDisabled(ctx, true); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		a.cycle()
+		b.cycle()
+		if !a.ub.BuiltinDisabled() && !b.ub.BuiltinDisabled() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the built-in admin stayed off with no other admin")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// Below shared.LevelBuiltinOff the backend refuses to turn it off, whoever
+// asks.
+func TestBuiltinOffNeedsTheLevel(t *testing.T) {
+	_, a, _, _ := pair(t)
+	ctx := context.Background()
+	if _, err := a.rt.Cluster().Mutate(ctx, "test", func(c *shared.ClusterBody) error { c.Level = shared.LevelBuiltinOff - 1; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := a.ub.ChangeBuiltinDisabled(ctx, "test", true, nil); !errors.Is(err, ErrBuiltinOffLevel) {
+		t.Errorf("below the level: %v", err)
 	}
 }

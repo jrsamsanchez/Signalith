@@ -1185,8 +1185,9 @@ func TestBuiltinPassword(t *testing.T) {
 				}
 			}},
 		{name: "weak", set: func(f *Facts) { f.Admin.WeakHash = true }, state: Attention},
-		{name: "turned off", set: func(f *Facts) { f.Admin.FromEnv = true; f.Users.BuiltinOff = true }, state: Good,
-			line: "The built-in admin is turned off, so its password can't be used to sign in."},
+		// Turning it on again brings the password back, so it is checked
+		// while it is off too.
+		{name: "turned off", set: func(f *Facts) { f.Admin.FromEnv = true; f.Users.BuiltinOff = true }, state: Attention},
 		{name: "turned off public", set: func(f *Facts) { f.Admin.Public = true; f.Users.BuiltinOff = true }, state: Risk},
 	})
 }
@@ -1222,6 +1223,8 @@ func TestBuiltinUse(t *testing.T) {
 			f.Users.BuiltinLastSignIn = &last
 		}, state: Good,
 			line: "The built-in admin is turned off, and 2 people have admin accounts of their own."},
+		{name: "off with no local admin", set: func(f *Facts) { f.Users.OtherAdmins = 1; f.Users.BuiltinOff = true }, state: Risk,
+			line: "The built-in admin is turned off, and no enabled local admin is left to manage Signalith."},
 		{name: "directory admins only", set: func(f *Facts) { f.Users.OtherAdmins = 1; f.Users.Others = 3; f.Users.BuiltinLastSignIn = &old }, state: Good,
 			line: "People sign in with their own accounts. The built-in admin last signed in 30 days ago.",
 			fix: func(t *testing.T, c *Check) {

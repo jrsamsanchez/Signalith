@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -161,11 +162,20 @@ func TestPasswdTurnsTheBuiltinAdminOn(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if !strings.Contains(out, builtinOnAgain) {
-		t.Errorf("passwd does not say it turned the built-in admin on:\n%s", out)
+	if !strings.Contains(out, builtinOnAtRestart) {
+		t.Errorf("passwd does not say the built-in admin turns on again:\n%s", out)
 	}
-	if off, err := users.ReadFileBuiltinDisabled(c.UsersFile()); err != nil || off {
-		t.Errorf("still turned off: %v, %v", off, err)
+	// Still off until the server starts with the new password.
+	if off, err := users.ReadFileBuiltinDisabled(c.UsersFile()); err != nil || !off {
+		t.Errorf("turned on before the new password is in use: %v, %v", off, err)
+	}
+	people, err := users.Open(c.UsersFile())
+	if err != nil {
+		t.Fatal(err)
+	}
+	people.BuiltinAdmin = c.Auth.AdminUser
+	if on, err := people.StartBuiltin(context.Background()); err != nil || !on || people.BuiltinDisabled() {
+		t.Errorf("at start: %v, %v, off %v", on, err, people.BuiltinDisabled())
 	}
 	// Not turned off: nothing is said.
 	out = captureStdout(t, func() {
@@ -173,7 +183,7 @@ func TestPasswdTurnsTheBuiltinAdminOn(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	if strings.Contains(out, builtinOnAgain) {
-		t.Errorf("passwd says it turned on a built-in admin that was on:\n%s", out)
+	if strings.Contains(out, builtinOnAtRestart) {
+		t.Errorf("passwd says it turns on a built-in admin that is on:\n%s", out)
 	}
 }

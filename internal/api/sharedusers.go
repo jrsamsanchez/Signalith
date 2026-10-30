@@ -149,6 +149,16 @@ func (s *Server) builtinOff() bool {
 	return s.userStore().BuiltinDisabled()
 }
 
+// builtinNoticed writes the audit record of the built-in admin turned off
+// or on other than on this server's Users page (users.Store.SetBuiltinNoticed).
+func (s *Server) builtinNoticed(off bool, why string) {
+	msg := "user enabled"
+	if off {
+		msg = "user disabled"
+	}
+	s.Log.Info(msg, "audit", true, "by", "signalith", "user", s.builtinName(), "source", users.SourceBuiltin, "reason", why)
+}
+
 // builtinOffRefused says why the built-in admin cannot be turned off on
 // this server now, "" when it can: every server of a cluster must read
 // shared.LevelBuiltinOff.

@@ -518,6 +518,8 @@ var (
 		msg: "Username and password don't match."}
 	errDisabled = &signInError{status: http.StatusForbidden, code: "disabled",
 		msg: "This account is disabled. Ask an admin to enable it."}
+	// errBuiltinOff refuses a passkey of the built-in admin while it is
+	// turned off: the passkey proved who it is, so it may know.
 	errBuiltinOff = &signInError{status: http.StatusForbidden, code: "disabled",
 		msg: "The built-in admin is turned off. Sign in with your own account, or ask an admin to turn it on. Locked out? Run signalith passwd on the server."}
 	errTenantOff = &signInError{status: http.StatusForbidden, code: "tenant_disabled",
@@ -748,12 +750,15 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	}
 	store := s.userStore()
 	if s.isBuiltin(name) {
+		if s.builtinOff() {
+			// Answered as a wrong password, in the same time, so the
+			// well-known name never confirms a guessed password.
+			users.WasteTime(password)
+			return nil, "built-in admin turned off", errWrongCredentials
+		}
 		ok, local := s.checkBuiltinPassword(password, true)
 		if !ok {
 			return nil, "wrong password", errWrongCredentials
-		}
-		if s.builtinOff() {
-			return nil, "built-in admin turned off", errBuiltinOff
 		}
 		store.RecordBuiltinSignIn(ctx)
 		p := s.builtinPrincipal()
