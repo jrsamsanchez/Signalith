@@ -333,9 +333,10 @@ The AI assistant can also be set on the **Settings** page (see
   `xyseries`, `untable`, `spath`, `fromjson`, `mvexpand`, `mvcombine`, `nomv`, `strcat`, `rangemap`, `foreach`, `makemv`, `reverse`, `tail`, `uniq`, `convert`, `addtotals`, and a
   `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
-  `search.max_events` (at most 100,000) when later commands need to sort, filter,
-  de-duplicate, join or aggregate them all, and inside a `join`, `append`, `union`,
-  `multisearch` or `set` subsearch. When more events match than that, those commands
+  `search.max_events` (10,000 by default and at most, the most OpenSearch returns for one
+  search) when later commands need to sort, filter, de-duplicate, join or aggregate them
+  all, and inside a `join`, `append`, `union`, `multisearch` or `set` subsearch. When
+  more events match than that, those commands
   see only the newest ones and the result is marked *Sampled* (Explain says so too, as
   do dashboard panels, notebook and case searches, and a detection's **Last run**). To
   work on more events, filter in the search or aggregate with `stats` first.

@@ -398,7 +398,7 @@ func TestCheckEditReportsProblemsByField(t *testing.T) {
 	}
 	for key, want := range map[string]string{
 		"server.listen":           "SIGNALITH_LISTEN",
-		"search.max_events":       "from 1 to 100000",
+		"search.max_events":       "from 1 to 10000",
 		"syslog.udp":              "Must be host:port",
 		"auth.session_timeout":    "Must be a duration of at least 5m",
 		"retention.days":          "Data retention has its own page",

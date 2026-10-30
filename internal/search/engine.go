@@ -31,7 +31,7 @@ type Options struct {
 	IndexPrefix     string // default "signalith"
 	DefaultEarliest string // used when a query has no earliest=; "" means all time
 	DefaultEvents   int    // events returned when no head is given (default 100)
-	MaxEvents       int    // events fetched for in-memory post-processing (default 10000, at most 100000)
+	MaxEvents       int    // events fetched for in-memory post-processing (default and at most 10000)
 	MaxBuckets      int    // stats rows fetched before truncating (default 50000)
 	// MaxSearches caps the searches running at once (default 8), apart
 	// from the detection scheduler's (see Background). Each can hold up to
@@ -45,8 +45,13 @@ type Options struct {
 	SummaryDays int
 }
 
-// maxEventsLimit bounds MaxEvents however it is set.
+// maxEventsLimit bounds the rows commands such as join and append keep.
 const maxEventsLimit = 100000
+
+// maxFetchEvents bounds MaxEvents however it is set: one search request
+// fetches them, and OpenSearch refuses a request for more than
+// index.max_result_window (10,000 unless changed) hits.
+const maxFetchEvents = 10000
 
 // MaxRowsLimit bounds the stats rows a caller may ask for with
 // query.Query.MaxRows.
@@ -273,7 +278,7 @@ func (e *Engine) opts() Options {
 	if o.MaxBuckets <= 0 {
 		o.MaxBuckets = 50000
 	}
-	o.MaxEvents = min(o.MaxEvents, maxEventsLimit)
+	o.MaxEvents = min(o.MaxEvents, maxFetchEvents)
 	if o.MaxSearches <= 0 {
 		o.MaxSearches = 8
 	}
