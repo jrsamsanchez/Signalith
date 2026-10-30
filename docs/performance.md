@@ -111,6 +111,35 @@ headroom give OpenSearch more cores, faster local disks or a third node. In an e
 three-server run, spread detections stayed evenly shared with no late runs through a
 restart and a crash.
 
+### A week of recorded Windows events
+
+The runs above send small test events of about 500 bytes, most of them to one index,
+for 4 hours. Real Windows and Sysmon events are larger and land in many data models,
+so a 7-day soak (October 2026) replayed recorded Windows and Sysmon events instead:
+200 agents asking to send 1,500 events a second through all three servers'
+agent ports, 1,526 detections on, and simulated analysts searching.
+
+| Events/s stored | Over 7 days | Signalith servers | OpenSearch nodes | Result |
+| --- | --- | --- | --- | --- |
+| about 1,270-1,290, the same every day | 769 million events, 1.29 TB raw (about 1.7 KB each) | 3, with 2 vCPU each | 2, with 4 vCPU and 8 GB each, on network volumes | None lost and no restarts; events searchable 4 s after sending (median), 10 s (p95); 0 detection timeouts |
+
+That is about 20 times fewer events a second, and about 6 times fewer bytes, than the
+4-hour runs, on the same machines. The difference is OpenSearch's disks, not Signalith,
+which averaged 6% CPU:
+
+- **Each event weighs more.** About 1.7 KB raw against about 500 bytes.
+- **Events land in more indexes.** Windows events fill 13 data models, so each batch
+  writes to about 26 shards, and OpenSearch syncs each shard's log to disk once per
+  write. The network volumes did about 450 such syncs a second, and that capped the
+  rate.
+- **The day's index is much bigger than memory.** By late each day, each node held
+  22-29 GB of that day's events against about 3.5 GB of disk cache, so merges read
+  from disk too.
+
+For realistic Windows data, size OpenSearch's storage first: local SSD or NVMe disks,
+more memory, or more nodes. Joining the batches agents send at the same time into one
+write (Signalith 0.3.3) roughly tripled the rate on this lab.
+
 ## Known limits
 
 - **A batch may be stored twice after a failover.** If a server stores a batch but stops
