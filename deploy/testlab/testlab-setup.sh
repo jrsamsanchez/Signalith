@@ -19,6 +19,8 @@
 #   7. sample data and a small live feed of recorded attack events;
 #   8. nightly snapshots and backups, outbound limits, automatic updates.
 set -Eeuo pipefail
+# A failed command inside $(...) stops the setup too.
+shopt -s inherit_errexit
 # Services read what this writes (apt as _apt, Caddy, OpenSearch, the
 # feed): secrets get their own modes below instead.
 umask 022
@@ -496,6 +498,9 @@ table inet testlab {
 }
 EOF
   nft -c -f /etc/nftables.conf
+  # cloud-init has done its work and would wait for the metadata service
+  # on every boot.
+  touch /etc/cloud/cloud-init.disabled
   systemctl enable -q nftables
   systemctl restart nftables
 }
