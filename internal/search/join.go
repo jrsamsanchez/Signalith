@@ -25,6 +25,14 @@ func subsearch(q *query.Query, outer *query.Query) *query.Query {
 	return &sub
 }
 
+// noteSampled marks res Sampled when the subsearch sub was: the smallest
+// number of events any of them ran over.
+func noteSampled(res, sub *Result) {
+	if sub.Sampled > 0 && (res.Sampled == 0 || sub.Sampled < res.Sampled) {
+		res.Sampled = sub.Sampled
+	}
+}
+
 // join runs a join's subsearch and adds the fields of its rows to the
 // rows that share the values of the join fields; the subsearch's values
 // win where both have a field. type=left keeps rows with no match.
@@ -34,7 +42,7 @@ func (e *Engine) join(ctx context.Context, res *Result, c *query.Join, outer *qu
 	if err != nil {
 		return err
 	}
-	p, err := e.compile(sq)
+	p, err := e.compileSub(sq)
 	if err != nil {
 		return err
 	}
@@ -42,6 +50,7 @@ func (e *Engine) join(ctx context.Context, res *Result, c *query.Join, outer *qu
 	if err != nil {
 		return err
 	}
+	noteSampled(res, sub)
 	vals := make([]string, len(c.Fields))
 	key := func(r Row) (string, bool) {
 		for i, f := range c.Fields {

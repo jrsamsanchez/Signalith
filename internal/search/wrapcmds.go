@@ -25,7 +25,7 @@ func (e *Engine) multiSearch(ctx context.Context, c *query.MultiSearch, outer *q
 		if err != nil {
 			return nil, err
 		}
-		p, err := e.compile(sq)
+		p, err := e.compileSub(sq)
 		if err != nil {
 			return nil, err
 		}
@@ -33,6 +33,7 @@ func (e *Engine) multiSearch(ctx context.Context, c *query.MultiSearch, outer *q
 		if err != nil {
 			return nil, err
 		}
+		noteSampled(res, sub)
 		if i == 0 {
 			res.Kind = sub.Kind
 		}

@@ -392,6 +392,20 @@ func (e *Engine) compileSubsearches(cmds []query.Command, q *query.Query) error 
 }
 
 func (e *Engine) compile(q *query.Query) (*Plan, error) {
+	return e.compilePlan(q, false)
+}
+
+// compileSub compiles a subsearch whose rows join, append, union,
+// multisearch or set combine with others: a plain event search takes up
+// to search.max_events, as when later commands look at them all, not the
+// newest 100, and its result is marked Sampled when more match.
+func (e *Engine) compileSub(q *query.Query) (*Plan, error) {
+	return e.compilePlan(q, true)
+}
+
+// compilePlan compiles q; whole plans a plain event search as one whose
+// events are all used (see compileSub).
+func (e *Engine) compilePlan(q *query.Query, whole bool) (*Plan, error) {
 	o := e.opts()
 	cmds := q.Commands
 	if len(cmds) > 0 {
@@ -633,6 +647,9 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 		p.SampleLimit = size
 	} else if n, ok := leadingHead(cmds); ok {
 		size = min(n, o.MaxEvents)
+	} else if whole {
+		size = o.MaxEvents
+		p.SampleLimit = size
 	}
 	body["size"] = size
 	body["sort"] = []any{map[string]any{TimeField: map[string]any{"order": "desc", "unmapped_type": "date"}}}
@@ -643,9 +660,14 @@ func (e *Engine) compile(q *query.Query) (*Plan, error) {
 // (sorting, filtering or aggregating), not just the newest few.
 func needsAllEvents(cmds []query.Command) bool {
 	for _, c := range cmds {
-		switch c.(type) {
+		switch c := c.(type) {
 		case *query.Head:
 			return false
+		case *query.Join:
+			// An inner join drops the events without a match.
+			if !c.Left {
+				return true
+			}
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
 			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate, *query.Predict, *query.KMeans, *query.OutputLookup:
@@ -858,11 +880,11 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 	if p.threat != nil {
 		e.threatAnnotate(res, p.threat, p.Mode == "events")
 	}
-	if len(p.post) == 0 {
-		return res, nil
-	}
 	if p.SampleLimit > 0 && p.Mode == "events" && res.Matched > int64(len(res.Rows)) {
 		res.Sampled = len(res.Rows)
+	}
+	if len(p.post) == 0 {
+		return res, nil
 	}
 	before := resultBytes(res)
 	if err := e.post(ctx, res, p.post, q); err != nil {
