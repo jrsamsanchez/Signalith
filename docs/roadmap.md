@@ -30,8 +30,8 @@ Ideas and requests are welcome as
     keeps events through an OpenSearch restart.
 
 **Proof**
-:   A seven-day lab run with real Windows and Sysmon events, with the bytes, cores and
-    shards it took published on the [performance](performance.md) page.
+:   Installs outside the lab running for 30 days, and a published false-positive rate
+    for the starter rule set on a real network.
 
 ## Next: the 1.0 checklist <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next: 1.0" }
 
@@ -199,6 +199,9 @@ Everything below is in Signalith now.
   stored all 25,000 events a second (about 1 TB a day) with 1,520 detections and none
   late; and a three-server run in which detections stayed evenly shared through a
   restart and a crash.
+- A [seven-day run](performance.md#a-week-of-recorded-windows-events) on three Signalith
+  servers that replayed recorded Windows and Sysmon events: 769 million events stored,
+  none lost, no restarts, and the sizing advice that came out of it.
 
 **More data**
 
