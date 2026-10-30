@@ -94,6 +94,9 @@ func TestCheckFluentBit(t *testing.T) {
 	const paths = "/var/log/auth.log,/var/log/secure"
 	for _, c := range []struct{ name, old, new, want string }{
 		{"exec input", "Name                 systemd", "Name                 exec\n    Command cat /etc/shadow", `input "exec"`},
+		// Fluent Bit would run the first Name, a listener.
+		{"two names", "Name                 systemd", "Name                 forward\n    Name systemd", "name is set more than once"},
+		{"two hosts", "Host                 SIEM.example.com", "Host                 evil.example.net\n    Host SIEM.example.com", "host is set more than once"},
 		{"lua filter", "Name                 sysinfo", "Name                 lua\n    script x.lua", `filter "lua"`},
 		{"other host", "Host                 SIEM.example.com", "Host                 evil.example.net", "evil.example.net"},
 		{"no tls", "tls                  On", "tls                  Off", "TLS"},

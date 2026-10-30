@@ -78,6 +78,7 @@ var knownFields = func() map[string]string {
 		// Where each event came from (origin.go): mapped up front so they
 		// survive the known-fields-only retry.
 		IntakeField: kw, TokenField: kw, TokenIDField: kw, SenderField: kw, TokenPurposeField: kw,
+		ReceivedField: "date",
 
 		// Windows and Linux parsers.
 		"src_host": kw, "logon_type_name": kw, "member": kw,

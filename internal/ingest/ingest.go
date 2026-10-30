@@ -34,6 +34,11 @@ type Event struct {
 	// time (too old, or too far ahead); the event is then filed under the
 	// time it arrived and this is stored as device_time.
 	DeviceTime time.Time
+	// Received is when the event arrived, set when its own time (which
+	// the sender chose) is its event time and more than receivedMark from
+	// the arrival; stored as ReceivedField, so an investigator can tell a
+	// sender's time from the arrival.
+	Received time.Time
 	// Origin is where the event came from, when it differs from the
 	// origin of the request (see WithOrigin), as for syslog messages,
 	// whose batches mix devices. It is recorded in the event's
@@ -71,6 +76,11 @@ func TimeUsable(t, recv time.Time, maxAge time.Duration) bool {
 	}
 	return !t.IsZero() && !t.Before(recv.Add(-maxAge)) && !t.After(recv.Add(MaxEventAhead))
 }
+
+// receivedMark is how far an event's own time may be from when it
+// arrived before the arrival is stored with it (Event.Received): more
+// than an agent's usual delay, so most events don't carry it.
+const receivedMark = 5 * time.Minute
 
 // Bulker writes documents in bulk.
 type Bulker interface {
@@ -399,6 +409,8 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 		} else if !TimeUsable(ev.Time, recv, p.maxAge()) {
 			ev.DeviceTime = ev.Time
 			ev.Time = recv
+		} else if d := ev.Time.Sub(recv); d > receivedMark || d < -receivedMark {
+			ev.Received = recv
 		}
 		if !ev.DeviceTime.IsZero() {
 			res.Retimed++
@@ -717,6 +729,9 @@ func (e Event) Document() map[string]any {
 	doc["datamodel"] = e.Model
 	if !e.DeviceTime.IsZero() {
 		doc["device_time"] = e.DeviceTime.UTC().Format(time.RFC3339Nano)
+	}
+	if !e.Received.IsZero() {
+		doc[ReceivedField] = e.Received.UTC().Format(time.RFC3339Nano)
 	}
 	return doc
 }

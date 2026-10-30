@@ -249,6 +249,12 @@ func TestEventTimeWindow(t *testing.T) {
 		if kept != c.kept || (!kept && d.Index != "sig-other-2026.10.11") {
 			t.Errorf("age %v (max %v): kept %v, doc %v in %s", c.age, c.maxAge, kept, d.Doc, d.Index)
 		}
+		// A time the sender chose, well away from the arrival, comes
+		// with the arrival (RTINGEST-101).
+		wantReceived := kept && (c.age > receivedMark || c.age < -receivedMark)
+		if got := d.Doc[ReceivedField]; (got != nil) != wantReceived || wantReceived && got != now.UTC().Format(time.RFC3339Nano) {
+			t.Errorf("age %v (max %v): %s = %v", c.age, c.maxAge, ReceivedField, got)
+		}
 	}
 }
 
