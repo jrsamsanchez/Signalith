@@ -162,7 +162,7 @@ func FuzzHEC(f *testing.F) {
 			ids[d.ID] = true
 			checkDocTime(t, d.Doc)
 			for k := range d.Doc {
-				if Reserved(k) && k != "@timestamp" && k != "datamodel" && k != "device_time" && k != "dropped_fields" && k != IntakeField {
+				if Reserved(k) && k != "@timestamp" && k != "datamodel" && k != "device_time" && k != "dropped_fields" && k != IntakeField && k != ReceivedField {
 					t.Fatalf("sender set %q", k)
 				}
 			}

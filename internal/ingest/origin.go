@@ -32,6 +32,11 @@ const (
 	// discovered) is believed only with purpose sensor, so another
 	// agent's token cannot claim to be a sensor by naming a Zeek log.
 	TokenPurposeField = "signalith_token_purpose"
+	// ReceivedField is when an event arrived, on each event filed under
+	// a time the sender gave it (see Event.Received), as Splunk's
+	// _indextime: a sender may date its events up to ingest.max_event_age
+	// back or an hour ahead, and this tells that time from the arrival.
+	ReceivedField = "signalith_received"
 )
 
 // Intakes, the values of IntakeField.
