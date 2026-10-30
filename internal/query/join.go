@@ -6,7 +6,6 @@ package query
 import (
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 // Join adds the fields of a subsearch's rows to the rows that share the
@@ -193,9 +192,10 @@ func (p *parser) parseSubsearch(inner string, base int) (*Query, error) {
 		sub = sub[6:]
 	}
 	// A command that makes its own rows may start it without the |, as
-	// in [inputlookup owners | fields user].
+	// in [inputlookup owners | fields user]. The name must be the whole
+	// first word, as the lexer reads it: inputlookup000 is a term.
 	w := strings.TrimLeftFunc(sub, isSpace)
-	if i := strings.IndexFunc(w, func(r rune) bool { return !unicode.IsLetter(r) }); i >= 0 {
+	if i := strings.IndexFunc(w, func(r rune) bool { return !isWordRune(r) }); i >= 0 {
 		w = w[:i]
 	}
 	if generating[strings.ToLower(w)] {
