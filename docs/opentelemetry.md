@@ -103,7 +103,10 @@ than an hour ahead is filed under the time it arrived (see [Ingest limits](sendi
 ## Limits and errors
 
 The same limits as agent batches apply: up to 16 MB per request (also after gzip is
-undone), 200,000 records of at most 1 MB each, values nested at most 32 levels. A
+undone), 200,000 records of at most 1 MB each, values nested at most 32 levels. Every
+record's event carries a copy of its resource's attributes, so a request may come to at
+most 64 MB counting the resource once per record, and each attribute list (a resource's,
+a record's, or a map value) keeps its first 256 attributes. A
 record over the size or nesting limit, or one that does not decode, is turned away on
 its own: the rest of the batch is stored, and the record is counted in the answer's
 partial success with a message saying why. A request over a limit or that does not
