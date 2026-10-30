@@ -188,6 +188,14 @@ s = c.setdefault("server", {})
 # Only Caddy, on this server, reaches Signalith.
 s["listen"] = "127.0.0.1:9000"
 s["agent_listen"] = "127.0.0.1:7779"
+# Syslog over TLS (the package's default) on loopback too: nothing sends
+# syslog to the lab from outside.
+sl = c.get("syslog") or {}
+for k in ("tls", "udp", "tcp"):
+    if sl.get(k):
+        sl[k] = "127.0.0.1:" + str(sl[k]).rsplit(":", 1)[-1]
+if sl:
+    c["syslog"] = sl
 s["public_url"] = public
 s["trusted_proxies"] = ["127.0.0.1", "::1"]
 s["client_header"] = "x-forwarded-for"
@@ -403,6 +411,7 @@ live_feed() {
   cat >/etc/signalith-feed/feed.yaml <<'EOF'
 name: testlab-feed
 description: The test lab's live feed of recorded Windows and Sysmon events.
+targets: [https://localhost:9000]
 agent_targets: [https://localhost:7779]
 ca_file: /etc/signalith-feed/ca.pem
 credentials:
