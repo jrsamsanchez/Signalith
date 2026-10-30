@@ -902,6 +902,9 @@ func newSummaries(ctx context.Context, c *config.Config, cl *store.Client, eng *
 }
 
 func newEngine(c *config.Config, s store.Searcher) *search.Engine {
+	if c.Search.MaxEvents > search.MaxFetchEvents {
+		slog.Warn("search.max_events is above what OpenSearch returns for one search; searches use the lower number", "max_events", c.Search.MaxEvents, "used", search.MaxFetchEvents)
+	}
 	return &search.Engine{Store: s, Opt: search.Options{
 		IndexPrefix:     c.OpenSearch.IndexPrefix,
 		DefaultEarliest: c.Search.DefaultEarliest,
