@@ -4750,6 +4750,11 @@ function healthPageRender(h) {
   // Scheduled snapshots late or failing (admins only get h.backup).
   if (h.backup && h.backup.alert) {
     alerts.push(healthPageAlert('danger', 'circle-alert', 'Backups need attention.', el('span', {}, ...withCode(h.backup.alert))));
+  } else if (healthNoBackups(h.backup)) {
+    alerts.push(healthPageAlert('warning', 'triangle-alert', 'Nothing is being backed up.', el('span', {},
+      'A lost disk would lose every event, finding and setting. Turn on scheduled snapshots in ',
+      el('a', { href: '#settings', 'data-page': 'settings' }, 'Settings > Server > Backups'),
+      ', and back up each server’s files with ', el('code', {}, 'signalith backup'), '.')));
   }
   for (const w of h.warnings || []) {
     const cut = w.indexOf('. ');
@@ -4838,6 +4843,16 @@ function healthClusterCard(c) {
     el('div', { class: 'table-wrap' }, el('table', { class: 'table hp-cluster__table' }, head, el('tbody', {}, ...rows, total))))];
 }
 
+// healthNoBackups reports whether nothing is backed up: scheduled
+// snapshots are off and this server's files had no signalith backup in
+// the last 30 days.
+function healthNoBackups(b) {
+  if (!b) return false;
+  const sn = b.snapshots || { state: 'off' };
+  const recent = b.files && b.files.at && Date.now() - Date.parse(b.files.at) < 30 * 864e5;
+  return sn.state === 'off' && !recent;
+}
+
 // healthBackupCard shows the backups, for admins: OpenSearch's scheduled
 // snapshots (last one, next one, how many are kept) and the last
 // signalith backup of this server's own files. See docs/backup.md.
@@ -4853,7 +4868,8 @@ function healthBackupCard(b) {
     late: ['down', 'Late', null],
     problem: ['down', 'Not working', null],
   };
-  const [tone, label, offText] = STATES[sn.state] || ['warn', sn.state || 'Unknown', null];
+  let [tone, label, offText] = STATES[sn.state] || ['warn', sn.state || 'Unknown', null];
+  if (healthNoBackups(b)) tone = 'warn';
   let details;
   if (offText) {
     details = offText;

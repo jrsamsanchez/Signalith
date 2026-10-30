@@ -48,10 +48,10 @@ type Options struct {
 // maxEventsLimit bounds the rows commands such as join and append keep.
 const maxEventsLimit = 100000
 
-// maxFetchEvents bounds MaxEvents however it is set: one search request
+// MaxFetchEvents bounds MaxEvents however it is set: one search request
 // fetches them, and OpenSearch refuses a request for more than
 // index.max_result_window (10,000 unless changed) hits.
-const maxFetchEvents = 10000
+const MaxFetchEvents = 10000
 
 // MaxRowsLimit bounds the stats rows a caller may ask for with
 // query.Query.MaxRows.
@@ -278,7 +278,7 @@ func (e *Engine) opts() Options {
 	if o.MaxBuckets <= 0 {
 		o.MaxBuckets = 50000
 	}
-	o.MaxEvents = min(o.MaxEvents, maxFetchEvents)
+	o.MaxEvents = min(o.MaxEvents, MaxFetchEvents)
 	if o.MaxSearches <= 0 {
 		o.MaxSearches = 8
 	}

@@ -456,6 +456,9 @@ up.
 
 Agents installed before signed updates, and builds made from source (which have no
 release key), do not update themselves; run the install line again to upgrade them.
+This includes every agent installed from 0.3.0, 0.3.1 or 0.3.2: they trust a release
+key whose private half was lost (key ID `99e8601b3328`, now revoked), so they cannot
+check later agent programs.
 To see what the server hands out, run `signalith agent-programs status` on it.
 
 ## Computers without internet access

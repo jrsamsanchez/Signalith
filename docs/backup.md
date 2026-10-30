@@ -334,7 +334,9 @@ successful one, when the next is due and how many are kept, with the last
 `signalith backup` of that server's own files. It turns red when the last successful
 snapshot is older than two scheduled periods (two days, with one a day), when
 OpenSearch has no repository by that name, or when it does not let Signalith manage
-snapshots, and says what to do.
+snapshots, and says what to do. While scheduled snapshots are off and the server's
+files had no `signalith backup` in 30 days, the Health page shows an amber
+*Nothing is being backed up* item instead.
 
 ### What OpenSearch needs
 
