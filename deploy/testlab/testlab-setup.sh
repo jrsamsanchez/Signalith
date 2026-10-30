@@ -18,14 +18,17 @@
 #   6. this server's own logs (sign-ins, journal, audit) sent to Signalith;
 #   7. sample data and a small live feed of recorded attack events;
 #   8. nightly snapshots and backups, outbound limits, automatic updates.
-set -euo pipefail
-umask 077
+set -Eeuo pipefail
+# Services read what this writes (apt as _apt, Caddy, OpenSearch, the
+# feed): secrets get their own modes below instead.
+umask 022
 export HOME=/root
 export DEBIAN_FRONTEND=noninteractive
 
 LAB=/root/testlab
 DONE=$LAB/done
 mkdir -p "$DONE"
+chmod 700 "$LAB"
 
 DOMAIN=$(jq -r .domain "$LAB/settings.json")
 EMAIL=$(jq -r '.admin_email // ""' "$LAB/settings.json")
@@ -106,6 +109,7 @@ opensearch() {
   signalith opensearch-certs -out "$LAB/pki" -node localhost -san localhost -san 127.0.0.1 >/dev/null
   local series="${OPENSEARCH_VERSION%%.*}.x"
   curl -fsSL https://artifacts.opensearch.org/publickeys/opensearch-release.pgp | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
+  chmod 644 /usr/share/keyrings/opensearch-keyring
   echo "deb [signed-by=/usr/share/keyrings/opensearch-keyring] https://artifacts.opensearch.org/releases/bundle/opensearch/$series/apt stable main" >"/etc/apt/sources.list.d/opensearch-$series.list"
   apt-get update -q
   if ! dpkg -s opensearch >/dev/null 2>&1; then
@@ -208,6 +212,7 @@ EOF
 
 caddy() {
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor --batch --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+  chmod 644 /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" >/etc/apt/sources.list.d/caddy-stable.list
   apt-get update -q
   apt-get install -y -q caddy
@@ -311,6 +316,7 @@ own_logs() {
   cfg=$(api "/api/agents/config?os=linux&server=https://localhost:9000")
   . /etc/os-release
   curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor --batch --yes -o /usr/share/keyrings/fluentbit-keyring.gpg
+  chmod 644 /usr/share/keyrings/fluentbit-keyring.gpg
   echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/$VERSION_CODENAME $VERSION_CODENAME main" >/etc/apt/sources.list.d/fluent-bit.list
   apt-get update -q >/dev/null
   apt-get install -y -q fluent-bit auditd >/dev/null
@@ -380,7 +386,10 @@ live_feed() {
   fi
   (cd "$LAB/src" && CGO_ENABLED=0 /usr/local/go/bin/go build -trimpath -o /usr/local/bin/signalith-loadgen ./cmd/signalith-loadgen)
   rm -rf /usr/local/go "$LAB/src" /root/go /root/.cache/go-build
-  install -d -m 700 /etc/signalith-feed
+  # The folder is readable by the feed; its token is root's, handed over
+  # by LoadCredential.
+  install -d -m 755 /etc/signalith-feed
+  install -m 600 /dev/null /etc/signalith-feed/token.txt
   sg tokens create -purpose windows "Test lab live feed $(date +%m%d-%H%M%S)" >/etc/signalith-feed/token.txt
   install -m 644 "$CA" /etc/signalith-feed/ca.pem
   # One recorded event every ten seconds, sent as recorded: enough for the
