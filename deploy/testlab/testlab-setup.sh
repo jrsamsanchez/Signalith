@@ -37,12 +37,14 @@ DATA=/srv/data
 CA=/var/lib/signalith/tls/ca.pem
 
 say() { printf '%s  %s\n' "$(date -u +%H:%M:%S)" "$*"; }
+# Failures go to standard error, which the log keeps even where a step's
+# output is thrown away.
 fail() {
-  say "FAILED: $*"
-  say "Fix the cause, then run: sudo testlab-setup"
+  say "FAILED: $*" >&2
+  say "Fix the cause, then run: sudo testlab-setup" >&2
   exit 1
 }
-trap 'say "FAILED at line $LINENO. Run sudo testlab-setup again to carry on."' ERR
+trap 'say "FAILED at line $LINENO. Run sudo testlab-setup again to carry on." >&2' ERR
 
 step() {
   local name=$1
@@ -105,8 +107,8 @@ signalith_package() {
 # ---- 3. OpenSearch ----
 
 opensearch() {
-  rm -rf "$LAB/pki"
-  signalith opensearch-certs -out "$LAB/pki" -node localhost -san localhost -san 127.0.0.1 >/dev/null
+  # Made once: a run again keeps the CA that OpenSearch already trusts.
+  [ -d "$LAB/pki" ] || signalith opensearch-certs -out "$LAB/pki" -node localhost -san localhost -san 127.0.0.1 >/dev/null
   local series="${OPENSEARCH_VERSION%%.*}.x"
   curl -fsSL https://artifacts.opensearch.org/publickeys/opensearch-release.pgp | gpg --dearmor --batch --yes -o /usr/share/keyrings/opensearch-keyring
   chmod 644 /usr/share/keyrings/opensearch-keyring
@@ -156,7 +158,7 @@ YML
   install -d -m 700 "$LAB/os-admin"
   cp "$LAB/pki/opensearch/certs/root-ca.pem" "$LAB/pki/opensearch/certs/admin.pem" "$LAB/pki/opensearch/certs/admin-key.pem" "$LAB/os-admin/"
   rm -f /etc/opensearch/certs/admin.pem /etc/opensearch/certs/admin-key.pem
-  os_admin -X PUT /_snapshot/testlab -H 'Content-Type: application/json' \
+  os_admin /_snapshot/testlab -X PUT -H 'Content-Type: application/json' \
     -d "{\"type\": \"fs\", \"settings\": {\"location\": \"$DATA/snapshots\"}}" >/dev/null
 }
 
