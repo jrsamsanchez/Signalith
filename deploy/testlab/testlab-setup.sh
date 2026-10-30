@@ -106,7 +106,7 @@ signalith_package() {
 
 # ---- 3. OpenSearch ----
 
-opensearch() {
+opensearch_setup() {
   # Made once: a run again keeps the CA that OpenSearch already trusts.
   [ -d "$LAB/pki" ] || signalith opensearch-certs -out "$LAB/pki" -node localhost -san localhost -san 127.0.0.1 >/dev/null
   local series="${OPENSEARCH_VERSION%%.*}.x"
@@ -212,7 +212,7 @@ EOF
 
 # ---- 5. Caddy ----
 
-caddy() {
+caddy_setup() {
   curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --dearmor --batch --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   chmod 644 /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" >/etc/apt/sources.list.d/caddy-stable.list
@@ -517,9 +517,9 @@ EOF
 
 step volume volume
 step signalith signalith_package
-step opensearch opensearch
+step opensearch opensearch_setup
 step signalith-config signalith_config
-step caddy caddy
+step caddy caddy_setup
 step own-logs own_logs
 step sample-data sample_data
 step live-feed live_feed
