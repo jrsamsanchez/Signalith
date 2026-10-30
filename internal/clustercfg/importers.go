@@ -373,6 +373,13 @@ func importUsers(ctx context.Context, a *clusterauth.Docs, f Files, by string) e
 			return fmt.Errorf("the built-in admin's two-step sign-in: %w", err)
 		}
 	}
+	// A built-in admin turned off here is not turned off in the shared
+	// settings, which older servers of the cluster may still read: an
+	// admin turns it off again on the Users page.
+	if off, err := users.ReadFileBuiltinDisabled(c.UsersFile()); err == nil && off {
+		f.log().Warn("the built-in admin was turned off on this server; it is on in the shared settings: turn it off again on Settings > Users",
+			"user", builtin)
+	}
 	return recordAuth(ctx, f, a)
 }
 

@@ -349,6 +349,11 @@ type UserFacts struct {
 	// OtherAdmins counts enabled admins other than the built-in admin,
 	// and Others every other enabled account.
 	OtherAdmins, Others int
+	// LocalAdmins counts the enabled local admins of the provider: while
+	// there is one, the built-in admin can be turned off.
+	LocalAdmins int
+	// BuiltinOff is true while the built-in admin is turned off.
+	BuiltinOff bool
 	// Local is true when there are local users at all.
 	Local bool
 	// StaleTemporary lists those who haven't changed a temporary

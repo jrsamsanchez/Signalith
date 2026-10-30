@@ -118,8 +118,8 @@ Accounts and sign-in
   [good]        Everyday sign-in
                 Only the built-in admin signs in so far.
                 Make it stronger: Give yourself an admin account on the Users
-                page and keep the built-in admin for emergencies. The audit
-                log then shows who did what.
+                page, then turn the built-in admin off and keep it for
+                emergencies. The audit log then shows who did what.
   [good]        Sign-in sessions
                 People are signed out after 1 hour without use, unless they
                 choose Keep me signed in, and every sign-in ends after 1 day.

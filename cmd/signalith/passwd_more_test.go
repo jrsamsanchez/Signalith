@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // passwdEnv clears what would pick another state folder or password.
@@ -139,5 +140,40 @@ func TestHTTPSSummaryModes(t *testing.T) {
 	c.Server.TLSCert, c.Server.TLSKey = filepath.Join(dir, "cert.pem"), filepath.Join(dir, "key.pem")
 	if got := httpsSummary(c); !strings.Contains(got, "HTTPS is on with the certificate in") || !strings.Contains(got, "cert.pem") {
 		t.Errorf("files: %s", got)
+	}
+}
+
+// signalith passwd is the way back in when every other admin is locked
+// out, so it turns a built-in admin that was turned off on again.
+func TestPasswdTurnsTheBuiltinAdminOn(t *testing.T) {
+	passwdEnv(t)
+	path := initForPasswd(t)
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := users.SetFileBuiltinDisabled(c.UsersFile(), true); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "harbor-kettle-violet-9")
+	out := captureStdout(t, func() {
+		if err := cmdPasswd([]string{"-c", path}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if !strings.Contains(out, builtinOnAgain) {
+		t.Errorf("passwd does not say it turned the built-in admin on:\n%s", out)
+	}
+	if off, err := users.ReadFileBuiltinDisabled(c.UsersFile()); err != nil || off {
+		t.Errorf("still turned off: %v, %v", off, err)
+	}
+	// Not turned off: nothing is said.
+	out = captureStdout(t, func() {
+		if err := cmdPasswd([]string{"-c", path}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if strings.Contains(out, builtinOnAgain) {
+		t.Errorf("passwd says it turned on a built-in admin that was on:\n%s", out)
 	}
 }

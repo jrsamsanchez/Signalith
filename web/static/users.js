@@ -266,6 +266,7 @@
   }
 
   function statusOf(u) {
+    if (u.disabled && u.source === 'builtin') return ['off', 'Turned off', 'Cannot sign in until an admin turns it on, or someone runs signalith passwd on a server.'];
     if (u.disabled) return ['off', 'Disabled', 'Cannot sign in until an admin enables them.'];
     if (u.refused) return ['off', 'No access', `Refused by the directory: ${u.refused}. Access comes back if a later sign-in is accepted.`];
     if (u.pending) return ['temp', 'Not signed in yet', 'Added by provisioning (SCIM). Their role comes from their identity provider groups when they first sign in.'];
@@ -313,8 +314,9 @@
     if (has('change_password')) items.push({ icon: 'key-round', label: 'Change password', run: () => openChangePassword() });
     if (has('reset_password')) items.push({ icon: 'key-round', label: 'Reset password', run: () => openResetPassword(u) });
     if (has('reset_mfa')) items.push({ icon: 'shield-off', label: 'Reset two-step sign-in', run: () => resetMFA(u) });
-    if (has('disable')) items.push({ icon: 'user-x', label: 'Disable', run: () => setDisabled(u, true) });
-    if (has('enable')) items.push({ icon: 'user-check', label: 'Enable', run: () => setDisabled(u, false) });
+    const builtin = u.source === 'builtin';
+    if (has('disable')) items.push({ icon: 'user-x', label: builtin ? 'Turn off' : 'Disable', run: () => setDisabled(u, true) });
+    if (has('enable')) items.push({ icon: 'user-check', label: builtin ? 'Turn on' : 'Enable', run: () => setDisabled(u, false) });
     if (has('delete')) items.push('sep', { icon: 'trash-2', label: 'Delete', danger: true, run: () => deleteUser(u) });
     if (!items.length) return null;
     if (items[0] === 'sep') items.shift();
@@ -568,24 +570,29 @@
   }
 
   async function setDisabled(u, off) {
+    const builtin = u.source === 'builtin';
     if (off) {
       const ok = await caseConfirm({
-        title: `Disable ${u.username}?`,
-        text: u.source === 'directory' || u.source === 'sso'
-          ? `They are signed out now and stay out, even if the ${u.source === 'sso' ? 'identity provider' : 'directory'} lets them in, until you enable them.`
-          : 'They are signed out now and cannot sign in until you enable them.',
-        confirm: 'Disable',
+        title: builtin ? `Turn off the built-in admin ${u.username}?` : `Disable ${u.username}?`,
+        text: builtin
+          ? 'It is signed out everywhere and cannot sign in until an admin turns it on again here. If every admin is ever locked out, run signalith passwd on a server: it sets a new password and turns the built-in admin back on.'
+          : u.source === 'directory' || u.source === 'sso'
+            ? `They are signed out now and stay out, even if the ${u.source === 'sso' ? 'identity provider' : 'directory'} lets them in, until you enable them.`
+            : 'They are signed out now and cannot sign in until you enable them.',
+        confirm: builtin ? 'Turn off' : 'Disable',
       });
       if (!ok) { focusRow(u.username); return; }
     }
     try {
-      await api('api/users/' + encodeURIComponent(u.username), { disabled: off }, 'PUT', ifMatch(u, usersShared()));
+      // The built-in admin has no version to match: only turned off or on.
+      await api('api/users/' + encodeURIComponent(u.username), { disabled: off }, 'PUT', builtin ? undefined : ifMatch(u, usersShared()));
     } catch (e) {
       toastChangeFailed(u, e, off ? 'Couldn’t disable ' + u.username : 'Couldn’t enable ' + u.username);
       focusRow(u.username);
       return;
     }
-    toast(off ? `${u.username} is signed out and cannot sign in.` : `${u.username} can sign in again.`, null, { title: off ? 'User disabled' : 'User enabled' });
+    if (builtin) toast(off ? `${u.username} is signed out and cannot sign in.` : `${u.username} can sign in again.`, null, { title: off ? 'Built-in admin turned off' : 'Built-in admin turned on' });
+    else toast(off ? `${u.username} is signed out and cannot sign in.` : `${u.username} can sign in again.`, null, { title: off ? 'User disabled' : 'User enabled' });
     focusRow(u.username);
     loadUsers({ quiet: true }).then(() => focusRow(u.username));
   }

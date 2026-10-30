@@ -128,8 +128,11 @@ func (d *Docs) validateUser(name string, b *UserBody) error {
 		if c, ok := d.clusterBody(); !ok || c.Builtin == "" || c.Builtin != name && (c.BuiltinPrev == "" || c.BuiltinPrev != name) {
 			return errors.New("it is a built-in admin the cluster document does not name")
 		}
-		if b.Role != users.Admin || b.Disabled {
-			return errors.New("the built-in admin must be an enabled admin")
+		// It may be turned off, from shared.LevelBuiltinOff: a version
+		// before it refuses the document, so no server writes it so
+		// before every server reads that level.
+		if b.Role != users.Admin {
+			return errors.New("the built-in admin must be an admin")
 		}
 	default:
 		return fmt.Errorf("its source %q is not one this version knows", b.Source)

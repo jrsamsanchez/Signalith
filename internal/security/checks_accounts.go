@@ -33,6 +33,10 @@ func checkBuiltinPassword(f *Facts) *Check {
 	}
 	removeEnv := "Then remove SIGNALITH_ADMIN_PASSWORD from where Signalith is started."
 	switch {
+	case f.Users.BuiltinOff && !a.Public:
+		// Its password cannot sign in; signalith passwd sets a new one
+		// when it is turned on again from a server.
+		return &Check{State: Good, Line: "The built-in admin is turned off, so its password can't be used to sign in."}
 	case a.Public:
 		fix.Steps = append(fix.Steps, removeEnv)
 		return &Check{State: Risk, Line: "The built-in admin's password is change-me-please, an example anyone can look up.", Fix: fix}
@@ -58,26 +62,54 @@ func checkBuiltinPassword(f *Facts) *Check {
 	return &Check{State: Good, Line: line + "."}
 }
 
-// checkBuiltinUse: accounts.builtin_use.
+// checkBuiltinUse: accounts.builtin_use. The built-in admin is a
+// well-known name with full rights that every install has, so once
+// people have admin accounts of their own it is best turned off (CIS
+// asks to disable or rename default accounts): an admin turns it on again
+// when needed, and signalith passwd on a server does if every admin is
+// locked out.
 func checkBuiltinUse(f *Facts) *Check {
 	u := f.Users
 	last := u.BuiltinLastSignIn
-	if u.OtherAdmins > 0 && last != nil && f.Now.Sub(*last) <= 7*24*time.Hour {
+	turnOff := "Turn the built-in admin off on the Users page (Actions, Disable). Turn it on again there when you need it; if every admin is ever locked out, signalith passwd on a server turns it on again."
+	if u.BuiltinOff {
+		n := u.OtherAdmins
+		return &Check{State: Good, Line: "The built-in admin is turned off, and " + itoa(n) +
+			plural(n, " person has an admin account of their own.", " people have admin accounts of their own.")}
+	}
+	if u.LocalAdmins > 0 && last != nil && f.Now.Sub(*last) <= 7*24*time.Hour {
 		n := u.OtherAdmins
 		return &Check{State: Attention, Line: "The built-in admin signed in " + ago(f.Now, *last) + ", though " + itoa(n) +
 			plural(n, " person has an admin account of their own", " people have admin accounts of their own") + ". Keep it for emergencies.",
-			Fix: &Fix{Steps: []string{"Sign in with your own admin account day to day, and keep the built-in admin for emergencies."},
+			Fix: &Fix{Steps: []string{"Sign in with your own admin account day to day.", turnOff},
 				Page: &PageLink{ID: "users", Label: "Open Users"}, Docs: doc(docUsersBuiltin)}}
+	}
+	if u.LocalAdmins > 0 {
+		n := u.LocalAdmins
+		when := " It has never signed in."
+		if last != nil {
+			when = " It last signed in " + ago(f.Now, *last) + "."
+		}
+		return &Check{State: Attention, Line: "The built-in admin is still on, though " + itoa(n) +
+			plural(n, " person has a local admin account", " people have local admin accounts") + " of their own." + when,
+			Fix: &Fix{Steps: []string{turnOff}, Page: &PageLink{ID: "users", Label: "Open Users"}, Docs: doc(docUsersBuiltin)}}
 	}
 	if u.Others > 0 || u.OtherAdmins > 0 {
 		when := "The built-in admin has never signed in."
 		if last != nil {
 			when = "The built-in admin last signed in " + ago(f.Now, *last) + "."
 		}
-		return &Check{State: Good, Line: "People sign in with their own accounts. " + when}
+		c := &Check{State: Good, Line: "People sign in with their own accounts. " + when}
+		if u.OtherAdmins > 0 {
+			// Directory and single sign-on admins' roles can change outside
+			// Signalith, so they don't let the built-in admin be turned off.
+			c.Tip = &Fix{Steps: []string{"Give one person a local admin account on the Users page, then turn the built-in admin off."},
+				Page: &PageLink{ID: "users", Label: "Open Users"}, Docs: doc(docUsersBuiltin)}
+		}
+		return c
 	}
 	return &Check{State: Good, Line: "Only the built-in admin signs in so far.",
-		Tip: &Fix{Steps: []string{"Give yourself an admin account on the Users page and keep the built-in admin for emergencies. The audit log then shows who did what."},
+		Tip: &Fix{Steps: []string{"Give yourself an admin account on the Users page, then turn the built-in admin off and keep it for emergencies. The audit log then shows who did what."},
 			Page: &PageLink{ID: "users", Label: "Open Users"}}}
 }
 

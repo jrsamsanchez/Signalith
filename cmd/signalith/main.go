@@ -743,6 +743,7 @@ func cmdPasswd(args []string) error {
 			fmt.Printf("Password updated. It is kept in %s and replaces the first password.\n", hashFile)
 			fmt.Println("Restart the server to apply it. With the Docker quick start, from the Signalith folder: docker compose -f deploy/docker/docker-compose.yml restart signalith")
 		}
+		builtinOnInFile(*path)
 		if member {
 			fmt.Println("This server is a member of a cluster: the password is used only while it keeps its users in its own files. " +
 				"While it shares the users of the cluster, the cluster's password applies and this file is not used, not even while OpenSearch is unavailable " +
@@ -757,6 +758,7 @@ func cmdPasswd(args []string) error {
 		return err
 	}
 	fmt.Println("Password updated. Restart the server to apply it.")
+	builtinOnInFile(*path)
 	if member {
 		fmt.Println("This server is a member of a cluster: auth.admin_password_hash in signalith.yaml changed, so the next time this server starts " +
 			"with OpenSearch available and sharing the users of the cluster, it becomes the password of every server.")
@@ -766,6 +768,27 @@ func cmdPasswd(args []string) error {
 	}
 	firstPasswordReplaced(os.Stdout, *path, stateDir)
 	return nil
+}
+
+// builtinOnInFile turns the built-in admin on again in the users file of
+// the config at path, when it was turned off: signalith passwd is the way
+// back in when every other admin is locked out.
+func builtinOnInFile(path string) {
+	c, err := config.Load(path)
+	if err != nil {
+		return
+	}
+	if _, err := os.Stat(c.UsersFile()); err != nil {
+		return // no users file: nothing was turned off
+	}
+	on, err := users.SetFileBuiltinDisabled(c.UsersFile(), false)
+	if err != nil {
+		fmt.Printf("Warning: could not check whether the built-in admin is turned off in %s: %v\n", c.UsersFile(), err)
+		return
+	}
+	if on {
+		fmt.Println(builtinOnAgain)
+	}
 }
 
 // passwdAdminUser returns the built-in admin's name from the config at
@@ -1829,6 +1852,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 					return ""
 				}
 				return "API tokens need every server on a version that supports them: upgrade the others first."
+			}
+			srv.SharedUsers.BuiltinOff = func() string {
+				if rt.BuiltinOff() {
+					return ""
+				}
+				return "Turning off the built-in admin needs every server on a version that supports it: upgrade the others first."
 			}
 		}
 	}

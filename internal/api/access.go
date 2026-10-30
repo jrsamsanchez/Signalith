@@ -429,7 +429,7 @@ const sessionUncheckedPage = `<!doctype html>
 // for every server.
 func (s *Server) principalFor(name string) *principal {
 	if s.isBuiltin(name) {
-		if !s.builtinReadable() {
+		if !s.builtinReadable() || s.builtinOff() {
 			return nil
 		}
 		p := s.builtinPrincipal()
@@ -518,6 +518,8 @@ var (
 		msg: "Username and password don't match."}
 	errDisabled = &signInError{status: http.StatusForbidden, code: "disabled",
 		msg: "This account is disabled. Ask an admin to enable it."}
+	errBuiltinOff = &signInError{status: http.StatusForbidden, code: "disabled",
+		msg: "The built-in admin is turned off. Sign in with your own account, or ask an admin to turn it on. Locked out? Run signalith passwd on the server."}
 	errTenantOff = &signInError{status: http.StatusForbidden, code: "tenant_disabled",
 		msg: "Your organization's access to Signalith is turned off. Ask your provider."}
 	errPasswordExpired = &signInError{status: http.StatusForbidden, code: "password_expired",
@@ -749,6 +751,9 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 		ok, local := s.checkBuiltinPassword(password, true)
 		if !ok {
 			return nil, "wrong password", errWrongCredentials
+		}
+		if s.builtinOff() {
+			return nil, "built-in admin turned off", errBuiltinOff
 		}
 		store.RecordBuiltinSignIn(ctx)
 		p := s.builtinPrincipal()
