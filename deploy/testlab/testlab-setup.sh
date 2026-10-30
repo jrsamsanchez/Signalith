@@ -248,13 +248,15 @@ $DOMAIN {
 		# The client's own address, never one it sent.
 		header_up X-Forwarded-For {remote_host}
 		transport http {
-			tls_trusted_ca_certs /etc/caddy/signalith-ca.pem
+			tls_trust_pool file /etc/caddy/signalith-ca.pem
 			tls_server_name localhost
 		}
 	}
 }
 EOF
-  caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
+  # As caddy: validating opens the log file, which the service must own.
+  chown -R caddy:caddy /var/log/caddy
+  runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
   systemctl enable -q caddy
   systemctl reload-or-restart caddy
 }
