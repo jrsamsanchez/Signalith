@@ -138,7 +138,7 @@ which averaged 6% CPU:
 
 For realistic Windows data, size OpenSearch's storage first: local SSD or NVMe disks,
 more memory, or more nodes. Joining the batches agents send at the same time into one
-write (Signalith 0.3.3) roughly tripled the rate on this lab.
+write (Signalith 0.4.0) roughly tripled the rate on this lab.
 
 ## Known limits
 
