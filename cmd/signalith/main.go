@@ -743,6 +743,7 @@ func cmdPasswd(args []string) error {
 			fmt.Printf("Password updated. It is kept in %s and replaces the first password.\n", hashFile)
 			fmt.Println("Restart the server to apply it. With the Docker quick start, from the Signalith folder: docker compose -f deploy/docker/docker-compose.yml restart signalith")
 		}
+		builtinOnInFile(*path)
 		if member {
 			fmt.Println("This server is a member of a cluster: the password is used only while it keeps its users in its own files. " +
 				"While it shares the users of the cluster, the cluster's password applies and this file is not used, not even while OpenSearch is unavailable " +
@@ -757,6 +758,7 @@ func cmdPasswd(args []string) error {
 		return err
 	}
 	fmt.Println("Password updated. Restart the server to apply it.")
+	builtinOnInFile(*path)
 	if member {
 		fmt.Println("This server is a member of a cluster: auth.admin_password_hash in signalith.yaml changed, so the next time this server starts " +
 			"with OpenSearch available and sharing the users of the cluster, it becomes the password of every server.")
@@ -767,6 +769,33 @@ func cmdPasswd(args []string) error {
 	firstPasswordReplaced(os.Stdout, *path, stateDir)
 	return nil
 }
+
+// builtinOnInFile has a built-in admin turned off in the users file of
+// the config at path turned on again when the server next starts, with
+// the new password: signalith passwd is the way back in when every other
+// admin is locked out, and the old password must not work meanwhile.
+func builtinOnInFile(path string) {
+	c, err := config.Load(path)
+	if err != nil {
+		return
+	}
+	if _, err := os.Stat(c.UsersFile()); err != nil {
+		return // no users file: nothing was turned off
+	}
+	off, err := users.SetFileBuiltinOnAtStart(c.UsersFile())
+	if err != nil {
+		fmt.Printf("Warning: could not check whether the built-in admin is turned off in %s: %v\n", c.UsersFile(), err)
+		return
+	}
+	if off {
+		fmt.Println(builtinOnAtRestart)
+	}
+}
+
+// builtinOnAtRestart tells that the built-in admin comes back on with the
+// new password.
+const builtinOnAtRestart = "The built-in admin is turned off; it turns on again when the server restarts with the new password. " +
+	"Once you are done, turn it off again on Settings > Users."
 
 // passwdAdminUser returns the built-in admin's name from the config at
 // path, for checking that the new password does not contain it, or the
@@ -1830,6 +1859,12 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				}
 				return "API tokens need every server on a version that supports them: upgrade the others first."
 			}
+			srv.SharedUsers.BuiltinOff = func() string {
+				if rt.BuiltinOff() {
+					return ""
+				}
+				return "Turning off the built-in admin needs every server on a version that supports it: upgrade the others first."
+			}
 		}
 	}
 	in.jobs.Go(func() { srv.RunContentUpdates(ctx) })
@@ -2485,6 +2520,14 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 	}
 	if r.people.BuiltinAdmin != c.Auth.AdminUser {
 		r.people.BuiltinAdmin = c.Auth.AdminUser
+	}
+	// signalith passwd asks for a built-in admin turned off to be on again
+	// once the server starts with its new password.
+	if on, err := r.people.StartBuiltin(context.Background()); err != nil {
+		r.log.Warn("could not turn the built-in admin on again as signalith passwd asked", "user", c.Auth.AdminUser, "err", err)
+	} else if on {
+		r.log.Info("user enabled", "audit", true, "by", "signalith passwd", "user", c.Auth.AdminUser, "source", users.SourceBuiltin,
+			"reason", "a new password was set on the server")
 	}
 	fromFile, err := c.LDAP()
 	if err != nil {

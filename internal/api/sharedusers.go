@@ -39,6 +39,10 @@ type SharedUsers struct {
 	// APITokens says why API tokens cannot be made now (the cluster is
 	// below their level), "" when they can; nil is always.
 	APITokens func() string
+	// BuiltinOff says why the built-in admin cannot be turned off now
+	// (the cluster is below shared.LevelBuiltinOff), "" when it can; nil
+	// is always.
+	BuiltinOff func() string
 	// Spent records the sign-in proofs used once, such as SAML
 	// assertions, for every server; nil keeps only this server's record.
 	Spent *clusterauth.Spent
@@ -137,6 +141,32 @@ func (s *Server) degradedRefusal(p *principal) error {
 		return errDegraded
 	}
 	return nil
+}
+
+// builtinOff reports whether the built-in admin is turned off: it then
+// cannot sign in, and its sessions end.
+func (s *Server) builtinOff() bool {
+	return s.userStore().BuiltinDisabled()
+}
+
+// builtinNoticed writes the audit record of the built-in admin turned off
+// or on other than on this server's Users page (users.Store.SetBuiltinNoticed).
+func (s *Server) builtinNoticed(off bool, why string) {
+	msg := "user enabled"
+	if off {
+		msg = "user disabled"
+	}
+	s.Log.Info(msg, "audit", true, "by", "signalith", "user", s.builtinName(), "source", users.SourceBuiltin, "reason", why)
+}
+
+// builtinOffRefused says why the built-in admin cannot be turned off on
+// this server now, "" when it can: every server of a cluster must read
+// shared.LevelBuiltinOff.
+func (s *Server) builtinOffRefused() string {
+	if s.SharedUsers != nil && s.SharedUsers.BuiltinOff != nil {
+		return s.SharedUsers.BuiltinOff()
+	}
+	return ""
 }
 
 // builtinReadable reports whether the built-in admin may be signed in as

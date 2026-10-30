@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/auth"
+	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -334,6 +335,16 @@ func (s *Server) builtinView(me string) userView {
 			v.Actions = []string{"change_password"}
 		}
 	}
+	v.Disabled = s.builtinOff()
+	if !v.You {
+		// Another admin turns it off once they can take over, and on
+		// again when it is needed.
+		if v.Disabled {
+			v.Actions = append(v.Actions, "enable")
+		} else {
+			v.Actions = append(v.Actions, "disable")
+		}
+	}
 	v.MFA = s.userStore().MFAOn(name)
 	if v.MFA && !v.You {
 		v.Actions = append(v.Actions, "reset_mfa")
@@ -413,17 +424,18 @@ func writeUserError(w http.ResponseWriter, err error) {
 
 // builtinTarget refuses changes to the built-in admin, which lives in
 // signalith.yaml, or, on the servers of a cluster, in the shared
-// settings, where only its own user may change its password.
+// settings, where only its own user may change its password. Other
+// admins may only turn it off or on (setBuiltinDisabled).
 func (s *Server) builtinTarget(w http.ResponseWriter, name string) bool {
 	if !s.isBuiltin(name) {
 		return false
 	}
 	if s.SharedUsers != nil {
-		writeError(w, http.StatusConflict, errors.New("the built-in admin cannot be changed here: its own user changes its password with Change password in the user menu, "+
+		writeError(w, http.StatusConflict, errors.New("the built-in admin cannot be changed here, only turned off or on: its own user changes its password with Change password in the user menu, "+
 			"or anyone with access to a server with signalith passwd"))
 		return true
 	}
-	writeError(w, http.StatusConflict, errors.New("the built-in admin is set in signalith.yaml and cannot be changed here; use signalith passwd on the server to change its password"))
+	writeError(w, http.StatusConflict, errors.New("the built-in admin is set in signalith.yaml and can only be turned off or on here; use signalith passwd on the server to change its password"))
 	return true
 }
 
@@ -521,6 +533,10 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if s.otherTenantsUser(w, name) {
 		return
 	}
+	if s.isBuiltin(name) && req.Disabled != nil && req.Name == nil && req.Email == nil && (req.Role == nil || *req.Role == users.Admin) {
+		s.setBuiltinDisabled(w, r, *req.Disabled)
+		return
+	}
 	if s.builtinTarget(w, name) || !s.usersWritable(w) {
 		return
 	}
@@ -570,6 +586,59 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"user": s.viewUser(u, userOf(r))})
+}
+
+// setBuiltinDisabled turns the built-in admin off or on (PUT
+// /api/users/{builtin} with only "disabled"). Another admin does it,
+// never the built-in admin itself, and it is turned off only while
+// another enabled local admin exists. Turning it off ends its sessions.
+func (s *Server) setBuiltinDisabled(w http.ResponseWriter, r *http.Request, off bool) {
+	if !s.usersWritable(w) {
+		return
+	}
+	name := s.builtinName()
+	if s.isBuiltin(userOf(r)) {
+		if off {
+			writeError(w, http.StatusConflict, errors.New("you cannot turn off the account you are signed in with; sign in with your own admin account and turn the built-in admin off there"))
+			return
+		}
+		// Signed in as it, it is on.
+		writeJSON(w, http.StatusOK, map[string]any{"user": s.builtinView(userOf(r))})
+		return
+	}
+	if off {
+		if why := s.builtinOffRefused(); why != "" {
+			writeError(w, http.StatusConflict, errors.New(why))
+			return
+		}
+	}
+	changed, err := s.userStore().SetBuiltinDisabled(changeContext(r), off)
+	switch {
+	case errors.Is(err, users.ErrBuiltinLastAdmin):
+		writeError(w, http.StatusConflict, err)
+		return
+	case errors.Is(err, users.ErrNoBuiltinOff), errors.Is(err, clusterauth.ErrBuiltinOffLevel):
+		writeError(w, http.StatusConflict, err)
+		return
+	case err != nil:
+		writeUserError(w, err)
+		return
+	}
+	if changed {
+		if off {
+			// With shared users its session epoch moved on, which ends its
+			// sessions on every server; this ends those kept here.
+			ended := s.sessions().EndUser(r.Context(), name, "")
+			s.audit(r, "user disabled", "user", name, "source", users.SourceBuiltin, "sessions_ended", ended)
+		} else {
+			s.audit(r, "user enabled", "user", name, "source", users.SourceBuiltin)
+		}
+		if s.security().Report() != nil {
+			// The Security page's checks about the built-in admin change.
+			go s.security().run(context.WithoutCancel(r.Context()), s.gatherSecurity, true)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"user": s.builtinView(userOf(r))})
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {

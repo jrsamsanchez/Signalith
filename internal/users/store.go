@@ -350,7 +350,8 @@ func GeneratePassword() string {
 // change.
 type Store struct {
 	// BuiltinAdmin is the built-in admin's name from signalith.yaml. The
-	// name is reserved, and that account always counts as an enabled admin.
+	// name is reserved, and that account counts as an enabled admin unless
+	// it is turned off (SetBuiltinDisabled).
 	BuiltinAdmin string
 	// Builtin, when set, names the built-in admin and its password hash
 	// instead of BuiltinAdmin: the servers of a cluster keep it in the
@@ -366,6 +367,13 @@ type Store struct {
 	// off the move of the users file into the shared settings with it.
 	Hold func() (release func(), err error)
 	Now  func() time.Time
+	// offMu guards seenOff, whether the last copy had the built-in admin
+	// turned off, ownOff, a change this store is making, and noticed (see
+	// SetBuiltinNoticed).
+	offMu   sync.Mutex
+	seenOff *bool
+	ownOff  *bool
+	noticed func(off bool, why string)
 
 	b    Backend
 	path string
@@ -449,6 +457,7 @@ func (s *Store) load() error {
 	s.mu.Lock()
 	s.users, s.hashes, s.etags, s.mfa = people, hashes, etags, mfa
 	s.mu.Unlock()
+	s.builtinAfterLoad()
 	return nil
 }
 
@@ -628,9 +637,12 @@ func recordUser(r Record) User {
 }
 
 // adminsLeft counts the enabled admins if the named user had role and
-// disabled instead. The built-in admin always counts.
+// disabled instead. The built-in admin counts unless it is turned off.
 func (s *Store) adminsLeft(name string, role Role, disabled bool) int {
 	builtin := s.builtinName()
+	if builtin != "" && s.builtinOff() {
+		builtin = ""
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	n := 0

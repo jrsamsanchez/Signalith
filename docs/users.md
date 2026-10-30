@@ -68,10 +68,12 @@ allow, the page reloads to match the new role and says why.
 ## The built-in admin
 
 The account in `auth.admin_user` (`signalithadmin` on a new install, `admin` on one made
-before 0.3.1, unless you changed it) always works, even
+before 0.3.1, unless you changed it) works even
 when the directory server is down or every other admin has been removed, so you can
-always get back in. It shows on the Users page as **Built-in** and cannot be edited,
-disabled or deleted there. Change its password on the server (on servers that share
+always get back in, unless you turn it off (see
+[Turning the built-in admin off](#turning-the-built-in-admin-off)). It shows on the
+Users page as **Built-in** and cannot be edited or deleted there. Change its password
+on the server (on servers that share
 their users, see [The built-in admin on several servers](#the-built-in-admin-on-several-servers)):
 
 ```sh
@@ -120,6 +122,63 @@ curl -sk -u "signalithadmin:$FIRST" -H 'Content-Type: application/json' \
 
 Keep its password somewhere safe and use your own account day to day. No local user
 or directory user can have the built-in admin's name.
+
+### Turning the built-in admin off
+
+Every install has the built-in admin, with the same well-known name and full rights, so
+once people sign in with admin accounts of their own it is best turned off (CIS
+benchmarks ask the same of default accounts). The Security page recommends it as soon
+as you can.
+
+- **Turn it off** on the Users page: **Actions** on the built-in admin's row, then
+  **Turn off**. Signalith asks for your password or code again first. Another admin
+  does it, signed in with their own account: the built-in admin cannot turn itself off.
+- **Only while another admin can take over.** It turns off only while at least one
+  other enabled local admin exists (directory and single sign-on admins don't count,
+  since their role can change outside Signalith, and neither do a tenant's admins).
+  While it is off, that last local admin cannot be disabled, demoted or deleted.
+  Give that admin two-step sign-in or a passkey.
+- **What happens.** Its sessions end on every server at once, and its password,
+  passkeys and HTTP Basic credentials stop working. A password sign-in is answered as
+  a wrong password (`401`, `"code": "wrong_credentials"`), so the well-known name never
+  confirms a guessed password; a passkey gets `403` with `"code": "disabled"`. API
+  tokens are their own accounts and keep working; revoke them on the API tokens tab if
+  they should stop too. The audit log records `user disabled` (and `user enabled`) with
+  `source=builtin` and who did it.
+- **Never without an admin.** Each server checks for the other admin on its own copy of
+  the users, so two changes made at the same moment on two servers (one turns the
+  built-in admin off while another disables the last other admin) could both pass.
+  Whenever a server then sees the built-in admin off and no other enabled local admin,
+  it turns the built-in admin on again, within seconds, and the audit log records
+  `user enabled` with `reason="no other enabled local admin was left"`. A change made
+  to users.json by hand is recorded too.
+- **Turn it on again** on the Users page (**Turn on**), as any admin.
+- **Locked out?** If every other admin is locked out, run `signalith passwd` on a
+  server, as above: setting the built-in admin's password from the server also turns it
+  on again, and says so. On servers that share their users this works at once on every
+  server. A server that keeps its own users uses the new password only from its next
+  start, so the built-in admin stays off until then (the old password must not work
+  again meanwhile) and turns on as the server starts, with `user enabled` and
+  `by=signalith passwd` in the audit log; restart the server, as `signalith passwd`
+  says. Sign in, fix what went wrong, and turn it off again. `signalith passwd -local`
+  does not turn it on.
+- **While OpenSearch is down.** On servers that share their users, the
+  `signalith passwd -local` break-glass password stops working too while the built-in
+  admin is off, as long as the server still has its copy of the shared settings. Local
+  admins whose copy is recent can still sign in then (see
+  [When OpenSearch cannot be used](#when-opensearch-cannot-be-used)); after a long
+  outage, with no recent copy, nobody can, until OpenSearch answers again or you run
+  `signalith passwd` once it does. A server that has no copy of the shared settings at
+  all still takes the `-local` password.
+- **On several servers** it can be turned off once every server runs a version that
+  supports it (the cluster's level 12). Until then the Users page says to upgrade the
+  others first. A server that keeps its own users and is turned into a member of a
+  cluster brings the built-in admin in turned off once the cluster is at that level;
+  below it, it comes in on, with `user enabled` in the audit log, so turn it off again
+  later.
+- **Going back to an older version** on a server that keeps its own users drops the
+  setting, so the built-in admin is on again there; turn it off again after the next
+  upgrade.
 
 ## Managing local users
 
@@ -992,7 +1051,7 @@ the Settings page and restarts are logged the same way; see
 | `user created` | `by`, `user`, `role`, `must_change_password` |
 | `user changed` | `by`, `user`, `fields` |
 | `user role changed` | `by`, `user`, `from`, `to` |
-| `user disabled`, `user enabled` | `by`, `user`, `sessions_ended` |
+| `user disabled`, `user enabled` | `by`, `user`, `sessions_ended`; `source=builtin` for the built-in admin |
 | `user deleted` | `by`, `user`, `source`, `role`, `sessions_ended` |
 | `password reset` | `by`, `user`, `sessions_ended` |
 | `password changed` | `by`, `user`, `other_sessions_ended` |
@@ -1355,22 +1414,23 @@ the users wait to be brought in (see
 `actions` lists what the signed-in admin may do to that user: `edit` (name and
 email), `role`, `reset_password`, `reset_mfa`, `disable` or `enable`, and `delete`; and, on the
 built-in admin's own row when the users are shared, `change_password` (with
-`POST /api/me/password`). A directory
+`POST /api/me/password`). On the built-in admin's row, other admins get `disable` or
+`enable`, and `"disabled": true` means it is turned off. A directory
 user the directory no longer lets in has `"role": ""` and `"refused"` saying why, for
 example `"in no group mapped to a role"`.
 
 | Route | Body | Reply |
 | --- | --- | --- |
 | `POST /api/users` | `{"username", "name", "email", "role", "password", "must_change_password"}`; only `username` is required. `role` defaults to `viewer`, an empty `password` makes one up, `must_change_password` defaults to `true` | `201 {"user": {...}, "temporary_password": "kqpp-bsqy-b6hq-mwfm"}` (`temporary_password` only when made up) |
-| `PUT /api/users/{username}` | Any of `{"name", "email", "role", "disabled"}` | `{"user": {...}}` |
+| `PUT /api/users/{username}` | Any of `{"name", "email", "role", "disabled"}`; for the built-in admin only `{"disabled"}`, which turns it off or on (see [Turning the built-in admin off](#turning-the-built-in-admin-off)) | `{"user": {...}}` |
 | `POST /api/users/{username}/password` | Optional `{"password"}` | `{"user": {...}, "temporary_password": "..."}` |
 | `DELETE /api/users/{username}` | | `{"deleted": "priya"}` |
 
 Errors are `{"error": "..."}`, with `"field"` naming the form field when one value is
 the problem (`username`, `name`, `email`, `role`, `password`): `400` for a bad value,
 `404` for an unknown user, `409` for a taken name, the built-in admin, a change to
-your own account, the last admin, or a directory user's name, email, role or
-password.
+your own account, the last admin, turning the built-in admin off while no other
+enabled local admin exists, or a directory user's name, email, role or password.
 
 `PUT` and `DELETE /api/users/{username}` and `POST /api/users/{username}/password`
 take an optional `If-Match` header with the user's `etag`. When the user changed

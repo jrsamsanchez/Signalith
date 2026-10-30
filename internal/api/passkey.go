@@ -674,6 +674,12 @@ func (s *Server) passkeySignIn(r *http.Request, a *passkeyAnswer) (*principal, e
 			attempt.Done()
 			return nil, errDegraded
 		}
+		if s.builtinOff() {
+			attempt.Done()
+			s.Log.Warn("sign-in failed", slices.Concat([]any{"audit", true, "user", name}, from.logAttrs(),
+				[]any{"method", "passkey", "reason", "built-in admin turned off"})...)
+			return nil, errBuiltinOff
+		}
 		store.RecordBuiltinSignIn(clusterauth.WithMethod(r.Context(), "passkey"))
 		p = s.builtinPrincipal()
 	default:

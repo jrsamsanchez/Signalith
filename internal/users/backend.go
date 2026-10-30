@@ -93,6 +93,11 @@ type storeFile struct {
 	Users             []storedUser `json:"users"`
 	BuiltinLastSignIn *time.Time   `json:"builtin_last_sign_in,omitempty"`
 	BuiltinMFA        *StoredMFA   `json:"builtin_mfa,omitempty"`
+	// BuiltinDisabled is set while the built-in admin is turned off.
+	BuiltinDisabled bool `json:"builtin_disabled,omitempty"`
+	// BuiltinOnAtStart turns the built-in admin on when a server next
+	// starts, with the password signalith passwd just set.
+	BuiltinOnAtStart bool `json:"builtin_on_at_start,omitempty"`
 }
 
 // fileBackend keeps users in a JSON file, or in memory only when it has
@@ -118,6 +123,8 @@ type fileBackend struct {
 	recs        map[string]Record
 	builtinLast *time.Time
 	builtinMFA  *MFA
+	builtinOff  bool
+	builtinNext bool // turn it on at the next start
 	// sum is the SHA-256 of the file as last read or written. The content
 	// is compared, not the modification time, which some file systems
 	// keep only to the second or two.
@@ -266,6 +273,7 @@ func (f *fileBackend) applyLocked(data []byte) (bool, error) {
 		recs[u.Username] = r
 	}
 	f.recs, f.builtinLast, f.builtinMFA, f.sum = recs, sf.BuiltinLastSignIn, sf.BuiltinMFA.Open(fileKeys(), BuiltinMFAField), sum
+	f.builtinOff, f.builtinNext = sf.BuiltinDisabled, sf.BuiltinOnAtStart
 	return true, nil
 }
 
@@ -415,7 +423,8 @@ func (f *fileBackend) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	sf := storeFile{Version: 1, Users: make([]storedUser, 0, len(f.recs)), BuiltinLastSignIn: f.builtinLast, BuiltinMFA: builtinMFA}
+	sf := storeFile{Version: 1, Users: make([]storedUser, 0, len(f.recs)), BuiltinLastSignIn: f.builtinLast, BuiltinMFA: builtinMFA,
+		BuiltinDisabled: f.builtinOff, BuiltinOnAtStart: f.builtinNext}
 	// What was encrypted is remembered, so the next write keeps it.
 	sealed := map[string]string{}
 	for _, n := range names {
