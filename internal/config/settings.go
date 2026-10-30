@@ -414,8 +414,8 @@ var Registry = []Setting{
 		Help: "The time range the Search page starts with until someone picks another, and of a search sent without one, such as from the API.", check: checkEarliest,
 		Choices: []Choice{{"-15m", "Last 15 minutes"}, {"-1h", "Last hour"}, {"-4h", "Last 4 hours"},
 			{"-24h", "Last 24 hours"}, {"-7d", "Last 7 days"}, {"-30d", "Last 30 days"}}},
-	{Key: "search.max_events", Scope: ScopeCluster, Section: "search", Label: "Events per search", Type: TypeNumber, Min: intp(1), Max: intp(100000),
-		Help: "The most events a search fetches to sort, filter or count after searching. More uses more memory."},
+	{Key: "search.max_events", Scope: ScopeCluster, Section: "search", Label: "Events per search", Type: TypeNumber, Min: intp(1), Max: intp(10000),
+		Help: "The most events a search fetches to sort, filter or count after searching, up to 10,000 (the most OpenSearch returns for one search). More uses more memory."},
 	{Key: "search.summary_days", Scope: ScopeCluster, Section: "search", Label: "Summaries go back", Type: TypeNumber, Min: intp(0), Max: intp(MaxSummaryDays),
 		Help: "Days of counts per data model, kept in 5-minute slots by the server that runs the background jobs, so dashboards and long stats, timechart and tstats searches read them instead of every event. " +
 			"The newest minutes always come from the events themselves. Summaries never reach back further than a data model's retention keeps its events. 0 turns them off.",

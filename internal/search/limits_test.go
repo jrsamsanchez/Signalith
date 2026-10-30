@@ -203,8 +203,8 @@ func TestCancelStopsInMemoryCommands(t *testing.T) {
 			t.Errorf("%s: %v, want context.Canceled", src, err)
 		}
 	}
-	if got := (&Engine{Opt: Options{MaxEvents: 50_000_000}}).opts().MaxEvents; got != maxEventsLimit {
-		t.Errorf("MaxEvents = %d, want it capped at %d", got, maxEventsLimit)
+	if got := (&Engine{Opt: Options{MaxEvents: 50_000_000}}).opts().MaxEvents; got != maxFetchEvents {
+		t.Errorf("MaxEvents = %d, want it capped at %d", got, maxFetchEvents)
 	}
 }
 
