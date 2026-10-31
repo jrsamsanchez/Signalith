@@ -240,7 +240,7 @@ snapshot_role() {
 	*'"signalith_snapshots"'*) ;;
 	*) return 1 ;;
 	esac
-	admin_get /_plugins/_sm/policies | grep -Eq '"created_by" *: *"signalith"' && return 0
+	admin_get '/_plugins/_sm/policies?size=1000' | grep -Eq '"created_by" *: *"signalith"' && return 0
 	# Any repository but cold storage's (<prefix>-cold), which has its own role.
 	admin_get '/_cat/repositories?h=id' | grep -v '^[{[]' | grep -v -- '-cold$' | grep -q .
 }

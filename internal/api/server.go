@@ -305,6 +305,10 @@ type Server struct {
 	// nil on a server without shared settings.
 	Features     func() []shared.FeatureState
 	ClusterLevel func() int
+	// AgentHostKeys reports whether agents may get keys of their own now
+	// (every server reads shared.LevelAgentHostKeys); nil is always, for a
+	// server without a cluster.
+	AgentHostKeys func() bool
 	// Upgrade judges whether the next server may be upgraded, for the
 	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
 	// server without a cluster.
@@ -391,7 +395,9 @@ type Server struct {
 	firstPW     firstPasswordCheck
 	webAgentLog logOnce // agents that send to the web port
 	tokensOnce  sync.Once
-	tokenRate   tokenRate         // agent token creation
+	tokenRate   tokenRate // agent token creation
+	enrollRate  tokenRate // computer keys, per line (see handleAgentEnroll)
+	enrollOnce  sync.Once
 	sensorCache sensorHealthCache // the Health page's network sensor counts
 	chatOnce    sync.Once
 	chatSvc     *chatops.Service
@@ -528,6 +534,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSCIM(mux, api)
 	s.routeSensors(api)
 	s.routeTokens(api)
+	s.routeAgentHosts(api)
 	s.routeAPITokens(api)
 	s.routeMetrics(mux, api)
 	s.routeAgents(api)

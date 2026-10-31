@@ -17,4 +17,5 @@ func wireFeatures(srv *api.Server, rt *shared.Runtime) {
 	}
 	srv.Features = rt.FeatureStates
 	srv.ClusterLevel = func() int { return rt.Status().Level }
+	srv.AgentHostKeys = rt.AgentHostKeys
 }

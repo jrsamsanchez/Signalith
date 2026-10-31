@@ -40,6 +40,7 @@ import (
 var agentManagedRoutes = []string{
 	"GET " + agentproto.RouteConfig,
 	"POST " + agentproto.RouteStatus,
+	"POST " + agentproto.RouteEnroll,
 	"GET " + agentproto.RouteProgram,
 	"GET " + agentproto.RouteManifest,
 }
@@ -60,6 +61,7 @@ func (s *Server) routeAgentManaged(mux *http.ServeMux, api *router) {
 func (s *Server) routeAgentManagedIntake(mux *http.ServeMux) {
 	mux.HandleFunc("GET "+agentproto.RouteConfig, s.handleAgentManagedConfig)
 	mux.HandleFunc("POST "+agentproto.RouteStatus, s.handleAgentManagedStatus)
+	mux.HandleFunc("POST "+agentproto.RouteEnroll, s.handleAgentEnroll)
 	mux.HandleFunc("GET "+agentproto.RouteProgram, s.handleAgentManagedProgram)
 	mux.HandleFunc("GET "+agentproto.RouteManifest, s.handleAgentManagedManifest)
 }
@@ -250,6 +252,11 @@ func (s *Server) agentManagedToken(w http.ResponseWriter, r *http.Request) (agen
 			}
 		}
 		writeJSON(w, http.StatusForbidden, map[string]any{"error": "This is " + what + ", not a Signalith Agent token. Make the line on Add data > Signalith Agent: it holds an agent token.", "code": "token_purpose"})
+		return id, false
+	}
+	if id.Host != "" && agentinv.CleanName(r.Header.Get(agentproto.HeaderName)) != id.Host {
+		// A host key holds for its own computer only.
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": "This key is another computer's.", "code": agenttokens.CodeHostMismatch})
 		return id, false
 	}
 	return id, true
@@ -452,6 +459,10 @@ func (s *Server) handleAgentManagedStatus(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusBadRequest, errors.New("the status is not valid JSON"))
 		return
 	}
+	if _, ok := s.agentHostName(r, who); !ok {
+		writeJSON(w, http.StatusConflict, map[string]any{"error": msgHostEnrolled, "code": agenttokens.CodeHostEnrolled})
+		return
+	}
 	clean := st.Clean()
 	s.noteAgentManaged(r, who, &clean)
 	w.WriteHeader(http.StatusNoContent)
@@ -461,10 +472,14 @@ func (s *Server) handleAgentManagedStatus(w http.ResponseWriter, r *http.Request
 // the row of its computer: the agent sends the same computer name as its
 // Fluent Bit (agentproto.HeaderName).
 func (s *Server) noteAgentManaged(r *http.Request, who agenttokens.Identity, st *agentproto.Status) {
+	name, ok := s.agentHostName(r, who)
+	if !ok {
+		return
+	}
 	from := clientaddr.Parse(r.RemoteAddr)
 	s.tokens().Note(who.ID, from.String(), 0)
 	s.agents().Note(agentinv.Contact{
-		Name:    r.Header.Get(agentproto.HeaderName),
+		Name:    name,
 		Address: from.String(),
 		Intake:  ingest.IntakeAgent,
 		TLS:     r.TLS != nil || s.viaTrustedProxy(r),

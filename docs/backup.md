@@ -379,7 +379,7 @@ snapshots, the role is not given to Signalith until you want scheduled snapshots
 - **Helm chart:** set `opensearch.snapshotRole: true`.
 - **OpenSearch from `signalith opensearch install`** (the Windows installer and the
   Linux packages): run `signalith opensearch snapshot-role on` as an administrator
-  (`off` takes it away). OpenSearch keeps the mapping through updates.
+  (`off` takes it away). OpenSearch keeps the mapping through updates, so an install from before 0.4.0 still has the role: run `signalith opensearch snapshot-role off` once if you do not use scheduled snapshots.
 
 Until then, the Health page says the role is missing once scheduled snapshots are
 turned on. Installs from before 0.4.0 had the role mapped from the start; the Docker

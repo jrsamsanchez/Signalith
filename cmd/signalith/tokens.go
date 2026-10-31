@@ -35,6 +35,9 @@ const tokensUsage = `usage:
   signalith tokens revoke [-c file] [-yes] <id or exact name>   refuse a token on every server within a few seconds
   signalith tokens legacy refuse [-c file] <id>                 stop accepting a shared token from signalith.yaml or the environment
   signalith tokens legacy accept [-c file] <id>                 accept it again
+  signalith tokens hosts list    [-c file] [-json]              list the computers with keys of their own
+  signalith tokens hosts revoke  [-c file] <computer name>      refuse one computer's key; its name stays taken
+  signalith tokens hosts release [-c file] <computer name>      free the name, so a computer installed again enrolls
 
 Each agent or group of agents sends with a token of its own, so one group
 can be revoked without touching the others. Signalith keeps only a
@@ -73,6 +76,12 @@ func runTokens(args []string, in *os.File, out, errOut io.Writer) error {
 		}
 		sub, args = "legacy "+args[0], args[1:]
 	}
+	if sub == "hosts" {
+		if len(args) == 0 {
+			args = []string{"list"}
+		}
+		sub, args = "hosts "+args[0], args[1:]
+	}
 	fs := flag.NewFlagSet("tokens "+sub, flag.ExitOnError)
 	fs.Usage = func() { fmt.Fprint(errOut, tokensUsage) }
 	path := configFlag(fs)
@@ -83,7 +92,7 @@ func runTokens(args []string, in *os.File, out, errOut io.Writer) error {
 	pos := parseInterleaved(fs, args)
 
 	switch sub {
-	case "list", "create", "rename", "revoke", "legacy refuse", "legacy accept":
+	case "list", "create", "rename", "revoke", "legacy refuse", "legacy accept", "hosts list", "hosts revoke", "hosts release":
 	default:
 		return fmt.Errorf("unknown tokens command %q\n\n%s", sub, tokensUsage)
 	}
@@ -163,6 +172,27 @@ func runTokens(args []string, in *os.File, out, errOut io.Writer) error {
 			msg += fmt.Sprintf(" %d osquery %s removed.", hosts, map[bool]string{true: "host was", false: "hosts were"}[hosts == 1])
 		}
 		fmt.Fprintln(out, msg)
+		return nil
+	case "hosts list":
+		return hostsList(reg, out, *asJSON)
+	case "hosts revoke", "hosts release":
+		if len(pos) != 1 {
+			return errors.New("usage: signalith tokens " + sub + " <computer name>")
+		}
+		change, what := reg.RevokeHost, "agent host key revoked"
+		if sub == "hosts release" {
+			change, what = reg.ReleaseHost, "agent host name released"
+		}
+		k, hosts, err := change(ctx, pos[0], by)
+		if err != nil {
+			return err
+		}
+		audit(what, "host", k.Host, "host_key", k.ID, "token_id", k.TokenID, "token_name", k.TokenName, "hosts_removed", hosts)
+		if sub == "hosts release" {
+			fmt.Fprintf(out, "Released %s: its key is refused, and the next agent with that name gets a new key with its line's token.\n", k.Host)
+		} else {
+			fmt.Fprintf(out, "Revoked the key of %s; every server refuses it within a few seconds. Nothing can enroll with that name until you release it.\n", k.Host)
+		}
 		return nil
 	case "legacy refuse", "legacy accept":
 		if len(pos) != 1 {
@@ -269,4 +299,24 @@ func tokensList(ctx context.Context, reg *agenttokens.Registry, w io.Writer, asJ
 		tw.Flush()
 	}
 	return nil
+}
+
+// hostsList prints the computers with keys of their own.
+func hostsList(reg *agenttokens.Registry, w io.Writer, asJSON bool) error {
+	hosts := reg.Hosts()
+	if asJSON {
+		enc := json.NewEncoder(w)
+		enc.SetIndent("", "  ")
+		return enc.Encode(hosts)
+	}
+	if len(hosts) == 0 {
+		fmt.Fprintln(w, "No computer has a key of its own yet. Signalith Agents get one the first time they talk to a server of this version.")
+		return nil
+	}
+	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "COMPUTER\tSTATUS\tLINE\tENROLLED\tFROM")
+	for _, h := range hosts {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", h.Host, h.Status, h.TokenName, h.EnrolledAt.Format(time.DateTime), h.EnrolledFrom)
+	}
+	return tw.Flush()
 }
