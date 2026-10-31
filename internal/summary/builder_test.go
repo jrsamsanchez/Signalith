@@ -402,7 +402,10 @@ func TestExistingIndexAndIndexSettings(t *testing.T) {
 	f.add("Authentication", at, map[string]any{"user": "a"})
 	// Another month's index was created by an earlier server: creating
 	// it again is refused, which is fine.
-	other := indexName("sig", at.AddDate(0, -1, 0))
+	// From the first of the month, so the 31st does not land back in
+	// this month.
+	u := at.UTC()
+	other := indexName("sig", time.Date(u.Year(), u.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0))
 	f.indices[other] = true
 	if err := b.ensureIndex(context.Background(), other); err != nil {
 		t.Fatalf("ensureIndex of an existing index: %v", err)
