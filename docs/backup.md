@@ -343,7 +343,7 @@ files had no `signalith backup` in 30 days, the Health page shows an amber
 **A repository**, registered once with OpenSearch's admin account:
 
 - In the Docker quick start, the `opensearch-snapshots` volume is ready; register it as
-  the repository `signalith`:
+  the repository `signalith`, which also gives Signalith the snapshot role (below):
 
     ```sh
     docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh register
@@ -368,12 +368,24 @@ user that wrote it, so Signalith needs these cluster permissions itself:
 
 The role names each action, so Signalith cannot restore or clone a snapshot with it.
 
-The Docker quick start, the Helm chart and the OpenSearch the Windows installer sets up (`signalith opensearch install`)
-give them with the role `signalith_snapshots` (in
-`deploy/docker/opensearch/security/roles.yml`), mapped to Signalith's certificates in
-`roles_mapping.yml`; an update loads it with the next
-`docker compose -f deploy/docker/docker-compose.yml up -d`. On an OpenSearch with your
-own security configuration, add the same role:
+The Docker quick start, the Helm chart and the OpenSearch that `signalith opensearch
+install` sets up have them in the role `signalith_snapshots` (in
+`deploy/docker/opensearch/security/roles.yml`). Since these rights let Signalith delete
+snapshots, the role is not given to Signalith until you want scheduled snapshots:
+
+- **Docker quick start:** `snapshot.sh register` (above) gives it to Signalith's
+  certificates. Updates keep it while a snapshot repository or Signalith's policy
+  exists. `snapshot.sh unregister` takes it away again.
+- **Helm chart:** set `opensearch.snapshotRole: true`.
+- **OpenSearch from `signalith opensearch install`** (the Windows installer and the
+  Linux packages): run `signalith opensearch snapshot-role on` as an administrator
+  (`off` takes it away). OpenSearch keeps the mapping through updates, so an install from before 0.4.0 still has the role: run `signalith opensearch snapshot-role off` once if you do not use scheduled snapshots.
+
+Until then, the Health page says the role is missing once scheduled snapshots are
+turned on. Installs from before 0.4.0 had the role mapped from the start; the Docker
+quick start and the Helm chart take it away on update unless a snapshot repository or
+Signalith's policy exists. On an OpenSearch with your own security configuration, add
+the same role:
 
 ```yaml
 signalith_snapshots:
@@ -414,7 +426,8 @@ and map it to Signalith's user or certificate (in `roles_mapping.yml`, or with
     $CURL -X DELETE "$OS/_plugins/_sm/policies/signalith-daily"
     ```
 
-    (`<opensearch.index_prefix>-daily`). Then remove the `signalith_snapshots` mapping.
+    (`<opensearch.index_prefix>-daily`). Then remove the `signalith_snapshots` mapping
+    (`snapshot.sh unregister` in the Docker quick start).
 
 Saving any of the backup settings asks for your password again, as other settings that
 change where data goes do.

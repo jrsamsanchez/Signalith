@@ -44,7 +44,7 @@ const (
 // these servers, one at a time), so it is raised the same way.
 const (
 	LevelMin = 1
-	LevelMax = LevelBuiltinOff
+	LevelMax = LevelAgentHostKeys
 )
 
 // LevelSharedUsers is the level from which users are kept in the shared

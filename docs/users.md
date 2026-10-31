@@ -1125,11 +1125,12 @@ arrives), and `GET /api/sensor/tuning` (the Suricata rule tuning the sensor fetc
 minutes); all three take only an active token made for a sensor (see
 [network-sensor.md](network-sensor.md#building-a-new-sensor)).
 `GET /api/agent/install.sh`, `GET /api/agent/install.ps1` and `GET /api/agent/install-macos.sh` (the
-[Signalith Agent](signalith-agent.md)'s install scripts for Linux, Windows and macOS, also public), and the four routes the script and the agent call with the agent's token,
+[Signalith Agent](signalith-agent.md)'s install scripts for Linux, Windows and macOS, also public), and the five routes the script and the agent call with the agent's token,
 `GET /api/agent/program` (the agent program), `GET /api/agent/manifest` (the programs' signed
-manifest, for updates), `GET /api/agent/config` (what the agent runs) and
-`POST /api/agent/status` (how its collectors run); all four take only an active token made for
-the Signalith Agent.
+manifest, for updates), `GET /api/agent/config` (what the agent runs),
+`POST /api/agent/status` (how its collectors run) and `POST /api/agent/enroll` (the computer's
+[own key](agent-tokens.md#computer-keys)); all five take only an active token made for
+the Signalith Agent, or a computer's key.
 The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
 the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
 [sso.md](sso.md#how-it-works)). So are the three SAML routes: `GET /api/auth/saml/start` sends the
@@ -1198,7 +1199,8 @@ or deletes one), `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id
 `POST /api/playbooks/runs/{id}/approve`, `POST /api/playbooks/runs/{id}/reject`
 (the Approvals page; see [playbooks.md](playbooks.md)), `POST /api/findings/{id}/propose-exception`,
 `GET /api/exception-requests` ([proposing an exception](detections.md#proposing-an-exception) for an admin to approve), `GET /api/agent-tokens` (the names,
-status and use of the [agent tokens](agent-tokens.md), never a secret), `GET /api/agents` (the
+status and use of the [agent tokens](agent-tokens.md), never a secret), `GET /api/agent-hosts` (the
+computers with [keys of their own](agent-tokens.md#computer-keys), never a key), `GET /api/agents` (the
 agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api/investigate`,
 `POST /api/findings/{id}/investigate/preview`, `POST /api/findings/{id}/investigate`
 ([Investigate with AI](investigate.md), once an admin turns it on).
@@ -1212,7 +1214,8 @@ sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning`
 `PUT /api/sensors/tuning` (the Suricata rule tuning sensors fetch; see
 [network-sensor.md](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
-`POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`
+`POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`,
+`POST /api/agent-hosts/{host}/revoke`, `POST /api/agent-hosts/{host}/release`
 (see [agent-tokens.md](agent-tokens.md#commands)), `PUT /api/agent-tokens/{id}/collect` (what the
 Signalith Agents of an install line collect; see
 [signalith-agent.md](signalith-agent.md#change-what-agents-collect)), `GET /api/api-tokens`, `POST /api/api-tokens`,

@@ -166,6 +166,12 @@ spec:
               value: /state/loaded-files.sha256
             - name: JAVA_OPTS
               value: "-Xms32m -Xmx256m"
+            {{- if $o.snapshotRole }}
+            # Gives Signalith the signalith_snapshots role, for scheduled
+            # snapshots (values.yaml opensearch.snapshotRole).
+            - name: SIGNALITH_SNAPSHOT_ROLE
+              value: "on"
+            {{- end }}
           securityContext:
             {{- include "signalith.containerSecurity" . | nindent 12 }}
           resources:

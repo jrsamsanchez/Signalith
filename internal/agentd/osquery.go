@@ -54,7 +54,7 @@ func (p Paths) osqueryState() string { return filepath.Join(p.State, "osquery") 
 // and its database and pid file are in the agent's state folder.
 // Extensions, which load other programs into osquery, are off.
 func (p Paths) localOsqueryFlags(withCA bool) []string {
-	flags := []string{"--enroll_secret_path=" + p.tokenFile()}
+	flags := []string{"--enroll_secret_path=" + p.enrollSecretFile()}
 	if withCA {
 		flags = append(flags, "--tls_server_certs="+p.caFile())
 	}
@@ -332,6 +332,9 @@ func CheckOsqueryFlags(p Paths, text string) (string, error) {
 	for _, f := range p.localOsqueryFlags(true) {
 		own[f] = true
 	}
+	// Either secret, whichever the agent had when it wrote the file.
+	own["--enroll_secret_path="+p.tokenFile()] = true
+	own["--enroll_secret_path="+p.hostKeyFile()] = true
 	var keep []string
 	for i, line := range strings.Split(text, "\n") {
 		line = strings.TrimRight(line, "\r")

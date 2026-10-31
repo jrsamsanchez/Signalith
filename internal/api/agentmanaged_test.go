@@ -475,6 +475,11 @@ func TestManagedAgentTalksToServer(t *testing.T) {
 	if err != nil || !strings.Contains(string(conf), "${SIGNALITH_TOKEN}") || strings.Contains(string(conf), token) {
 		t.Errorf("fluent-bit.conf: %v\n%s", err, conf)
 	}
+	// It traded the line's token for a key of its own (ASI-102).
+	key, err := os.ReadFile(filepath.Join(p.Conf, "hostkey"))
+	if err != nil || !agentproto.IsHostKey(strings.TrimSpace(string(key))) || !s.tokens().Enrolled("db-02") {
+		t.Errorf("host key: %v %q", err, key)
+	}
 }
 
 func TestManagedAgentUpdate(t *testing.T) {

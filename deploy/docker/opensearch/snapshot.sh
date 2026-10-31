@@ -11,10 +11,12 @@
 #   docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh delete <name>
 #
 #   docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh register
+#   docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh unregister
 #
-# register only registers the folder as the repository "signalith", which
-# scheduled snapshots (Settings > Server > Backups) need once; the others
-# do that by themselves.
+# register registers the folder as the repository "signalith" and gives
+# Signalith's certificates the signalith_snapshots role, which scheduled
+# snapshots (Settings > Server > Backups) need once; unregister takes the
+# role away again. The others register the folder by themselves.
 #
 # create can run while Signalith runs. restore replaces the indices the
 # snapshot holds and keeps the others (days newer than the snapshot):
@@ -94,7 +96,17 @@ restore)
 	;;
 register)
 	repository
-	say "Done: OpenSearch keeps snapshots in the repository $repo ($location). Turn on scheduled snapshots in Settings > Server > Backups."
+	# Scheduled snapshots run as Signalith, so its certificates need the
+	# signalith_snapshots role, which roles_mapping.yml leaves out until
+	# now; load-security.sh keeps it mapped while the repository exists.
+	api PUT "/_plugins/_security/api/rolesmapping/signalith_snapshots" '{"users":["signalith","signalith-server-*"]}' >/dev/null || exit 1
+	say "Done: OpenSearch keeps snapshots in the repository $repo ($location), and Signalith may take and delete them. Turn on scheduled snapshots in Settings > Server > Backups."
+	;;
+unregister)
+	# Takes the snapshot role away from Signalith again. The snapshots and
+	# the repository stay.
+	api DELETE "/_plugins/_security/api/rolesmapping/signalith_snapshots" >/dev/null || exit 1
+	say "Done: Signalith may no longer take or delete snapshots. Turn scheduled snapshots off in Settings > Server > Backups, and delete its policy if it is still there (docs/backup.md)."
 	;;
 delete)
 	[ -n "${2:-}" ] || fail "Name the snapshot to delete: sh snapshot.sh delete <name>"
@@ -102,6 +114,6 @@ delete)
 	api DELETE "/_snapshot/$repo/$2" >/dev/null && say "Deleted $2."
 	;;
 *)
-	fail "Usage: sh snapshot.sh create [name] | list | restore <name> | delete <name> | register"
+	fail "Usage: sh snapshot.sh create [name] | list | restore <name> | delete <name> | register | unregister"
 	;;
 esac
