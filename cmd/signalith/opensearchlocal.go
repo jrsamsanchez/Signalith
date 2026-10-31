@@ -23,6 +23,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/oslocal"
 	"github.com/jrsamsanchez/signalith/internal/ospki"
 	"github.com/jrsamsanchez/signalith/internal/securefile"
+	"github.com/jrsamsanchez/signalith/internal/snapshots"
 )
 
 const opensearchUsage = `usage:
@@ -31,6 +32,7 @@ const opensearchUsage = `usage:
   signalith opensearch remove                remove it, keeping its data
   signalith opensearch status                show what is installed
   signalith opensearch adopt -c CONFIG       on an upgrade: install it when CONFIG's OpenSearch was never set up
+  signalith opensearch snapshot-role on|off  give Signalith the role scheduled snapshots need, or take it away
 
 The Windows installer runs these; on Linux, run them as root after
 installing Signalith's package (docs/install-packages.md). install
@@ -43,7 +45,9 @@ quarter of the memory, 1 to 8 GB; later runs without -heap keep it.
 adopt installs it the same way, and points CONFIG at it, only when
 CONFIG still has the address older installers wrote (plain http on this
 computer, port 9200, no sign-in) and nothing answers there. On Linux,
-install also sets Signalith to use it.
+install also sets Signalith to use it. snapshot-role on gives Signalith's
+certificates the signalith_snapshots role, which lets it take and delete
+snapshots, for scheduled snapshots (docs/backup.md); off takes it away.
 `
 
 // localOpenSearch is what installing OpenSearch needs from the system.
@@ -110,6 +114,22 @@ func cmdOpenSearch(args []string) error {
 		return adoptOpenSearch(context.Background(), os.Stdout, sys, l, *zip, client, heap, *path, c, answers)
 	case "remove":
 		return removeOpenSearch(os.Stdout, sys, l)
+	case "snapshot-role":
+		if fs.NArg() != 1 || fs.Arg(0) != "on" && fs.Arg(0) != "off" {
+			return errors.New("usage: signalith opensearch snapshot-role on|off")
+		}
+		st, err := oslocal.LoadState(l)
+		if err != nil {
+			return err
+		}
+		if st == nil {
+			return errors.New("Signalith has not installed OpenSearch on this computer; on another OpenSearch, map the signalith_snapshots role yourself (docs/backup.md)")
+		}
+		admin, err := openSearchClient(filepath.Join(l.CA(), ospki.RootCAFile), filepath.Join(l.CA(), ospki.AdminCertFile), filepath.Join(l.CA(), ospki.AdminKeyFile))
+		if err != nil {
+			return err
+		}
+		return setSnapshotRole(os.Stdout, admin, st.URL(), fs.Arg(0) == "on")
 	case "status":
 		st, err := oslocal.LoadState(l)
 		if err != nil {
@@ -133,6 +153,40 @@ func cmdOpenSearch(args []string) error {
 	}
 	fmt.Fprint(os.Stderr, opensearchUsage)
 	return fmt.Errorf("unknown opensearch command %q", cmd)
+}
+
+// setSnapshotRole maps the signalith_snapshots role to Signalith's
+// certificates, or removes the mapping, with OpenSearch's admin
+// certificate (admin). roles_mapping.yml leaves it out, since it lets
+// Signalith delete snapshots, until scheduled snapshots are wanted.
+func setSnapshotRole(out io.Writer, admin *http.Client, url string, on bool) error {
+	method, body := http.MethodDelete, ""
+	if on {
+		method, body = http.MethodPut, `{"users":["`+ospki.ClientName+`","`+ospki.ServerClientPrefix+`*"]}`
+	}
+	req, err := http.NewRequest(method, url+"/_plugins/_security/api/rolesmapping/"+snapshots.Role, strings.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := admin.Do(req)
+	if err != nil {
+		return fmt.Errorf("OpenSearch does not answer at %s: %w", url, err)
+	}
+	defer resp.Body.Close()
+	msg, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+	switch {
+	case !on && resp.StatusCode == http.StatusNotFound:
+		fmt.Fprintln(out, "Signalith did not have the snapshot role.")
+		return nil
+	case resp.StatusCode/100 != 2:
+		return fmt.Errorf("OpenSearch refused the change (HTTP %d): %s", resp.StatusCode, strings.TrimSpace(string(msg)))
+	case on:
+		fmt.Fprintln(out, "Signalith may now take and delete snapshots. Register a snapshot repository and turn on scheduled snapshots in Settings > Server > Backups (docs/backup.md).")
+	default:
+		fmt.Fprintln(out, "Signalith may no longer take or delete snapshots. Turn scheduled snapshots off in Settings > Server > Backups, and delete its policy if it is still there (docs/backup.md).")
+	}
+	return nil
 }
 
 // installOpenSearch installs OpenSearch, or upgrades the one installed
