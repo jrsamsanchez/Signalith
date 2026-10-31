@@ -382,9 +382,10 @@ func (m *Manager) problem(err error) string {
 	body := strings.ToLower(se.Body)
 	switch {
 	case se.Status == http.StatusForbidden || strings.Contains(body, "security_exception") && strings.Contains(body, "no permissions"):
-		fix := "give its OpenSearch user the " + Role + " role from deploy/docker/opensearch/security/roles.yml, which has " + Permissions
+		fix := "give its OpenSearch user the " + Role + " role from deploy/docker/opensearch/security/roles.yml, which has " + Permissions +
+			" (in the Helm chart, set opensearch.snapshotRole: true)"
 		if m.Docker {
-			fix = "update Signalith's Docker quick start and run docker compose -f deploy/docker/docker-compose.yml up -d, which gives its OpenSearch certificate the " + Role + " role (" + Permissions + ")"
+			fix = "run docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh register, which gives its OpenSearch certificate the " + Role + " role (" + Permissions + ")"
 		}
 		return "OpenSearch does not let Signalith manage snapshots: " + fix + ". See Scheduled snapshots in docs/backup.md."
 	case strings.Contains(body, "no handler found"):
