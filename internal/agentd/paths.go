@@ -70,6 +70,8 @@ func DefaultPaths() Paths {
 // Files in the folders.
 func (p Paths) settingsFile() string  { return filepath.Join(p.Conf, "agent.conf") }
 func (p Paths) tokenFile() string     { return filepath.Join(p.Conf, "token") }
+func (p Paths) hostKeyFile() string   { return filepath.Join(p.Conf, "hostkey") }
+func (p Paths) hostLineFile() string  { return filepath.Join(p.Conf, "hostkey.line") }
 func (p Paths) caFile() string        { return filepath.Join(p.Conf, "ca.pem") }
 func (p Paths) fluentBitConf() string { return filepath.Join(p.Conf, "fluent-bit.conf") }
 func (p Paths) configFile() string    { return filepath.Join(p.State, "config.json") }
@@ -101,8 +103,13 @@ func (p Paths) HealthFile() string { return filepath.Join(p.State, "health") }
 type Settings struct {
 	// Server is Signalith's address, https://host:port.
 	Server string
-	// Token is the agent token.
+	// Token is the agent token of the install line.
 	Token string
+	// HostKey is the computer's own key, which the agent got for Token
+	// (see enroll), "" until it has one. OldHostKey is the one it got for
+	// another line's token, before the computer was installed again with
+	// Token: the agent shows it to get a key for the new line.
+	HostKey, OldHostKey string
 	// Osquery is whether the install script set osquery up for the agent
 	// (OSQUERY=yes): only then does the agent run it, so an osquery the
 	// computer runs for something else is left alone.
@@ -148,6 +155,12 @@ func ReadSettings(p Paths) (Settings, error) {
 	s.Token = strings.TrimSpace(string(tok))
 	if s.Token == "" {
 		return s, errors.New("the agent's token file is empty; run the line from Add data > Signalith Agent again")
+	}
+	switch k, current := p.readHostKey(s.Token); {
+	case current:
+		s.HostKey = k
+	default:
+		s.OldHostKey = k
 	}
 	return s, nil
 }

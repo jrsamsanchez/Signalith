@@ -33,6 +33,10 @@ const (
 	RouteConfig = "/api/agent/config"
 	// RouteStatus takes the agent's Status.
 	RouteStatus = "/api/agent/status"
+	// RouteEnroll trades the install line's token for a key of the
+	// computer's own, answered as Enrolled. A server older than the agent
+	// answers 404, and the agent keeps the line's token.
+	RouteEnroll = "/api/agent/enroll"
 	// RouteProgram answers the agent program for ?os=&arch=, with its
 	// SHA-256 in the X-Signalith-SHA256 header.
 	RouteProgram = "/api/agent/program"
@@ -52,7 +56,32 @@ const (
 	HeaderName    = "X-Signalith-Agent"
 	HeaderVersion = "X-Signalith-Agent-Version"
 	HeaderSHA256  = "X-Signalith-SHA256"
+	// HeaderHostKey is the key the computer had, sent to RouteEnroll when
+	// it was installed again with another line's token.
+	HeaderHostKey = "X-Signalith-Host-Key"
 )
+
+// IsHostKey reports whether s has the shape of a computer's key: "sgh_"
+// and 52 characters of lowercase base32.
+func IsHostKey(s string) bool {
+	if len(s) != 56 || !strings.HasPrefix(s, "sgh_") {
+		return false
+	}
+	for _, c := range s[4:] {
+		if !(c >= 'a' && c <= 'z' || c >= '2' && c <= '7') {
+			return false
+		}
+	}
+	return true
+}
+
+// Enrolled is the server's answer to RouteEnroll: the computer's key
+// (HostKeyFile on the computer), for Host only.
+type Enrolled struct {
+	Key  string `json:"key"`
+	Host string `json:"host"`
+	ID   string `json:"id"`
+}
 
 // Config is what the server tells an agent to run.
 type Config struct {

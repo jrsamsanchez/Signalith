@@ -528,6 +528,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeSCIM(mux, api)
 	s.routeSensors(api)
 	s.routeTokens(api)
+	s.routeAgentHosts(api)
 	s.routeAPITokens(api)
 	s.routeMetrics(mux, api)
 	s.routeAgents(api)

@@ -177,6 +177,9 @@ signalith tokens rename 3f9c0a1b2c4d "Web servers (Leeds)"
 signalith tokens revoke 3f9c0a1b2c4d       # or the exact name; asks first, -yes skips the question
 signalith tokens legacy refuse a1b2c3d4e5f6   # stop accepting a shared token
 signalith tokens legacy accept a1b2c3d4e5f6   # accept it again
+signalith tokens hosts list                # computers with keys of their own (see Computer keys)
+signalith tokens hosts revoke web-01       # refuse one computer's key; the name stays taken
+signalith tokens hosts release web-01      # free the name for a computer installed again
 ```
 
 `create` prints only the token on standard output, so `TOKEN=$(signalith tokens create
@@ -196,12 +199,52 @@ fixed token in the configuration. New agents should get their own token instead.
 | `POST /api/agent-tokens/{id}/revoke` | Admin | Revokes it; answers `hosts_removed`, the osquery hosts removed with it |
 | `POST /api/agent-tokens/legacy/{id}/refuse` | Admin | Stops accepting a shared token |
 | `POST /api/agent-tokens/legacy/{id}/accept` | Admin | Accepts it again |
+| `GET /api/agent-hosts` | Analyst | Lists the computers with keys of their own: name, status, line, when and from where it enrolled. Never a key |
+| `POST /api/agent-hosts/{host}/revoke` | Admin | Revokes one computer's key; its name stays taken. Answers `hosts_removed`, its osquery hosts |
+| `POST /api/agent-hosts/{host}/release` | Admin | Revokes the key if it is active and frees the name |
 
 Errors carry `error` (a sentence), `code` and, for the name, `field: "name"`:
 `name_invalid`, `name_taken`, `purpose_invalid`, `not_found`, `revoked`, `too_many`,
 `rate_limited` (more than 10 tokens a minute; wait for `Retry-After`),
 `store_unavailable` (OpenSearch can't be reached) and `tokens_loading`. Create, rename,
 revoke, stop accepting and accept again are written to the audit log, never with the token.
+
+## Computer keys
+
+The [Signalith Agent](signalith-agent.md) does not keep sending with its install line's
+token, which every computer of the line shares. The first time it talks to Signalith it
+trades that token for a key of the computer's own (`POST /api/agent/enroll`) and keeps the
+key in the `hostkey` file next to `token` (and, in `hostkey.line`, the ID of the line's
+token it got it for). From then on the agent, its Fluent Bit and its
+osquery send with the key.
+
+- **Shape.** A key is `sgh_` and 52 characters, kept as a SHA-256 like a token. The
+  pattern for secret scanners is `\bsgh_[a-z2-7]{52}\b`.
+- **One computer, one key.** A key holds only for the computer name it was made for:
+  Signalith refuses it with any other name (`403`, `host_mismatch`). A name has one key at
+  a time. Once a computer has a key, a status sent with the line's token in its name is
+  refused (`409`, `host_enrolled`), and events sent that way are kept but don't change the
+  computer's row on the **Endpoints** page or keep its "silent" alert from firing. So a
+  computer that holds the line's token can't report as another computer of the line.
+- **Cut off one computer.** `signalith tokens hosts revoke <name>` (or
+  `POST /api/agent-hosts/{host}/revoke`) refuses that computer's key within a few seconds
+  on every server and removes its osquery host. Its name stays taken, so nothing can enroll
+  with it again. Revoking the line's token cuts off its computers' keys too.
+- **Moving a computer to another line.** Run the other line's install line on it. The
+  agent shows the key it has (`X-Signalith-Host-Key`), which proves it is the same
+  computer, and gets a key for the new line; its old key stops working.
+- **A computer installed from scratch**, or renamed, keeps asking for a key every hour and sends
+  with the line's token meanwhile. If the name already has a key, the server says so and
+  logs it (`an agent asked for the key of a computer that has one`). Free the name with
+  `signalith tokens hosts release <name>`; the agent then gets a new key by itself. An
+  agent whose key was released goes back to the line's token and asks for a new key at
+  once.
+- **Older servers and agents.** An agent talking to a server older than 0.4.0 keeps
+  sending with the line's token, as before. Older agents keep working with the line's
+  token too, without a key, until they update.
+- **What it does not stop.** The line's token stays on each computer, so a computer that
+  was taken over can still send events with it, and can enroll names that have no key yet.
+  Revoke the line's token to stop that.
 
 ## osquery hosts
 
