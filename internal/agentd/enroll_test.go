@@ -97,9 +97,18 @@ func TestEnrollKeepsTheComputerKey(t *testing.T) {
 		t.Fatalf("sync: %v", err)
 	}
 	a.forgetHostKey()
-	if a.Settings.HostKey != "" || exists(p.hostKeyFile()) || !a.enrollNext.IsZero() || a.Settings.secret() != line {
+	if a.Settings.HostKey != "" || a.Settings.OldHostKey != key || !a.enrollNext.IsZero() || a.Settings.secret() != line || p.enrollSecretFile() != p.tokenFile() {
 		t.Fatalf("after forget: %+v", a.Settings)
 	}
+	// Kept on disk as the proof, and shown when it asks again.
+	if s, err := ReadSettings(p); err != nil || s.HostKey != "" || s.OldHostKey != key {
+		t.Errorf("read back after forget: %+v %v", s, err)
+	}
+	a.enroll(context.Background())
+	if olds[len(olds)-1] != key || a.Settings.HostKey != key {
+		t.Errorf("asked again: %v %+v", olds, a.Settings)
+	}
+	a.Settings.HostKey, a.Settings.OldHostKey = "", ""
 	// The line's token refused is a refusal, as before.
 	if err := a.sync(context.Background()); !errors.Is(err, errTokenRefused) {
 		t.Fatalf("sync with the line's token: %v", err)

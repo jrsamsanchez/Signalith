@@ -240,7 +240,15 @@ osquery send with the key.
   agent whose key was released goes back to the line's token and asks for a new key at
   once.
 - **Older servers and agents.** An agent talking to a server older than 0.4.0 keeps
-  sending with the line's token, as before. Older agents keep working with the line's
+  sending with the line's token, as before. In a [cluster](servers.md), computers get keys
+  only once every server runs 0.4.0 or later (cluster level 13, shown on the **Servers**
+  page): until then a server answers `409 host_keys_unavailable` and agents keep the
+  line's token, so an older server behind the same load balancer never sees a key it
+  doesn't know. A server that doesn't know a key yet (one made on another server a moment
+  ago) reads the keys again before it answers. An agent whose key a server didn't know
+  keeps the key and shows it when it asks again, so it gets a new one by itself.
+- **At most 1,000 new keys an hour per line** (5,000 per server). More are answered
+  `429` and logged, so a leaked line token can't take every computer name at once. Older agents keep working with the line's
   token too, without a key, until they update.
 - **What it does not stop.** The line's token stays on each computer, so a computer that
   was taken over can still send events with it, and can enroll names that have no key yet.

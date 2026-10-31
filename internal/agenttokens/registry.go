@@ -192,9 +192,13 @@ type Registry struct {
 		once sync.Once
 		key  []byte
 	}
-	ensured  atomic.Bool
-	hooksMu  sync.Mutex
-	onRevoke []func(ctx context.Context, tokenID string) (int, error)
+	ensured atomic.Bool
+	// loadedAt is when Load last read everything (Unix ns), and missMu
+	// lets one Check at a time read again for a key it does not know.
+	loadedAt, missTry atomic.Int64
+	missMu            sync.Mutex
+	hooksMu           sync.Mutex
+	onRevoke          []func(ctx context.Context, tokenID string) (int, error)
 
 	useMu sync.Mutex
 	uses  map[string]*use
@@ -535,6 +539,7 @@ func (r *Registry) load(ctx context.Context) error {
 		return errRaced
 	}
 	r.snap.Store(s)
+	r.loadedAt.Store(time.Now().UnixNano())
 	return nil
 }
 

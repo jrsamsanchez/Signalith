@@ -27,6 +27,12 @@ func TestAgentHostKeys(t *testing.T) {
 	if code, _, body := agentDo(t, ts, "POST", agentproto.RouteEnroll, line, "", "{}", nil); code != http.StatusBadRequest {
 		t.Errorf("no name: %d %s", code, body)
 	}
+	// Not while a server of the cluster is older than computer keys.
+	s.AgentHostKeys = func() bool { return false }
+	if code, _, body := agentDo(t, ts, "POST", agentproto.RouteEnroll, line, "web-01", "{}", nil); code != http.StatusConflict || !strings.Contains(body, codeHostKeysWait) {
+		t.Errorf("below the level: %d %s", code, body)
+	}
+	s.AgentHostKeys = nil
 	code, h, body := agentDo(t, ts, "POST", agentproto.RouteEnroll, line, "Web-01", "{}", nil)
 	var e agentproto.Enrolled
 	if code != 200 || json.Unmarshal([]byte(body), &e) != nil || !agentproto.IsHostKey(e.Key) || e.Host != "web-01" || h.Get("Cache-Control") != "no-store" {

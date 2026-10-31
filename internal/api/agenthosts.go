@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/agentinv"
@@ -41,6 +42,17 @@ func (s *Server) agentHostName(r *http.Request, who agenttokens.Identity) (name 
 	return name, true
 }
 
+// How many new computer keys one line, and the whole server, may hand out
+// in an hour.
+const (
+	maxEnrollsPerLine = 1000
+	maxEnrolls        = 5000
+)
+
+// codeHostKeysWait answers an enrollment while some server of the cluster
+// is older than computer keys.
+const codeHostKeysWait = "host_keys_unavailable"
+
 // msgHostEnrolled answers a line's token that names a computer with a
 // key of its own.
 const msgHostEnrolled = "A computer with this name has its own key, so it must send with that key. If this computer was installed again, release the name on the Agents page and the agent enrolls by itself."
@@ -58,12 +70,28 @@ func (s *Server) handleAgentEnroll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusConflict, map[string]any{"error": "This computer already sends with its own key.", "code": agenttokens.CodeHostEnrolled})
 		return
 	}
+	if s.AgentHostKeys != nil && !s.AgentHostKeys() {
+		// A server of an older version would refuse the key.
+		writeJSON(w, http.StatusConflict, map[string]any{"error": "Computer keys need every Signalith server on a version that supports them; the agent keeps its line's token until then.", "code": codeHostKeysWait})
+		return
+	}
 	name := agentinv.CleanName(r.Header.Get(agentproto.HeaderName))
 	if name == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "The agent sent no valid computer name (" + agentproto.HeaderName + ").", "code": agenttokens.CodeNameInvalid})
 		return
 	}
 	from := clientaddr.Parse(r.RemoteAddr).String()
+	// A line's token that leaked could otherwise take thousands of names
+	// at once, and with them the names of computers not enrolled yet.
+	s.enrollOnce.Do(func() {
+		s.enrollRate.Each, s.enrollRate.Per, s.enrollRate.All, s.enrollRate.AllPer = maxEnrollsPerLine, time.Hour, maxEnrolls, time.Hour
+	})
+	if wait := s.enrollRate.take(who.ID, time.Now()); wait > 0 {
+		s.Log.Warn("an agent line asked for too many computer keys; refused", "audit", true, "token_id", who.ID, "token_name", who.Name, "host", name, "client", from)
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": "Too many computers of this line asked for keys just now; the agent asks again later.", "code": "rate_limited"})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
 	defer cancel()
 	k, secret, err := s.tokens().Enroll(ctx, who.ID, name, from, r.Header.Get(agentproto.HeaderHostKey))

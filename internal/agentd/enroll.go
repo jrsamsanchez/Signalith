@@ -138,16 +138,19 @@ func (a *Agent) askKey(ctx context.Context) (string, error) {
 	return e.Key, nil
 }
 
-// forgetHostKey drops a key the server no longer knows and goes back to
-// the line's token, which asks for a new key at once.
+// forgetHostKey stops sending with a key the server does not know (it
+// was released, or that server is behind) and goes back to the line's
+// token, asking for a key again at once. The key is kept, as OldHostKey:
+// it is the proof that this is the computer it was made for, so a server
+// that does know it hands out a new one, and nothing is lost when it was
+// only one server's mistake.
 func (a *Agent) forgetHostKey() {
-	a.Log.Warn("Signalith no longer knows this computer's key (it was released, or the server is older); the agent goes back to its line's token")
-	for _, f := range []string{a.Paths.hostKeyFile(), a.Paths.hostLineFile()} {
-		if err := os.Remove(f); err != nil && !errors.Is(err, os.ErrNotExist) {
-			a.Log.Warn("removing the computer's key", "err", err)
-		}
+	a.Log.Warn("Signalith did not know this computer's key; the agent sends with its line's token and asks for a key again")
+	// Without its line file, the key is only shown to get a new one.
+	if err := os.Remove(a.Paths.hostLineFile()); err != nil && !errors.Is(err, os.ErrNotExist) {
+		a.Log.Warn("setting the computer's key aside", "err", err)
 	}
-	a.Settings.HostKey = ""
+	a.Settings.HostKey, a.Settings.OldHostKey = "", a.Settings.HostKey
 	a.enrollNext = time.Time{}
 	a.restartCollectors()
 }

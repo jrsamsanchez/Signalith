@@ -132,6 +132,15 @@ func (r *Registry) checkHost(secret string) (Identity, Result) {
 	sum := sha256.Sum256([]byte(secret))
 	h := hex.EncodeToString(sum[:])
 	d := snap.keys[h[:12]]
+	if d == nil {
+		// Another server may have made it since this one last read the
+		// keys: read them again, at most once every missReload.
+		var res Result
+		if snap, res = r.reloadForMiss(); res != Valid {
+			return Identity{}, res
+		}
+		d = snap.keys[h[:12]]
+	}
 	if d == nil || subtle.ConstantTimeCompare([]byte(h), []byte(d.Hash)) != 1 {
 		return Identity{}, Unknown
 	}
@@ -144,6 +153,42 @@ func (r *Registry) checkHost(secret string) (Identity, Result) {
 		return id, Revoked
 	}
 	return id, Valid
+}
+
+// missReload is how long after a read Check reads the keys again for one
+// it does not know. Run reads them within a few seconds of any change
+// anyway; this covers a key made on another server since.
+var missReload = 2 * time.Second
+
+// reloadForMiss reads the tokens again for a key Check does not know,
+// unless they were read within missReload. While another Check reads
+// them it answers NotLoaded (try again), so a burst of unknown keys
+// costs one read. Valid means the snapshot returned is current.
+func (r *Registry) reloadForMiss() (*snapshot, Result) {
+	recent := func() bool {
+		last := max(r.loadedAt.Load(), r.missTry.Load())
+		return time.Since(time.Unix(0, last)) < missReload
+	}
+	if r.Client == nil || recent() {
+		return r.current(), Valid
+	}
+	if !r.missMu.TryLock() {
+		return nil, NotLoaded
+	}
+	defer r.missMu.Unlock()
+	if !recent() {
+		// Counted before the read, so an OpenSearch that does not answer
+		// is asked at most once every missReload.
+		r.missTry.Store(time.Now().UnixNano())
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		err := r.Load(ctx)
+		cancel()
+		if err != nil {
+			// OpenSearch did not answer: the key may be one made since.
+			return nil, NotLoaded
+		}
+	}
+	return r.current(), Valid
 }
 
 // Enrolled reports whether the computer called host has a host key,

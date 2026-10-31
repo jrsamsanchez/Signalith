@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 )
@@ -194,4 +195,41 @@ func TestEnrollLoadsWithHosts(t *testing.T) {
 	}
 	_, _, err = r2.Enroll(ctx, line.ID, "", "", "")
 	wantCode(t, err, CodeNameInvalid)
+}
+
+// SEC-576-2: a server that has not read a key made on another server yet
+// reads the keys again instead of refusing it, and a computer whose name
+// was released enrolls again while showing its old key.
+func TestHostKeyFromAnotherServer(t *testing.T) {
+	fake := ostest.New(t)
+	ctx := context.Background()
+	defer func(d time.Duration) { missReload = d }(missReload)
+	missReload = 0
+	a, b := newReg(t, fake.URL, "n1"), newReg(t, fake.URL, "n2")
+	line, _, err := a.Create(ctx, "Agents", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	_, key, err := a.Enroll(ctx, line.ID, "web-01", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id, res := b.Check(key); res != Valid || id.Host != "web-01" {
+		t.Fatalf("other server: %+v %v", id, res)
+	}
+	// Within missReload of a read, an unknown key is refused without one.
+	missReload = time.Hour
+	if _, res := b.Check("sgh_" + strings.Repeat("a", 52)); res != Unknown {
+		t.Errorf("unknown key: %v", res)
+	}
+	missReload = 0
+	if _, _, err := a.ReleaseHost(ctx, "web-01", "sam"); err != nil {
+		t.Fatal(err)
+	}
+	if _, key2, err := b.Enroll(ctx, line.ID, "web-01", "", key); err != nil || key2 == key {
+		t.Fatalf("enroll after release with the old key: %v", err)
+	}
 }
