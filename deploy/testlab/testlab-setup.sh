@@ -286,6 +286,11 @@ $DOMAIN {
 	reverse_proxy https://127.0.0.1:9000 {
 		# The client's own address, never one it sent.
 		header_up X-Forwarded-For {remote_host}
+		# The lab's own name, which Signalith's origin check and passkeys
+		# compare against, rather than 127.0.0.1:9000.
+		header_up Host {host}
+		# Visitors who have not signed in need not learn the version.
+		header_down -X-Signalith-Version
 		transport http {
 			tls_trust_pool file /etc/caddy/signalith-ca.pem
 			tls_server_name localhost
