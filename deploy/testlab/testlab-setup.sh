@@ -209,6 +209,8 @@ o["cert_file"] = "/etc/signalith/opensearch-client.pem"
 o["key_file"] = "/etc/signalith/opensearch-client-key.pem"
 o.pop("username", None)
 o.pop("password", None)
+# Testers' data is kept 30 days.
+c.setdefault("retention", {})["days"] = 30
 with open(path, "w") as f:
     f.write("# Written by the test lab setup (deploy/testlab/testlab-setup.sh).\n")
     yaml.safe_dump(c, f, sort_keys=False, default_flow_style=False)
@@ -482,15 +484,53 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+  # Hetzner's server backups cover the root disk, not the data volume: keep
+  # a week of Signalith backups there, with the master keys in a folder of
+  # their own.
+  cat >/usr/local/sbin/testlab-backup-copy <<EOF
+#!/bin/sh
+set -eu
+copy() { # newest file matching \$1 into \$2, keeping \$3
+  f=\$(ls -1t $DATA/backups/\$1 2>/dev/null | head -n 1)
+  [ -n "\$f" ] || return 0
+  install -d -m 700 "\$2"
+  cp "\$f" "\$2/.tmp" && cmp -s "\$f" "\$2/.tmp" && mv "\$2/.tmp" "\$2/\$(basename "\$f")"
+  ls -1t "\$2"/*.zip | tail -n +\$((\$3 + 1)) | xargs -r rm -f
+}
+copy 'signalith-[0-9]*[0-9].zip' /var/backups/testlab 7
+copy '*.master-key.zip' /var/backups/testlab-keys 3
+EOF
+  chmod 700 /usr/local/sbin/testlab-backup-copy
+  cat >/etc/systemd/system/testlab-backup-copy.service <<'EOF'
+[Unit]
+Description=Signalith test lab: copy the nightly backup to the root disk
+After=testlab-backup.service
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/sbin/testlab-backup-copy
+EOF
+  cat >/etc/systemd/system/testlab-backup-copy.timer <<'EOF'
+[Unit]
+Description=Signalith test lab: copy the nightly backup to the root disk
+
+[Timer]
+OnCalendar=*-*-* 04:00 UTC
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+EOF
   systemctl daemon-reload
-  systemctl enable -q --now testlab-backup.timer
+  systemctl enable -q --now testlab-backup.timer testlab-backup-copy.timer
 }
 
 # Nothing on this server needs the cloud's metadata service after the
 # first boot, and no service may reach it. OpenSearch talks to this server
-# only. Signalith may reach the internet over HTTPS (feeds, content,
-# vulnerability data) and mail submission (alerts), never a private or
-# link-local address.
+# only. Signalith may reach the internet over HTTPS only (feeds, content,
+# vulnerability data), never a private or link-local address. The lab sends
+# no mail.
 outbound() {
   cat >/etc/nftables.conf <<'EOF'
 #!/usr/sbin/nft -f
@@ -503,7 +543,7 @@ table inet testlab {
 		meta skuid "opensearch" drop
 		meta skuid "signalith" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
 		meta skuid "signalith" ip6 daddr { fc00::/7, fe80::/10 } drop
-		meta skuid "signalith" tcp dport { 443, 465, 587 } accept
+		meta skuid "signalith" tcp dport 443 accept
 		meta skuid "signalith" drop
 	}
 }
