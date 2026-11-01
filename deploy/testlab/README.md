@@ -16,7 +16,7 @@ deleted between sessions.
 
 - Port 443 through Caddy, only from `admin_ip` until `public=true`; port 80,
   which only redirects and answers Let's Encrypt, from anyone. Caddy refuses the token routes
-  agents and senders use (`/api/ingest`, OTLP, HEC, osquery, sensor, agent,
+  agents and senders use (`/api/ingest`, OTLP and `/v1/`, HEC, osquery, sensor, agent,
   join, syslog, SCIM, chat and `/metrics`), so the lab takes no data from outside.
 - SSH from `admin_ip` only, with keys only.
 - Signalith (9000), its agent port (7779) and OpenSearch (9200) listen on
@@ -63,7 +63,9 @@ send the one-time password privately. The first sign-in asks for a new
 password and two-step sign-in. Turn an account off when its end date passes.
 
 Testers share one set of data, and can see and change each other's cases,
-notebooks, dashboards and indicators. The invitation says so, and that this
+notebooks, dashboards and indicators. The invitation, sent privately, says
+so (the account is made once the tester replies that they have read it),
+and so does `https://lab.signalith.io/about-this-lab`: that this
 is a test system: no real customer, production or employer data and no
 secrets; data may be reset; other testers may connect their own AI tools,
 so anything written there can reach their AI provider; report security

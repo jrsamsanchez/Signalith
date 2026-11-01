@@ -231,6 +231,27 @@ caddy_setup() {
   apt-get update -q
   apt-get install -y -q caddy
   install -m 644 "$CA" /etc/caddy/signalith-ca.pem
+  install -d -m 755 /usr/share/testlab
+  cat >/usr/share/testlab/about.html <<'EOF'
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About this lab</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40em;margin:2em auto;padding:0 1em}</style>
+<h1>About the Signalith test lab</h1>
+<p>This is a shared test system for trying Signalith. By signing in you agree that:</p>
+<ul>
+<li>Everything you write or upload here can be seen and changed by the other testers.</li>
+<li>You add no real customer, production or employer data, and no secrets.</li>
+<li>Other testers may connect their own AI tools, so anything you write here can be sent to their AI provider.</li>
+<li>Data may be reset at any time, and accounts end on the date you were given.</li>
+<li>You report security issues privately, as <a href="https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md">SECURITY.md</a> describes.</li>
+</ul>
+<p><a href="/">Sign in</a></p>
+</html>
+EOF
+  chmod 644 /usr/share/testlab/about.html
   install -d -o caddy -g caddy /var/log/caddy
   local global=""
   [ -z "$EMAIL" ] || global="{
@@ -251,8 +272,16 @@ $DOMAIN {
 
 	# Agents, senders and joining servers use tokens rather than a
 	# sign-in: the test lab takes no data from outside.
-	@closed path /api/ingest* /api/otlp/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics*
+	@closed path /api/ingest* /api/otlp/* /v1 /v1/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics*
 	respond @closed 404
+
+	# What testers agree to, readable without signing in.
+	handle /about-this-lab {
+		header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'"
+		root * /usr/share/testlab
+		rewrite * /about.html
+		file_server
+	}
 
 	reverse_proxy https://127.0.0.1:9000 {
 		# The client's own address, never one it sent.
