@@ -223,6 +223,18 @@ func (s *Server) handleDemoLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, errors.New("cross-site request refused"))
 		return
 	}
+	if s.conf().NoticeAgree() {
+		var req struct {
+			Agreed bool `json:"agreed"`
+		}
+		if err := readJSON(r, &req); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if s.noticeRefused(w, req.Agreed) {
+			return
+		}
+	}
 	c := s.client(r)
 	key := ""
 	if c.Addr.IsValid() && !c.Shared {
@@ -239,7 +251,7 @@ func (s *Server) handleDemoLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	token := s.demoSessions().Start(n)
 	s.setSessionCookie(w, r, token, false)
-	s.Log.Info("demo visitor signed in", c.logAttrs()...)
+	s.Log.Info("demo visitor signed in", slices.Concat(c.logAttrs(), s.noticeLog())...)
 	p := demoPrincipal()
 	p.Method = "session"
 	writeJSON(w, http.StatusOK, meView(p))

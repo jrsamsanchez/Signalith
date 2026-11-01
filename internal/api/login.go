@@ -192,9 +192,14 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		Code     string         `json:"code"`
 		Passkey  *passkeyAnswer `json:"passkey"`
 		Remember bool           `json:"remember"`
+		// Agreed is the sign-in notice's I agree (see notice.go).
+		Agreed bool `json:"agreed"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if s.noticeRefused(w, req.Agreed) {
 		return
 	}
 	p, err := s.signIn(r, req.Username, req.Password, secondFactor{Code: req.Code, Passkey: req.Passkey}, "session")
@@ -311,6 +316,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		// The public demo's one-click sign-in, hidden otherwise.
 		page = bytes.Replace(page, []byte(`id="demo" hidden`), []byte(`id="demo"`), 1)
 	}
+	page = noticePage(page, c)
 	page = s.joinWaiting(page)
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")

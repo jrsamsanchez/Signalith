@@ -115,16 +115,49 @@
 
   if (params.has('signedout')) setView('signedout');
 
+  // ---- Sign-in notice ----------------------------------------------------
+  // The notice an admin set (Settings > Sign-in notice), filled in by the
+  // server as plain text. When it asks people to agree, every way of
+  // signing in here waits for the tick, and sends it: the server refuses
+  // a sign-in without it too.
+  const noticeBox = $('notice');
+  const agreed = $('notice-agreed');
+  const mustAgree = !noticeBox.hidden && !$('notice-agree').hidden;
+  const NOTICE_REFUSED = ['Read the notice and tick I agree to sign in.', ''];
+  function noticeOK() {
+    if (!mustAgree || agreed.checked) return true;
+    noticeBox.setAttribute('data-invalid', '');
+    agreed.setAttribute('aria-invalid', 'true');
+    showError(NOTICE_REFUSED[0], NOTICE_REFUSED[1]);
+    agreed.focus();
+    return false;
+  }
+  const noticeAgreed = () => mustAgree && agreed.checked;
+
   // ---- Single sign-on --------------------------------------------------
   // The button (shown by the server when single sign-on is on) returns to
   // the same page as a password sign-in; the server checks the path again.
   // There is one for OpenID Connect and one for SAML.
-  for (const [id, start] of [['sso-link', 'api/auth/oidc/start'], ['saml-link', 'api/auth/saml/start']]) {
-    const link = $(id);
-    if (!link) continue;
-    const u = new URL(nextPath(), location.href);
-    link.href = start + '?next=' + encodeURIComponent(u.pathname + u.search + u.hash);
+  const ssoLinks = [['sso-link', 'api/auth/oidc/start'], ['saml-link', 'api/auth/saml/start']];
+  function ssoHrefs() {
+    for (const [id, start] of ssoLinks) {
+      const link = $(id);
+      if (!link) continue;
+      const u = new URL(nextPath(), location.href);
+      link.href = start + '?next=' + encodeURIComponent(u.pathname + u.search + u.hash) + (noticeAgreed() ? '&agreed=1' : '');
+    }
   }
+  ssoHrefs();
+  for (const [id] of ssoLinks) {
+    const link = $(id);
+    if (link) link.addEventListener('click', (ev) => { if (!noticeOK()) ev.preventDefault(); });
+  }
+  agreed.addEventListener('change', () => {
+    noticeBox.removeAttribute('data-invalid');
+    agreed.removeAttribute('aria-invalid');
+    ssoHrefs();
+    if (agreed.checked && $('login-error-title').textContent === NOTICE_REFUSED[0]) setView('');
+  });
   // A single sign-on that failed comes back here with a code; the reason
   // is in the server log.
   const SSO_REFUSED = {
@@ -134,6 +167,7 @@
     denied: ['Your identity provider didn’t sign you in.', 'Try again, or ask your identity provider’s admin about your access.'],
     failed: ['Signalith couldn’t confirm your sign-in with your identity provider.', 'Try again. If it keeps happening, tell a Signalith admin: the server log says why.'],
     username: ['Your identity provider didn’t send a username Signalith can use.', 'Ask a Signalith admin to check the username claim or attribute under Settings, Single sign-on.'],
+    notice: NOTICE_REFUSED,
     https: ['SAML sign-in needs HTTPS.', 'Open Signalith at its https:// address and try again, or ask a Signalith admin.'],
     replay: ['That sign-in was already used.', 'Start a new sign-in from this page.'],
     domain: ['Your email address isn’t in a domain that can use Signalith.', 'Sign in with your work account, or ask a Signalith admin.'],
@@ -194,11 +228,13 @@
     password_expired: ['Your directory password has expired.', 'Change it the way you usually do, for example by signing in to Windows, then sign in here again.'],
     directory_unavailable: ['Signalith can’t reach your directory right now.', 'Try again in a minute. If it keeps happening, tell a Signalith admin.'],
     demo_password_off: ['Signing in with a password is off on this demo.', 'Use Explore the demo to look around.'],
+    notice_not_agreed: NOTICE_REFUSED,
   };
 
   form.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     if (submit.disabled) return;
+    if (!noticeOK()) return;
     if (!user.value.trim() || !pass.value) {
       const missing = user.value.trim() ? pass : user;
       showError('Enter your username and password.', '', missing);
@@ -211,7 +247,7 @@
       resp = await send('api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: user.value.trim(), password: pass.value, remember: remember.checked }),
+        body: JSON.stringify({ username: user.value.trim(), password: pass.value, remember: remember.checked, agreed: noticeAgreed() }),
       });
     } catch (_) {
       setBusy(false);
@@ -228,7 +264,7 @@
     if (data.code === 'mfa_required') {
       // The password was right: the code or passkey is next. The password
       // stays in this page's memory only, to send with it.
-      showCode({ username: user.value.trim(), password: pass.value, remember: remember.checked }, data);
+      showCode({ username: user.value.trim(), password: pass.value, remember: remember.checked, agreed: noticeAgreed() }, data);
       return;
     }
     if (resp.status === 429) {
@@ -252,14 +288,14 @@
   const demoBox = $('demo');
   const demoBtn = $('demo-btn');
   demoBtn.addEventListener('click', async () => {
-    if (demoBtn.disabled) return;
+    if (demoBtn.disabled || !noticeOK()) return;
     demoBtn.disabled = true;
     $('demo-label').textContent = 'Opening the demo…';
     const done = () => { demoBtn.disabled = false; $('demo-label').textContent = 'Explore the demo'; };
     setView('');
     let resp;
     try {
-      resp = await send('api/demo', { method: 'POST' });
+      resp = await send('api/demo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agreed: noticeAgreed() }) });
     } catch (_) {
       done();
       showError('Could not reach the Signalith server.', 'Check your connection and try again.');
@@ -274,7 +310,7 @@
   // Visitors need only the button: the admin's password form waits behind
   // a link, and passkeys don't sign in on a demo.
   if (!demoBox.hidden) {
-    const adminParts = [...form.querySelectorAll('.field, .check, #login-submit')];
+    const adminParts = [...form.querySelectorAll('.field, :scope > .check, #login-submit')];
     adminParts.forEach((el) => el.classList.add('hidden'));
     // "Welcome back" is for the demo's admin; the box below says what the demo is.
     form.querySelector('.sub')?.classList.add('hidden');
@@ -302,7 +338,7 @@
   const pkBtn = $('passkey-btn');
   $('passkey-signin').hidden = !pkOK || !demoBox.hidden;
   pkBtn.addEventListener('click', async () => {
-    if (pkBtn.disabled) return;
+    if (pkBtn.disabled || !noticeOK()) return;
     pkBtn.disabled = true;
     $('passkey-label').textContent = 'Waiting for your passkey…';
     const done = () => { pkBtn.disabled = false; $('passkey-label').textContent = 'Sign in with a passkey'; };
@@ -328,7 +364,7 @@
         return;
       }
       $('passkey-label').textContent = 'Signing in…';
-      resp = await send('api/login/passkey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ans, remember: remember.checked }) });
+      resp = await send('api/login/passkey', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ans, remember: remember.checked, agreed: noticeAgreed() }) });
       data = await resp.json().catch(() => ({}));
     } catch (_) {
       done();
