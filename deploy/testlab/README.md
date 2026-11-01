@@ -47,7 +47,8 @@ the setup with the `watch_setup` output. It ends with "Test lab ready".
    Signalith, no ticketing. The setup sets retention to 30 days.
 3. Restore one snapshot under a new name to test it, then delete the copy.
 4. Turn the built-in admin off (**Settings > Users**, **Actions** on its row).
-5. Then open it: `terraform apply -var public=true`.
+5. Once the security live check signs off, open it:
+   `terraform apply -var public=true`.
 
 Backups: a nightly OpenSearch snapshot (14 kept) and Signalith backup on
 the data volume, and a copy of the Signalith backup on the root disk (7

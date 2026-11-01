@@ -497,6 +497,7 @@ EOF
   cat >/etc/systemd/system/testlab-backup.service <<'EOF'
 [Unit]
 Description=Signalith test lab: nightly snapshot and backup
+OnSuccess=testlab-backup-copy.service
 
 [Service]
 Type=oneshot
@@ -523,7 +524,11 @@ copy() { # newest file matching \$1 into \$2, keeping \$3
   f=\$(ls -1t $DATA/backups/\$1 2>/dev/null | head -n 1)
   [ -n "\$f" ] || return 0
   install -d -m 700 "\$2"
-  cp "\$f" "\$2/.tmp" && cmp -s "\$f" "\$2/.tmp" && mv "\$2/.tmp" "\$2/\$(basename "\$f")"
+  if cp "\$f" "\$2/.tmp" && cmp -s "\$f" "\$2/.tmp"; then
+    mv "\$2/.tmp" "\$2/\$(basename "\$f")"
+  else
+    rm -f "\$2/.tmp"; echo "copy of \$f failed" >&2; exit 1
+  fi
   ls -1t "\$2"/*.zip | tail -n +\$((\$3 + 1)) | xargs -r rm -f
 }
 copy 'signalith-[0-9]*[0-9].zip' /var/backups/testlab 7
@@ -533,26 +538,14 @@ EOF
   cat >/etc/systemd/system/testlab-backup-copy.service <<'EOF'
 [Unit]
 Description=Signalith test lab: copy the nightly backup to the root disk
-After=testlab-backup.service
 
 [Service]
 Type=oneshot
 UMask=0077
 ExecStart=/usr/local/sbin/testlab-backup-copy
 EOF
-  cat >/etc/systemd/system/testlab-backup-copy.timer <<'EOF'
-[Unit]
-Description=Signalith test lab: copy the nightly backup to the root disk
-
-[Timer]
-OnCalendar=*-*-* 04:00 UTC
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-EOF
   systemctl daemon-reload
-  systemctl enable -q --now testlab-backup.timer testlab-backup-copy.timer
+  systemctl enable -q --now testlab-backup.timer
 }
 
 # Nothing on this server needs the cloud's metadata service after the
