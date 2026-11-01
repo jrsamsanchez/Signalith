@@ -313,6 +313,11 @@
       <a class="set-tab" href="#audit" data-page="audit" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="set-tab" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
+    <!-- Shown with a mouse when the row scrolls sideways and has tabs out
+         of view on that side. Keyboard users Tab through the tabs instead,
+         and each one scrolls into view as it is focused. -->
+    <button type="button" class="set-tabs__arrow set-tabs__arrow--prev" data-dir="-1" tabindex="-1" aria-hidden="true" title="More tabs" hidden><svg class="icon"><use href="#i-chevron-left"/></svg></button>
+    <button type="button" class="set-tabs__arrow set-tabs__arrow--next" data-dir="1" tabindex="-1" aria-hidden="true" title="More tabs" hidden><svg class="icon"><use href="#i-chevron-right"/></svg></button>
   </nav>
   <!-- Search -->
   <section id="page-search" class="page">

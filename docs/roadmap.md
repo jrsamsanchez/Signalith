@@ -21,19 +21,6 @@ Ideas and requests are welcome as
 
 ## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
 
-**The next release**
-:   Finished and waiting for the next release: [case](cases.md) templates and tasks,
-    files attached to a case, and case reports signed with SHA-256 fingerprints;
-    `signalith opensearch install`, which sets up OpenSearch on Linux in one command;
-    scheduled OpenSearch [snapshots](backup.md) with a Backups card; a
-    [Prometheus metrics](metrics.md) endpoint; signed monthly
-    [compliance](compliance.md) evidence records; for the
-    [Signalith Agent](signalith-agent.md), Windows 11 on ARM, staged updates, an alert
-    when an agent goes silent and a check of Fluent Bit configuration;
-    [vulnerability](vulnerabilities.md) matching of installed Linux packages against
-    distribution advisories; and an Ingress and an agent Service in the
-    [Helm chart](kubernetes.md).
-
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
     Splunk's answers where the two should agree.
@@ -43,8 +30,8 @@ Ideas and requests are welcome as
     keeps events through an OpenSearch restart.
 
 **Proof**
-:   A seven-day lab run with real Windows and Sysmon events, with the bytes, cores and
-    shards it took published on the [performance](performance.md) page.
+:   Installs outside the lab running for 30 days, and a published false-positive rate
+    for the starter rule set on a real network.
 
 ## Next: the 1.0 checklist <span class="sg-pill sg-pill--next">Planned</span> { #next data-toc-label="Next: 1.0" }
 
@@ -124,7 +111,7 @@ These are outside what Signalith is for:
 
 ## Done <span class="sg-pill sg-pill--done">Available</span> { #done data-toc-label="Done" }
 
-Everything below is in Signalith now. Items named under **The next release** in [Now](#now) arrive with the release after 0.3.2.
+Everything below is in Signalith now.
 
 **Search foundation**
 
@@ -132,7 +119,9 @@ Everything below is in Signalith now. Items named under **The next release** in 
   (with optional Sysmon) or macOS, it runs Fluent Bit and osquery, and what each group
   of computers collects is chosen on the Endpoints page, so nobody edits a configuration.
   Its buffer on disk is capped, it stops sending when the server refuses its token, and an
-  update is kept only once the new agent has reached the server.
+  update is kept only once the new agent has reached the server. It runs on Windows 11 on
+  ARM, updates in stages, raises an alert when an agent goes silent and checks its Fluent
+  Bit configuration.
 - Fluent Bit agents for Windows and Linux, set up from the **Add data** page, plus
   [syslog and CEF](sending-data.md#syslog) from network devices and
   [OpenTelemetry](opentelemetry.md) logs over OTLP, each agent with its own
@@ -142,7 +131,9 @@ Everything below is in Signalith now. Items named under **The next release** in 
 - A pipe-based [query language](query-language.md) that reads like SPL, plain-English
   questions that become queries, a visual query builder, and an optional AI model.
 - A Docker quick start, [packages](install-packages.md) for Linux and Windows, signed
-  apt and dnf repositories, and a [Helm chart](kubernetes.md) for Kubernetes.
+  apt and dnf repositories, `signalith opensearch install` to set up OpenSearch on Linux
+  in one command, and a [Helm chart](kubernetes.md) for Kubernetes with an Ingress and an
+  agent Service.
 - A first-use [setup guide](getting-started.md#the-setup-guide) that opens the page for
   each step and ticks it off once it is done.
 
@@ -174,7 +165,9 @@ Everything below is in Signalith now. Items named under **The next release** in 
 
 **Respond and scale**
 
-- Investigation cases that collect findings, notes, searches and evidence, and
+- Investigation [cases](cases.md) that collect findings, notes, searches, evidence and
+  attached files, with templates and tasks and case reports signed with SHA-256
+  fingerprints, and
   [Investigate with AI](investigate.md) for a first verdict on a finding.
 - An [attack storyline](storyline.md) that shows one intrusion as a single story: the
   ATT&CK tactics it reached, a timeline and the entities that tie it together.
@@ -206,6 +199,9 @@ Everything below is in Signalith now. Items named under **The next release** in 
   stored all 25,000 events a second (about 1 TB a day) with 1,520 detections and none
   late; and a three-server run in which detections stayed evenly shared through a
   restart and a crash.
+- A [seven-day run](performance.md#a-week-of-recorded-windows-events) on three Signalith
+  servers that replayed recorded Windows and Sysmon events: 769 million events stored,
+  none lost, no restarts, and the sizing advice that came out of it.
 
 **More data**
 
@@ -237,7 +233,8 @@ Everything below is in Signalith now. Items named under **The next release** in 
   optional help from AI.
 - [Vulnerability scanning](vulnerabilities.md) with Nmap and CVE matching, ranked with
   CISA KEV and EPSS, a scanner for each network zone, and OpenVAS for deeper scans, with
-  [encrypted SSH, Windows, VMware ESXi and SNMP logins](vulnerabilities.md#credentialed-openvas-scans).
+  [encrypted SSH, Windows, VMware ESXi and SNMP logins](vulnerabilities.md#credentialed-openvas-scans),
+  and installed Linux packages matched against distribution advisories.
 - A read-only [MCP server](ai-tools.md) for AI tools, with API tokens.
 
 **Built in from the start**
@@ -250,9 +247,12 @@ Everything below is in Signalith now. Items named under **The next release** in 
 - A separate [agent port](sending-data.md#the-agent-port), so agents never need the web
   page.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.
-- [Backup and restore](backup.md) of a server's files and OpenSearch data.
+- [Backup and restore](backup.md) of a server's files and OpenSearch data, with scheduled
+  OpenSearch snapshots and a Backups card.
+- A [Prometheus metrics](metrics.md) endpoint.
 - A [security check](security.md) of how each server is set up, a
   [tamper-evident audit log](audit.md#tamper-evidence), and API tokens that expire.
 - [Compliance](compliance.md) coverage for NIST SP 800-53, CIS Controls v8, PCI DSS 4.0.1,
-  ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, with evidence reports for auditors.
+  ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR, with evidence reports for auditors and
+  signed monthly evidence records.
 - Fuzz tests for every parser that reads data from the network, run in CI and nightly.
