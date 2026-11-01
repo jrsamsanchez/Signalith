@@ -209,6 +209,8 @@ o["cert_file"] = "/etc/signalith/opensearch-client.pem"
 o["key_file"] = "/etc/signalith/opensearch-client-key.pem"
 o.pop("username", None)
 o.pop("password", None)
+# Testers' data is kept 30 days.
+c.setdefault("retention", {})["days"] = 30
 with open(path, "w") as f:
     f.write("# Written by the test lab setup (deploy/testlab/testlab-setup.sh).\n")
     yaml.safe_dump(c, f, sort_keys=False, default_flow_style=False)
@@ -229,6 +231,27 @@ caddy_setup() {
   apt-get update -q
   apt-get install -y -q caddy
   install -m 644 "$CA" /etc/caddy/signalith-ca.pem
+  install -d -m 755 /usr/share/testlab
+  cat >/usr/share/testlab/about.html <<'EOF'
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About this lab</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40em;margin:2em auto;padding:0 1em}</style>
+<h1>About the Signalith test lab</h1>
+<p>This is a shared test system for trying Signalith. By signing in you agree that:</p>
+<ul>
+<li>Everything you write or upload here can be seen and changed by the other testers.</li>
+<li>You add no real customer, production or employer data, and no secrets.</li>
+<li>Other testers may connect their own AI tools, so anything you write here can be sent to their AI provider.</li>
+<li>Data may be reset at any time, and accounts end on the date you were given.</li>
+<li>You report security issues privately, as <a href="https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md">SECURITY.md</a> describes.</li>
+</ul>
+<p><a href="/">Sign in</a></p>
+</html>
+EOF
+  chmod 644 /usr/share/testlab/about.html
   install -d -o caddy -g caddy /var/log/caddy
   local global=""
   [ -z "$EMAIL" ] || global="{
@@ -249,8 +272,16 @@ $DOMAIN {
 
 	# Agents, senders and joining servers use tokens rather than a
 	# sign-in: the test lab takes no data from outside.
-	@closed path /api/ingest* /api/otlp/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics*
+	@closed path /api/ingest* /api/otlp/* /v1 /v1/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics*
 	respond @closed 404
+
+	# What testers agree to, readable without signing in.
+	handle /about-this-lab {
+		header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'"
+		root * /usr/share/testlab
+		rewrite * /about.html
+		file_server
+	}
 
 	reverse_proxy https://127.0.0.1:9000 {
 		# The client's own address, never one it sent.
@@ -466,6 +497,7 @@ EOF
   cat >/etc/systemd/system/testlab-backup.service <<'EOF'
 [Unit]
 Description=Signalith test lab: nightly snapshot and backup
+OnSuccess=testlab-backup-copy.service
 
 [Service]
 Type=oneshot
@@ -482,15 +514,45 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+  # Hetzner's server backups cover the root disk, not the data volume: keep
+  # a week of Signalith backups there, with the master keys in a folder of
+  # their own.
+  cat >/usr/local/sbin/testlab-backup-copy <<EOF
+#!/bin/sh
+set -eu
+copy() { # newest file matching \$1 into \$2, keeping \$3
+  f=\$(ls -1t $DATA/backups/\$1 2>/dev/null | head -n 1)
+  [ -n "\$f" ] || return 0
+  install -d -m 700 "\$2"
+  if cp "\$f" "\$2/.tmp" && cmp -s "\$f" "\$2/.tmp"; then
+    mv "\$2/.tmp" "\$2/\$(basename "\$f")"
+  else
+    rm -f "\$2/.tmp"; echo "copy of \$f failed" >&2; exit 1
+  fi
+  ls -1t "\$2"/*.zip | tail -n +\$((\$3 + 1)) | xargs -r rm -f
+}
+copy 'signalith-[0-9]*[0-9].zip' /var/backups/testlab 7
+copy '*.master-key.zip' /var/backups/testlab-keys 3
+EOF
+  chmod 700 /usr/local/sbin/testlab-backup-copy
+  cat >/etc/systemd/system/testlab-backup-copy.service <<'EOF'
+[Unit]
+Description=Signalith test lab: copy the nightly backup to the root disk
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/sbin/testlab-backup-copy
+EOF
   systemctl daemon-reload
   systemctl enable -q --now testlab-backup.timer
 }
 
 # Nothing on this server needs the cloud's metadata service after the
 # first boot, and no service may reach it. OpenSearch talks to this server
-# only. Signalith may reach the internet over HTTPS (feeds, content,
-# vulnerability data) and mail submission (alerts), never a private or
-# link-local address.
+# only. Signalith may reach the internet over HTTPS only (feeds, content,
+# vulnerability data), never a private or link-local address. The lab sends
+# no mail.
 outbound() {
   cat >/etc/nftables.conf <<'EOF'
 #!/usr/sbin/nft -f
@@ -503,7 +565,7 @@ table inet testlab {
 		meta skuid "opensearch" drop
 		meta skuid "signalith" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
 		meta skuid "signalith" ip6 daddr { fc00::/7, fe80::/10 } drop
-		meta skuid "signalith" tcp dport { 443, 465, 587 } accept
+		meta skuid "signalith" tcp dport 443 accept
 		meta skuid "signalith" drop
 	}
 }
