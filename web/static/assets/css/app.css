@@ -3810,6 +3810,9 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-notify .nt-rule__name .badge { height: 18px; font-weight: 500; color: var(--text-3); }
 #page-notify .nt-rule__sum { margin-top: 2px; color: var(--text-2); line-height: 1.45; overflow-wrap: anywhere; }
 #page-notify .nt-rule.is-off .nt-rule__name, #page-notify .nt-rule.is-off .nt-rule__sum { color: var(--text-3); }
+#page-notify .nt-audit__note { margin: 4px 0 0; }
+#page-notify .nt-audit__where { color: var(--text); font-size: 13px; }
+#page-notify .nt-rule .nt-rule__name { flex-wrap: wrap; }
 #page-notify .nt-rule .dx-menu { margin: -4px 0 0; }
 #page-notify .nt-rule .menu__panel { min-width: 160px; }
 

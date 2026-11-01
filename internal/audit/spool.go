@@ -104,6 +104,9 @@ type Sink struct {
 	now      func() time.Time
 	enabled  atomic.Bool
 	flushing sync.Mutex
+	// tap, when set, is handed every audit event as it is logged, whether
+	// or not the sink is enabled (see SetTap).
+	tap atomic.Pointer[func(Event)]
 
 	mu        sync.Mutex
 	server    string
@@ -272,6 +275,30 @@ func countLines(data []byte) int64 {
 
 // Enabled reports whether Add keeps events.
 func (s *Sink) Enabled() bool { return s != nil && s.enabled.Load() }
+
+// SetTap hands every audit event logged from now on to f as well, before
+// it is spooled and whether or not the sink is enabled, so this server can
+// alert on its own audit records even while they are kept only in its log.
+// f is called on the logging goroutine, so it must return at once; nil
+// stops it.
+func (s *Sink) SetTap(f func(Event)) {
+	if f == nil {
+		s.tap.Store(nil)
+		return
+	}
+	s.tap.Store(&f)
+}
+
+// tapped returns the tap, or nil.
+func (s *Sink) tapped() func(Event) {
+	if s == nil {
+		return nil
+	}
+	if f := s.tap.Load(); f != nil {
+		return *f
+	}
+	return nil
+}
 
 // SetEnabled turns keeping events on or off. Events already spooled are
 // still written while it is off.

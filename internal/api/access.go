@@ -683,7 +683,7 @@ func (s *Server) noteFailure(from clientInfo, f auth.Failure) {
 		s.Log.Warn("sign-ins from this address are paused after too many wrong passwords. If many people reach Signalith through it, "+
 			"list it on the Settings page. If it is a reverse proxy that sets X-Forwarded-For itself, list it under Trusted reverse proxies (server.trusted_proxies) "+
 			"and choose X-Forwarded-For under Client address header (server.client_header). Otherwise list it under Proxies and gateways (server.shared_addresses)",
-			append(from.logAttrs(), "minutes", int(s.limiter().Lockout.Minutes()))...)
+			append([]any{"audit", true}, append(from.logAttrs(), "minutes", int(s.limiter().Lockout.Minutes()))...)...)
 	}
 }
 
