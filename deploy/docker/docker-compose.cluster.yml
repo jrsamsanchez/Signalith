@@ -172,7 +172,7 @@ services:
   # protocol v2 header. Its address (172.30.11.10) is the one trusted proxy
   # in signalith-cluster.yaml.
   haproxy:
-    image: haproxy:3.0-alpine
+    image: haproxy:3.4-alpine
     restart: unless-stopped
     depends_on:
       signalith-a: { condition: service_started }
