@@ -868,6 +868,9 @@ type Auth struct {
 	// authenticator app after the password): off, admins or everyone.
 	// See MFARequiredMode.
 	MFARequired string `yaml:"mfa_required,omitempty"`
+	// Notice is the sign-in notice, set on the Sign-in notice tab of
+	// Settings.
+	Notice Notice `yaml:"notice,omitempty"`
 }
 
 // MFARequiredMode returns auth.mfa_required: off, admins or everyone.
@@ -2818,6 +2821,7 @@ func (c *Config) Validate() error {
 	p = append(p, c.samlProblems()...)
 	p = append(p, c.scimProblems()...)
 	p = append(p, c.metricsProblems()...)
+	p = append(p, c.noticeProblems()...)
 	if c.Detections.Dir == "" {
 		p = append(p, "detections.dir is required, for example: detections")
 	}
