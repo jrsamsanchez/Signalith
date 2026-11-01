@@ -15,7 +15,8 @@
 #      of its own CA and no passwords;
 #   4. Signalith pointed at it, on 127.0.0.1 behind Caddy;
 #   5. Caddy: HTTPS for the public name, the only way in;
-#   6. this server's own logs (sign-ins, journal, audit) sent to Signalith;
+#   6. an audit log of the programs this server runs, kept on the server
+#      only: in Signalith, testers would see the admin's commands;
 #   7. sample data and a small live feed of recorded attack events;
 #   8. nightly snapshots and backups, outbound limits, automatic updates.
 set -Eeuo pipefail
@@ -305,81 +306,16 @@ EOF
   systemctl reload-or-restart caddy
 }
 
-# ---- 6. this server's own logs ----
+# ---- 6. this server's own audit log ----
 
-# The built-in admin must replace the first password Signalith made before
-# anything else, so the lab gives it a new random one, kept for root in
-# $LAB/admin-password (and is shown to the admin once, at the end).
-admin_password() {
-  if [ -s "$LAB/admin-password" ]; then cat "$LAB/admin-password"; else cat /etc/signalith/initial-admin-password; fi
-}
-
-# admin_user is the built-in admin's name in the config:
-# signalithadmin on a new install, admin on one made before 0.3.1.
-admin_user() {
-  local u
-  u=$(awk '$1 == "admin_user:" { gsub(/["\047]/, "", $2); print $2; exit }' /etc/signalith/signalith.yaml 2>/dev/null)
-  echo "${u:-signalithadmin}"
-}
-
-# login signs in as the built-in admin, keeping the session in the jar $1.
-# The password goes to curl on its input, not its command line. One whose
-# change Signalith took though curl did not hear back is still in
-# admin-password.new.
-login() {
-  local pw
-  for pw in "" "$LAB/admin-password.new"; do
-    if [ -n "$pw" ]; then [ -s "$pw" ] || return 1; fi
-    if jq -n --rawfile p <(if [ -n "$pw" ]; then cat "$pw"; else admin_password; fi) --arg u "$(admin_user)" '{username: $u, password: ($p | rtrimstr("\n"))}' |
-      curl -fsS -c "$1" --cacert /var/lib/signalith/tls/ca.pem -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
-        --data-binary @- https://localhost:9000/api/login >/dev/null; then
-      [ -z "$pw" ] || mv "$pw" "$LAB/admin-password"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# api calls Signalith's API, signed in as the built-in
-# admin (as the Add data page would).
-api() {
-  local ca=/var/lib/signalith/tls/ca.pem jar=$LAB/cookies
-  login "$jar"
-  if [ "$(curl -fsS -b "$jar" --cacert "$ca" https://localhost:9000/api/me | jq -r .must_change_password)" = true ]; then
-    (umask 077 && openssl rand -base64 24 | tr -d '/+=\n' >"$LAB/admin-password.new")
-    jq -n --rawfile c <(admin_password) --rawfile n "$LAB/admin-password.new" \
-      '{current_password: ($c | rtrimstr("\n")), new_password: $n}' |
-      curl -fsS -b "$jar" --cacert "$ca" -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
-        --data-binary @- https://localhost:9000/api/me/password >/dev/null
-    mv "$LAB/admin-password.new" "$LAB/admin-password"
-    login "$jar"
-  fi
-  curl -fsS -b "$jar" --cacert "$ca" -H 'Origin: https://localhost:9000' "https://localhost:9000$1"
-  rm -f "$jar"
-}
-
-# Fluent Bit with the config the Add data page gives for Linux: sign-ins
-# and the journal, the audit log and web server logs.
-own_logs() {
-  local token cfg
-  token=$(sg tokens create -purpose linux "Test lab server $(date +%m%d-%H%M%S)")
-  cfg=$(api "/api/agents/config?os=linux&server=https://localhost:9000")
-  . /etc/os-release
-  curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor --batch --yes -o /usr/share/keyrings/fluentbit-keyring.gpg
-  chmod 644 /usr/share/keyrings/fluentbit-keyring.gpg
-  echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/$VERSION_CODENAME $VERSION_CODENAME main" >/etc/apt/sources.list.d/fluent-bit.list
-  apt-get update -q >/dev/null
-  apt-get install -y -q fluent-bit auditd >/dev/null
-  jq -r .config <<<"$cfg" | sed "s/$(jq -r .token_placeholder <<<"$cfg")/$token/g" >"$LAB/fluent-bit.conf"
-  install -D -m 600 "$LAB/fluent-bit.conf" "$(jq -r .config_path <<<"$cfg")"
-  jq -r .ca <<<"$cfg" >"$LAB/signalith-ca.pem"
-  install -D -m 644 "$LAB/signalith-ca.pem" "$(jq -r .ca_path <<<"$cfg")"
-  rm -f "$LAB/fluent-bit.conf" "$LAB/signalith-ca.pem"
-  # The audit log rules of the detection packs read the programs that run.
-  echo '-a always,exit -F arch=b64 -S execve -k exec' >/etc/audit/rules.d/signalith.rules
+# The programs this server runs are audited, but the log stays here: the
+# lab's Signalith is shared with testers, who must not see the admin's
+# sign-ins and commands.
+own_audit() {
+  apt-get install -y -q auditd >/dev/null
+  echo '-a always,exit -F arch=b64 -S execve -k exec' >/etc/audit/rules.d/testlab.rules
   augenrules --load >/dev/null 2>&1 || true
-  systemctl enable -q fluent-bit
-  systemctl restart fluent-bit
+  systemctl enable -q --now auditd
 }
 
 # ---- 7. data for testers ----
@@ -603,10 +539,10 @@ step signalith signalith_package
 step opensearch opensearch_setup
 step signalith-config signalith_config
 step caddy caddy_setup
-step own-logs own_logs
+step own-audit own_audit
 step sample-data sample_data
 step live-feed live_feed
 step backups backups
 step outbound outbound
 step updates updates
-say "Test lab ready. The built-in admin's password: sudo cat $LAB/admin-password"
+say "Test lab ready. The built-in admin's first password: sudo cat /etc/signalith/initial-admin-password"
