@@ -5,3 +5,5 @@
 *.tfstate.*
 *.tfvars
 crash.log
+# Saved plans hold the server's setup data.
+*.plan

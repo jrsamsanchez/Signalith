@@ -10,7 +10,7 @@ deleted between sessions.
 | --- | --- |
 | `main.tf`, `variables.tf`, `outputs.tf`, `versions.tf` | The server (cx43, Hetzner backups on), its data volume and firewall |
 | `cloud-init.yaml.tftpl` | First boot: SSH keys only, then starts the setup |
-| `testlab-setup.sh` | Signalith from the apt repository, OpenSearch on 127.0.0.1, Caddy for HTTPS, the server's own logs, sample data, a live feed of recorded attack events, nightly snapshots and backups, automatic updates |
+| `testlab-setup.sh` | Signalith from the apt repository, OpenSearch on 127.0.0.1, Caddy for HTTPS, a local audit log, sample data, a live feed of recorded attack events, nightly snapshots and backups, automatic updates |
 
 ## What is reachable
 
@@ -40,7 +40,7 @@ the setup with the `watch_setup` output. It ends with "Test lab ready".
 
 ## Before anyone else gets in
 
-1. Sign in as the built-in admin (`sudo cat /root/testlab/admin-password`),
+1. Sign in as the built-in admin (`sudo cat /etc/signalith/initial-admin-password`),
    and make your own admin account with two-step sign-in.
 2. On **Settings**: **Require two-step sign-in** for everyone, the AI
    assistant left off, no response actions, no playbooks that act outside
