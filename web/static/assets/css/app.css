@@ -1240,18 +1240,36 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 .set-tab[aria-current="page"] { background: var(--accent-soft); color: var(--text); }
 .set-tab[aria-current="page"] > .icon { color: var(--accent); }
 .set-tab .nav__count { height: 16px; padding: 0 5px; }
-/* On a phone the row scrolls sideways instead of wrapping, and fades at
-   the right edge while more tabs are out of view, so no tab goes unseen. */
+.set-tabs__arrow { display: none; }
+/* In a narrow window the row scrolls sideways instead of wrapping, and
+   fades at each edge that has tabs out of view, so no tab goes unseen.
+   With a mouse, an arrow button sits on each such edge and the wheel
+   scrolls the row; on a touch screen it is swiped. */
 @media (max-width: 720px) {
-  .set-tabs { padding: var(--sp-4) 0 0; }
+  /* the 4px above the row keeps a focused tab's ring from being cut off */
+  .set-tabs { position: relative; padding: calc(var(--sp-4) - 4px) 0 0; }
   .set-tabs__list {
-    flex-wrap: nowrap; padding: 0 var(--sp-4) var(--sp-3); scroll-padding-inline: var(--sp-4);
-    overflow-x: auto; scrollbar-width: none;
+    flex-wrap: nowrap; padding: 4px var(--sp-4) var(--sp-3); scroll-padding-inline: var(--sp-4);
+    overflow-x: auto; scrollbar-width: none; scroll-behavior: smooth;
   }
   .set-tabs__list::-webkit-scrollbar { display: none; }
   .set-tabs__list.has-more { mask-image: linear-gradient(to right, #000 calc(100% - 40px), transparent); }
+  .set-tabs__list.has-prev { mask-image: linear-gradient(to left, #000 calc(100% - 40px), transparent); }
+  .set-tabs__list.has-prev.has-more { mask-image: linear-gradient(to right, transparent, #000 40px, #000 calc(100% - 40px), transparent); }
   .set-tab { padding: 0 10px; }
 }
+@media (max-width: 720px) and (hover: hover) and (pointer: fine) {
+  .set-tabs__arrow:not([hidden]) {
+    position: absolute; top: var(--sp-4); z-index: 1; display: inline-grid; place-items: center;
+    width: var(--h-md); height: var(--h-md); padding: 0; border: 1px solid var(--line); border-radius: 999px;
+    background: var(--raised); color: var(--text-2); box-shadow: var(--shadow-sm); cursor: pointer;
+    transition: border-color var(--t-fast), color var(--t-fast);
+  }
+  .set-tabs__arrow:hover { border-color: var(--line-strong); color: var(--text); }
+  .set-tabs__arrow--prev { left: 4px; }
+  .set-tabs__arrow--next { right: 4px; }
+}
+@media (prefers-reduced-motion: reduce) { .set-tabs__list { scroll-behavior: auto; } }
 .nav__empty { padding: 2px 10px; color: var(--text-3); font-size: var(--fs-sm); }
 /* the sidebar health card links to the Health page */
 a.health { color: var(--text-2); text-decoration: none; transition: background var(--t-fast); }
