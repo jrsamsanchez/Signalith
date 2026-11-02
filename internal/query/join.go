@@ -190,16 +190,19 @@ func (p *parser) parseSubsearch(inner string, base int) (*Query, error) {
 	if len(sub) >= 6 && strings.EqualFold(sub[:6], "search") && (len(sub) == 6 || isSpace(rune(sub[6]))) {
 		base += 6
 		sub = sub[6:]
-	}
-	// A command that makes its own rows may start it without the |, as
-	// in [inputlookup owners | fields user]. The name must be the whole
-	// first word, as the lexer reads it: inputlookup000 is a term.
-	w := strings.TrimLeftFunc(sub, isSpace)
-	if i := strings.IndexFunc(w, func(r rune) bool { return !isWordRune(r) }); i >= 0 {
-		w = w[:i]
-	}
-	if generating[strings.ToLower(w)] {
-		sub, base = "|"+sub, base-1
+	} else {
+		// Without it, a command that makes its own rows may start it
+		// without the |, as in [inputlookup owners | fields user]. After
+		// the word search, inputlookup is a term to search for, which is
+		// how a subsearch prints. The name must be the whole first word,
+		// as the lexer reads it: inputlookup000 is a term.
+		w := strings.TrimLeftFunc(sub, isSpace)
+		if i := strings.IndexFunc(w, func(r rune) bool { return !isWordRune(r) }); i >= 0 {
+			w = w[:i]
+		}
+		if generating[strings.ToLower(w)] {
+			sub, base = "|"+sub, base-1
+		}
 	}
 	q, err := parseAt(sub, base, p.depth+1)
 	if err != nil {
