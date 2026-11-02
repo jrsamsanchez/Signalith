@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
+	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
 // A tenant added on a running server gets data of its own: its agents'
@@ -363,7 +364,14 @@ func TestTenantsInACluster(t *testing.T) {
 	off(false)
 	must(a, "POST", "/api/tenants/switch", `{"tenant":"acme"}`, 200)
 	// A gives the jobs up: it refuses acme's requests, and tells its
-	// agents to wait.
+	// agents to wait. Drained as an admin drains it, in its nodecfg too:
+	// a drain only the node knows of is resumed within seconds.
+	if _, err := a.r.shared.NodeCfg().Mutate(context.Background(), "signalith", func(n *shared.NodeCfg) error {
+		n.Drained = &shared.DrainMark{By: "test", At: time.Now().UTC()}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	a.r.node.Drain("test")
 	eventually(t, "A gave the jobs up", func() bool { return !a.r.node.RunsJobs() })
 	if code, out, _ := a.call("", "GET", "/api/findings", ""); code != http.StatusServiceUnavailable || out["code"] != "tenant_unavailable" {
