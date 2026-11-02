@@ -226,6 +226,13 @@ func (b *Builder) Tick(ctx context.Context) error {
 			delete(b.states, m) // read it again next time
 		}
 	}
+	// A range that grew this tick reaches back further than the last
+	// tick's start: keep the months it just built.
+	for m, h := range b.states {
+		if t, ok := starts[m]; ok && h.st.From.Before(t) {
+			starts[m] = h.st.From
+		}
+	}
 	if err := b.dropMonths(ctx, starts); err != nil {
 		errs = append(errs, err)
 	}
