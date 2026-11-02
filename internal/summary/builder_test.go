@@ -879,3 +879,22 @@ func TestSmallHelpers(t *testing.T) {
 		t.Error("defaults")
 	}
 }
+
+// Raising the days so the range reaches back into last month keeps the rows
+// built there, though every model's last start was in this month.
+func TestRaisedDaysBuildsLastMonth(t *testing.T) {
+	b, f, clk := newBuilder(t)
+	u := clk.Now()
+	clk.t = time.Date(u.Year(), u.Month(), 2, 2, 3, 0, 0, time.UTC)
+	days := 1
+	b.Days = func() int { return days }
+	f.add("Authentication", clk.Now().Add(-36*time.Hour), map[string]any{"user": "older"})
+	mustTick(t, b)
+	days = 2
+	for range 3 {
+		mustTick(t, b)
+	}
+	if rows, _ := f.rowCount("Authentication"); rows != 1 {
+		t.Errorf("%d rows, want last month's", rows)
+	}
+}
