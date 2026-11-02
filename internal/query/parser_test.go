@@ -255,6 +255,8 @@ func TestSplunkSyntaxForms(t *testing.T) {
 		`| makeresults | inputlookup b append=t`:                      "*\n| makeresults\n| inputlookup append=true b",
 		`user=x NOT [inputlookup t | fields a]`:                       "user=x NOT [search *\n| inputlookup t\n| table a]",
 		`* | join a [* inputlookup000]`:                               "*\n| join a [search inputlookup000]",
+		`* | join a [* inputlookup]`:                                  "*\n| join a [search inputlookup]",
+		`* | join a [search inputlookup]`:                             "*\n| join a [search inputlookup]",
 		`| inputlookup owners where team=Web NOT user=bob | eval x=1`: "*\n| inputlookup owners where (team=Web AND NOT user=bob)\n| eval x=1",
 		`* | timechart limit=0 span=1h count by host`:                 "*\n| timechart span=1h limit=0 count by host",
 		`* | timechart span=1h limit=5 count by host`:                 "*\n| timechart span=1h limit=5 count by host",
