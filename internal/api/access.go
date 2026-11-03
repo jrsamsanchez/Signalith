@@ -732,6 +732,9 @@ func (s *Server) signIn(r *http.Request, name, password string, step secondFacto
 	s.notePlainSignIn(r)
 	s.noteName(r)
 	attrs := []any{"method", method}
+	if method == "session" {
+		attrs = append(attrs, s.noticeLog()...)
+	}
 	if p.codeUsed != nil {
 		attrs = append(attrs, "mfa", string(p.codeUsed.Kind))
 		if p.codeUsed.Kind == users.CodeRecovery {

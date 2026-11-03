@@ -98,6 +98,9 @@ type Setting struct {
 	EmptyMeans string
 	// File is true for the full path of a file on this server.
 	File bool
+	// Multiline text keeps its line breaks and tabs; its check refuses
+	// other control characters.
+	Multiline bool
 	// Env is the environment variable that overrides the setting; the
 	// page shows such a setting read-only.
 	Env string
@@ -222,6 +225,7 @@ var Sections = []Section{
 	{ID: "vulns", Title: "Vulnerability scans", Help: "How scans on the Vulnerabilities page look up the known vulnerabilities (CVEs) of the software they find. Only product names are sent, never addresses."},
 	{ID: "m365", Title: "Microsoft 365", Help: "Read Microsoft 365's audit log (Entra ID sign-ins and changes, Exchange, SharePoint, OneDrive, Teams and security alerts) with an app registered in Entra ID. One server reads it every 5 minutes. See the Microsoft 365 guide in the docs for how to register the app."},
 	{ID: "okta", Title: "Okta", Help: "Read Okta's System Log (sign-ins, MFA, account and admin changes, and Okta's own threat alerts) with an API service app in your Okta organization. One server reads it every minute. See the Okta guide in the docs for how to add the app."},
+	{ID: "notice", Title: "Sign-in notice", Tab: "notice", Help: "A notice on the sign-in page, such as who may use this system and that use is monitored (a system use notification, NIST SP 800-53 AC-8), with an optional I agree step before signing in. Off while the notice is empty."},
 	{ID: "metrics", Title: "Metrics", Tab: "metrics", Help: "A scrape endpoint, GET /metrics, for Prometheus and other OpenMetrics scrapers: ingest, OpenSearch writes, syslog, retention and the background jobs, with no event data. Off until turned on, and then only for a scraper that sends the scrape token."},
 }
 
@@ -622,6 +626,15 @@ var Registry = []Setting{
 		Help:  "The identity provider sends this token with every request. Signalith keeps only its SHA-256 fingerprint, so the token is shown once, when you create it.",
 		check: sha256Hex},
 
+	{Key: "auth.notice.title", Scope: ScopeCluster, Section: "notice", Label: "Notice title", Type: TypeText,
+		Help:        "The notice's heading on the sign-in page.",
+		Placeholder: "Authorized use only", EmptyMeans: "Notice", check: checkNoticeTitle},
+	{Key: "auth.notice.text", Scope: ScopeCluster, Section: "notice", Label: "Notice", Type: TypeText, Multiline: true,
+		Help:       "Shown on the sign-in page as plain text, with its line breaks. Up to 4,000 characters.",
+		EmptyMeans: "no notice", check: checkNoticeText},
+	{Key: "auth.notice.agree", Scope: ScopeCluster, Section: "notice", Label: "Ask people to agree", Type: TypeBool,
+		Help: "Nobody can sign in on the sign-in page, with a password, a passkey or single sign-on, until they tick I agree. Each sign-in is logged with it."},
+
 	{Key: "metrics.enabled", Scope: ScopeCluster, Section: "metrics", Label: "Metrics endpoint", Type: TypeBool,
 		Help: "Answers GET /metrics on the web port of every server, each with its own numbers, for a scraper that sends the scrape token. Off, it answers 404."},
 	{Key: "metrics.token_sha256", Scope: ScopeCluster, Section: "metrics", Label: "Scrape token", Type: TypeText,
@@ -1000,9 +1013,10 @@ func ParseValue(s *Setting, raw any) (any, error) {
 			}
 			return str, nil
 		}
-		str = strings.TrimSpace(str)
-		if err := noControl(str); err != nil {
-			return nil, err
+		if s.Multiline {
+			str = normalizeLines(str)
+		} else if str = strings.TrimSpace(str); noControl(str) != nil {
+			return nil, noControl(str)
 		}
 		// As the field's own type, such as Replicas.
 		return reflect.ValueOf(str).Convert(v.Type()).Interface(), nil

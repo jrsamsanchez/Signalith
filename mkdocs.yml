@@ -164,6 +164,7 @@ nav:
       - Server settings: settings.md
       - Users and sign-in: users.md
       - Single sign-on: sso.md
+      - Sign-in notice: sign-in-notice.md
       - Multi-tenant mode: multi-tenant.md
       - Agent tokens: agent-tokens.md
       - Servers: servers.md

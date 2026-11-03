@@ -1271,7 +1271,8 @@ Ticketing; see [ticketing.md](ticketing.md)), every
 `GET /api/audit/servers` and `GET /api/audit/verify` (the [Audit page](audit.md)), every
 `/api/users`, `/api/auth/directory`, `/api/auth/oidc`, `/api/auth/saml` and `/api/auth/scim` route below (the last
 four are `GET /api/auth/oidc`, `POST /api/auth/oidc/test`, `POST /api/auth/saml/test` and `POST /api/auth/scim/token`; see
-[sso.md](sso.md#api)), and every `/api/settings` route
+[sso.md](sso.md#api)), `GET /api/auth/notice` (the Sign-in notice tab of Settings; see
+[sign-in-notice.md](sign-in-notice.md)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
 `POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/test/okta`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
 `GET /api/settings/export`; see [settings.md](settings.md#api)).
@@ -1365,6 +1366,10 @@ minutes and one answer.
 
 A wrong code answers `400` with `"code": "mfa_wrong"` and counts toward the failed
 sign-in limits. Single sign-on users get `400` with `"code": "mfa_elsewhere"`.
+
+With a [sign-in notice](sign-in-notice.md) that asks people to agree, `POST /api/login`,
+`POST /api/login/passkey` and `POST /api/demo` need `"agreed": true` in their body, and
+answer `400` with `"code": "notice_not_agreed"` without it.
 
 ### Confirming it's you
 

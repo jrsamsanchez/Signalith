@@ -21,6 +21,10 @@ Ideas and requests are welcome as
 
 ## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
 
+**The next release**
+:   Finished and waiting for the next release: a [sign-in notice](sign-in-notice.md)
+    on the sign-in page, with an optional step that asks people to agree to it.
+
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
     Splunk's answers where the two should agree.

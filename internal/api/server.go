@@ -537,6 +537,7 @@ func (s *Server) Handler() http.Handler {
 	s.routeAgentHosts(api)
 	s.routeAPITokens(api)
 	s.routeMetrics(mux, api)
+	s.routeNotice(api)
 	s.routeAgents(api)
 	s.routeTenants(api)
 	if s.UI != nil {

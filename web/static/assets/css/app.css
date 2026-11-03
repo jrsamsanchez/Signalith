@@ -1013,6 +1013,15 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 /* the public demo's one-click sign-in, above the password form */
 .auth__demo { display: grid; gap: 18px; }
 .auth__demo[hidden] { display: none; }
+/* the sign-in notice an admin sets (Settings > Sign-in notice): plain text,
+   with its line breaks, scrolling inside itself when it is long */
+.auth__notice { display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); }
+.auth__notice[hidden], .auth__notice-agree[hidden] { display: none; }
+.auth__notice-title { font-size: var(--fs-base); font-weight: 600; color: var(--text); line-height: 1.35; overflow-wrap: anywhere; }
+.auth__notice-text { max-height: min(240px, 34vh); overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); line-height: 1.5; color: var(--text-2); }
+.auth__notice-text:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
+.auth__notice-agree { padding-top: 8px; border-top: 1px solid var(--line-subtle); font-weight: 500; color: var(--text); }
+.auth__notice[data-invalid] { box-shadow: inset 0 0 0 1px var(--danger); }
 .auth__sso-btns { display: grid; gap: 10px; }
 .auth__sso-btn[hidden] { display: none; }
 .auth__sso-btn { height: 44px; font-size: var(--fs-md); font-weight: 550; text-decoration: none; }
@@ -6327,6 +6336,7 @@ button.sl-step__box[aria-pressed="true"] { box-shadow: inset 0 3px 0 var(--c), i
   .sl-act tbody tr:last-child { box-shadow: none; }
   .sl-act td { display: block; padding: 0; box-shadow: none !important; text-align: left !important; min-width: 0; }
   .sl-act td::before { content: attr(data-label); display: block; color: var(--text-3); font: 500 var(--fs-xs) var(--font-sans); margin-bottom: 1px; }
+}
 /* Chat accounts (account menu) and linking a chat account (#chat-link/…) */
 .chat-dialog { width: min(520px, calc(100vw - 32px)); }
 .chat-dialog .modal__close { margin: -4px -8px 0 auto; flex: none; }
@@ -6511,6 +6521,25 @@ button.sl-step__box[aria-pressed="true"] { box-shadow: inset 0 3px 0 var(--c), i
   #page-notebooks .nb-cell--editing { padding: 12px; }
   #page-notebooks .nb-editor__bar .spacer { display: none; }
   #page-notebooks .nb-editor__bar { justify-content: flex-end; }
+}
+
+/* Settings > Sign-in notice */
+#page-notice .nt-card { max-width: 760px; }
+#page-notice .nt-body { display: grid; gap: 16px; }
+#page-notice .nt-row { display: grid; gap: 6px; min-width: 0; }
+#page-notice .nt-help { font-size: var(--fs-sm); color: var(--text-3); line-height: 1.45; margin: 0; }
+#page-notice .nt-help[hidden], #page-notice .nt-preview[hidden] { display: none; }
+#page-notice .nt-warn { display: flex; align-items: flex-start; gap: 6px; font-size: var(--fs-sm); color: var(--warning); line-height: 1.45; margin: 0; }
+#page-notice .nt-meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+#page-notice .nt-count { flex: none; font-size: var(--fs-sm); color: var(--text-3); font-variant-numeric: tabular-nums; }
+#page-notice .nt-count--over { color: var(--danger); font-weight: 600; }
+#page-notice .nt-switch-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+#page-notice .nt-preview { max-width: 420px; }
+#page-notice .nt-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+#page-notice .nt-docs { margin-left: auto; font-size: var(--fs-sm); }
+@media (max-width: 560px) {
+  #page-notice .nt-meta { flex-direction: column; gap: 4px; }
+  #page-notice .nt-docs { margin-left: 0; flex-basis: 100%; }
 }
 
 /* Settings > Metrics */

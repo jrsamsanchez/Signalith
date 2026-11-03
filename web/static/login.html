@@ -85,6 +85,11 @@
           <h1>Sign in</h1>
           <p class="sub">Welcome back. Use your Signalith account.</p>
         </div>
+        <section class="auth__notice" id="notice" hidden aria-labelledby="notice-title">
+          <h2 class="auth__notice-title" id="notice-title">Notice</h2>
+          <div class="auth__notice-text" id="notice-text" tabindex="0"></div>
+          <label class="check auth__notice-agree" id="notice-agree" hidden><input type="checkbox" id="notice-agreed" name="agreed">I have read this notice and agree to it</label>
+        </section>
         <div class="auth__demo" id="demo" hidden>
           <div class="callout"><svg class="icon" aria-hidden="true"><use href="#i-info"/></svg><p>This is a public demo of Signalith with made-up sample data. Look around read-only, with no account.</p></div>
           <button class="btn btn--primary btn--block auth__submit" type="button" id="demo-btn"><span id="demo-label">Explore the demo</span><svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></button>

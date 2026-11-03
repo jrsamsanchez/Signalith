@@ -15,7 +15,8 @@
 #      of its own CA and no passwords;
 #   4. Signalith pointed at it, on 127.0.0.1 behind Caddy;
 #   5. Caddy: HTTPS for the public name, the only way in;
-#   6. this server's own logs (sign-ins, journal, audit) sent to Signalith;
+#   6. an audit log of the programs this server runs, kept on the server
+#      only: in Signalith, testers would see the admin's commands;
 #   7. sample data and a small live feed of recorded attack events;
 #   8. nightly snapshots and backups, outbound limits, automatic updates.
 set -Eeuo pipefail
@@ -209,6 +210,8 @@ o["cert_file"] = "/etc/signalith/opensearch-client.pem"
 o["key_file"] = "/etc/signalith/opensearch-client-key.pem"
 o.pop("username", None)
 o.pop("password", None)
+# Testers' data is kept 30 days.
+c.setdefault("retention", {})["days"] = 30
 with open(path, "w") as f:
     f.write("# Written by the test lab setup (deploy/testlab/testlab-setup.sh).\n")
     yaml.safe_dump(c, f, sort_keys=False, default_flow_style=False)
@@ -229,6 +232,27 @@ caddy_setup() {
   apt-get update -q
   apt-get install -y -q caddy
   install -m 644 "$CA" /etc/caddy/signalith-ca.pem
+  install -d -m 755 /usr/share/testlab
+  cat >/usr/share/testlab/about.html <<'EOF'
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>About this lab</title>
+<style>body{font:16px/1.5 system-ui,sans-serif;max-width:40em;margin:2em auto;padding:0 1em}</style>
+<h1>About the Signalith test lab</h1>
+<p>This is a shared test system for trying Signalith. By signing in you agree that:</p>
+<ul>
+<li>Everything you write or upload here can be seen and changed by the other testers.</li>
+<li>You add no real customer, production or employer data, and no secrets.</li>
+<li>Other testers may connect their own AI tools, so anything you write here can be sent to their AI provider.</li>
+<li>Data may be reset at any time, and accounts end on the date you were given.</li>
+<li>You report security issues privately, as <a href="https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md">SECURITY.md</a> describes.</li>
+</ul>
+<p><a href="/">Sign in</a></p>
+</html>
+EOF
+  chmod 644 /usr/share/testlab/about.html
   install -d -o caddy -g caddy /var/log/caddy
   local global=""
   [ -z "$EMAIL" ] || global="{
@@ -249,12 +273,25 @@ $DOMAIN {
 
 	# Agents, senders and joining servers use tokens rather than a
 	# sign-in: the test lab takes no data from outside.
-	@closed path /api/ingest* /api/otlp/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics*
+	@closed path /api/ingest* /api/otlp/* /v1 /v1/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics*
 	respond @closed 404
+
+	# What testers agree to, readable without signing in.
+	handle /about-this-lab {
+		header Content-Security-Policy "default-src 'none'; style-src 'unsafe-inline'"
+		root * /usr/share/testlab
+		rewrite * /about.html
+		file_server
+	}
 
 	reverse_proxy https://127.0.0.1:9000 {
 		# The client's own address, never one it sent.
 		header_up X-Forwarded-For {remote_host}
+		# The lab's own name, which Signalith's origin check and passkeys
+		# compare against, rather than 127.0.0.1:9000.
+		header_up Host {host}
+		# Visitors who have not signed in need not learn the version.
+		header_down -X-Signalith-Version
 		transport http {
 			tls_trust_pool file /etc/caddy/signalith-ca.pem
 			tls_server_name localhost
@@ -269,81 +306,16 @@ EOF
   systemctl reload-or-restart caddy
 }
 
-# ---- 6. this server's own logs ----
+# ---- 6. this server's own audit log ----
 
-# The built-in admin must replace the first password Signalith made before
-# anything else, so the lab gives it a new random one, kept for root in
-# $LAB/admin-password (and is shown to the admin once, at the end).
-admin_password() {
-  if [ -s "$LAB/admin-password" ]; then cat "$LAB/admin-password"; else cat /etc/signalith/initial-admin-password; fi
-}
-
-# admin_user is the built-in admin's name in the config:
-# signalithadmin on a new install, admin on one made before 0.3.1.
-admin_user() {
-  local u
-  u=$(awk '$1 == "admin_user:" { gsub(/["\047]/, "", $2); print $2; exit }' /etc/signalith/signalith.yaml 2>/dev/null)
-  echo "${u:-signalithadmin}"
-}
-
-# login signs in as the built-in admin, keeping the session in the jar $1.
-# The password goes to curl on its input, not its command line. One whose
-# change Signalith took though curl did not hear back is still in
-# admin-password.new.
-login() {
-  local pw
-  for pw in "" "$LAB/admin-password.new"; do
-    if [ -n "$pw" ]; then [ -s "$pw" ] || return 1; fi
-    if jq -n --rawfile p <(if [ -n "$pw" ]; then cat "$pw"; else admin_password; fi) --arg u "$(admin_user)" '{username: $u, password: ($p | rtrimstr("\n"))}' |
-      curl -fsS -c "$1" --cacert /var/lib/signalith/tls/ca.pem -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
-        --data-binary @- https://localhost:9000/api/login >/dev/null; then
-      [ -z "$pw" ] || mv "$pw" "$LAB/admin-password"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# api calls Signalith's API, signed in as the built-in
-# admin (as the Add data page would).
-api() {
-  local ca=/var/lib/signalith/tls/ca.pem jar=$LAB/cookies
-  login "$jar"
-  if [ "$(curl -fsS -b "$jar" --cacert "$ca" https://localhost:9000/api/me | jq -r .must_change_password)" = true ]; then
-    (umask 077 && openssl rand -base64 24 | tr -d '/+=\n' >"$LAB/admin-password.new")
-    jq -n --rawfile c <(admin_password) --rawfile n "$LAB/admin-password.new" \
-      '{current_password: ($c | rtrimstr("\n")), new_password: $n}' |
-      curl -fsS -b "$jar" --cacert "$ca" -H 'Content-Type: application/json' -H 'Origin: https://localhost:9000' \
-        --data-binary @- https://localhost:9000/api/me/password >/dev/null
-    mv "$LAB/admin-password.new" "$LAB/admin-password"
-    login "$jar"
-  fi
-  curl -fsS -b "$jar" --cacert "$ca" -H 'Origin: https://localhost:9000' "https://localhost:9000$1"
-  rm -f "$jar"
-}
-
-# Fluent Bit with the config the Add data page gives for Linux: sign-ins
-# and the journal, the audit log and web server logs.
-own_logs() {
-  local token cfg
-  token=$(sg tokens create -purpose linux "Test lab server $(date +%m%d-%H%M%S)")
-  cfg=$(api "/api/agents/config?os=linux&server=https://localhost:9000")
-  . /etc/os-release
-  curl -fsSL https://packages.fluentbit.io/fluentbit.key | gpg --dearmor --batch --yes -o /usr/share/keyrings/fluentbit-keyring.gpg
-  chmod 644 /usr/share/keyrings/fluentbit-keyring.gpg
-  echo "deb [signed-by=/usr/share/keyrings/fluentbit-keyring.gpg] https://packages.fluentbit.io/ubuntu/$VERSION_CODENAME $VERSION_CODENAME main" >/etc/apt/sources.list.d/fluent-bit.list
-  apt-get update -q >/dev/null
-  apt-get install -y -q fluent-bit auditd >/dev/null
-  jq -r .config <<<"$cfg" | sed "s/$(jq -r .token_placeholder <<<"$cfg")/$token/g" >"$LAB/fluent-bit.conf"
-  install -D -m 600 "$LAB/fluent-bit.conf" "$(jq -r .config_path <<<"$cfg")"
-  jq -r .ca <<<"$cfg" >"$LAB/signalith-ca.pem"
-  install -D -m 644 "$LAB/signalith-ca.pem" "$(jq -r .ca_path <<<"$cfg")"
-  rm -f "$LAB/fluent-bit.conf" "$LAB/signalith-ca.pem"
-  # The audit log rules of the detection packs read the programs that run.
-  echo '-a always,exit -F arch=b64 -S execve -k exec' >/etc/audit/rules.d/signalith.rules
+# The programs this server runs are audited, but the log stays here: the
+# lab's Signalith is shared with testers, who must not see the admin's
+# sign-ins and commands.
+own_audit() {
+  apt-get install -y -q auditd >/dev/null
+  echo '-a always,exit -F arch=b64 -S execve -k exec' >/etc/audit/rules.d/testlab.rules
   augenrules --load >/dev/null 2>&1 || true
-  systemctl enable -q fluent-bit
-  systemctl restart fluent-bit
+  systemctl enable -q --now auditd
 }
 
 # ---- 7. data for testers ----
@@ -466,6 +438,7 @@ EOF
   cat >/etc/systemd/system/testlab-backup.service <<'EOF'
 [Unit]
 Description=Signalith test lab: nightly snapshot and backup
+OnSuccess=testlab-backup-copy.service
 
 [Service]
 Type=oneshot
@@ -482,15 +455,45 @@ Persistent=true
 [Install]
 WantedBy=timers.target
 EOF
+  # Hetzner's server backups cover the root disk, not the data volume: keep
+  # a week of Signalith backups there, with the master keys in a folder of
+  # their own.
+  cat >/usr/local/sbin/testlab-backup-copy <<EOF
+#!/bin/sh
+set -eu
+copy() { # newest file matching \$1 into \$2, keeping \$3
+  f=\$(ls -1t $DATA/backups/\$1 2>/dev/null | head -n 1)
+  [ -n "\$f" ] || return 0
+  install -d -m 700 "\$2"
+  if cp "\$f" "\$2/.tmp" && cmp -s "\$f" "\$2/.tmp"; then
+    mv "\$2/.tmp" "\$2/\$(basename "\$f")"
+  else
+    rm -f "\$2/.tmp"; echo "copy of \$f failed" >&2; exit 1
+  fi
+  ls -1t "\$2"/*.zip | tail -n +\$((\$3 + 1)) | xargs -r rm -f
+}
+copy 'signalith-[0-9]*[0-9].zip' /var/backups/testlab 7
+copy '*.master-key.zip' /var/backups/testlab-keys 3
+EOF
+  chmod 700 /usr/local/sbin/testlab-backup-copy
+  cat >/etc/systemd/system/testlab-backup-copy.service <<'EOF'
+[Unit]
+Description=Signalith test lab: copy the nightly backup to the root disk
+
+[Service]
+Type=oneshot
+UMask=0077
+ExecStart=/usr/local/sbin/testlab-backup-copy
+EOF
   systemctl daemon-reload
   systemctl enable -q --now testlab-backup.timer
 }
 
 # Nothing on this server needs the cloud's metadata service after the
 # first boot, and no service may reach it. OpenSearch talks to this server
-# only. Signalith may reach the internet over HTTPS (feeds, content,
-# vulnerability data) and mail submission (alerts), never a private or
-# link-local address.
+# only. Signalith may reach the internet over HTTPS only (feeds, content,
+# vulnerability data), never a private or link-local address. The lab sends
+# no mail.
 outbound() {
   cat >/etc/nftables.conf <<'EOF'
 #!/usr/sbin/nft -f
@@ -503,7 +506,7 @@ table inet testlab {
 		meta skuid "opensearch" drop
 		meta skuid "signalith" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
 		meta skuid "signalith" ip6 daddr { fc00::/7, fe80::/10 } drop
-		meta skuid "signalith" tcp dport { 443, 465, 587 } accept
+		meta skuid "signalith" tcp dport 443 accept
 		meta skuid "signalith" drop
 	}
 }
@@ -536,10 +539,10 @@ step signalith signalith_package
 step opensearch opensearch_setup
 step signalith-config signalith_config
 step caddy caddy_setup
-step own-logs own_logs
+step own-audit own_audit
 step sample-data sample_data
 step live-feed live_feed
 step backups backups
 step outbound outbound
 step updates updates
-say "Test lab ready. The built-in admin's password: sudo cat $LAB/admin-password"
+say "Test lab ready. The built-in admin's first password: sudo cat /etc/signalith/initial-admin-password"
