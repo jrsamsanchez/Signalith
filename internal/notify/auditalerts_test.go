@@ -323,3 +323,28 @@ func TestAuditMessageBodies(t *testing.T) {
 		}
 	}
 }
+
+func TestAuditAlertsHideTypedNamesThatAreNoAccount(t *testing.T) {
+	r, tap := auditRig(t, AuditRuleInput{ID: "signin_failed", Enabled: true, Channels: []string{"aaa"}})
+	r.d.KnownUser = func(name string) bool { return name == "alice" }
+	known := ev("sign-in failed", map[string]string{"locked_out": "false"})
+	typo := ev("sign-in failed", map[string]string{"locked_out": "false"})
+	typo.User, typo.Time = "Hunter2!password", typo.Time.Add(time.Second)
+	tap.Add(known)
+	tap.Add(typo)
+	r.clock.add(time.Minute)
+	r.pass()
+	if r.sender.count("aaa") != 2 {
+		t.Fatalf("sent %+v", r.sender.sent)
+	}
+	got := map[string]bool{}
+	for _, s := range r.sender.sent {
+		got[s.msg.Entities["user"]] = true
+		if b, _ := json.Marshal(s.msg); strings.Contains(string(b), "Hunter2") {
+			t.Errorf("a typed name that is no account was sent: %s", b)
+		}
+	}
+	if !got["alice"] || !got[UnknownName] {
+		t.Errorf("users sent %v, want alice and %q", got, UnknownName)
+	}
+}

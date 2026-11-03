@@ -1636,6 +1636,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Settings: notes, Findings: fstore, Deliveries: deliveries, Sender: senders, Server: sampleServer, Log: log,
 		PublicURL: func() string { return c.Server.PublicURL },
 		Audit:     r.auditAlertSource(c, cl),
+		KnownUser: func(name string) bool {
+			if strings.EqualFold(strings.TrimSpace(name), c.Auth.AdminUser) {
+				return true
+			}
+			_, ok := people.Get(name)
+			return ok
+		},
 	}
 	// Each server keeps the sample's asset and identity context in its own
 	// lookups folder, and its threat intel in memory: follow a load or

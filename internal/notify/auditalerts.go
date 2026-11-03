@@ -69,6 +69,15 @@ func field(ev audit.Event, k string) string { return ev.Fields[k] }
 // two-step code, passkeys and password changes.
 var failedSignIns = []string{"sign-in failed", "single sign-on failed", "two-step code refused", "passkey refused", "password change refused"}
 
+// typedName reports whether an audit record's user is a name someone
+// typed to sign in, which may be anything, a password typed in the wrong
+// box among them, rather than an account Signalith knows.
+func typedName(ev audit.Event) bool { return slices.Contains(failedSignIns, ev.Message) }
+
+// UnknownName stands for a typed sign-in name that is no known account,
+// in place of the name itself.
+const UnknownName = "(not a known account)"
+
 // addressPaused starts the record logged when sign-ins from one address
 // are paused after too many wrong passwords.
 const addressPaused = "sign-ins from this address are paused"
