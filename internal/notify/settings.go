@@ -150,10 +150,12 @@ type Rule struct {
 	Since time.Time `yaml:"since" json:"since"`
 }
 
-// Settings are the channels and rules.
+// Settings are the channels and rules, and the built-in audit alerts
+// turned on or given channels.
 type Settings struct {
-	Channels []Channel `yaml:"channels" json:"channels"`
-	Rules    []Rule    `yaml:"rules" json:"rules"`
+	Channels    []Channel   `yaml:"channels" json:"channels"`
+	Rules       []Rule      `yaml:"rules" json:"rules"`
+	AuditAlerts []AuditRule `yaml:"audit_alerts,omitempty" json:"audit_alerts,omitempty"`
 }
 
 // Channel returns the channel with an ID.
@@ -176,6 +178,13 @@ func (s Settings) clone() Settings {
 		r.Channels = slices.Clone(r.Channels)
 		r.Detections = slices.Clone(r.Detections)
 		out.Rules[i] = r
+	}
+	if s.AuditAlerts != nil {
+		out.AuditAlerts = make([]AuditRule, len(s.AuditAlerts))
+		for i, r := range s.AuditAlerts {
+			r.Channels = slices.Clone(r.Channels)
+			out.AuditAlerts[i] = r
+		}
 	}
 	return out
 }

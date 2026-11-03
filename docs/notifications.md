@@ -12,6 +12,9 @@ There are two parts:
 
 Nothing is sent until a rule sends findings to a channel.
 
+The same channels can also carry [audit alerts](#audit-alerts): messages about Signalith's
+own sign-ins and changes, such as the built-in admin signing in or a user being deleted.
+
 ## Add a channel
 
 On **Notifications**, choose **Add channel** and pick a kind. When there are no channels
@@ -274,6 +277,77 @@ What gets sent:
 When you delete a channel, it is taken out of its rules. A rule left with no channel is
 turned off.
 
+## Audit alerts
+
+Audit alerts tell admins about Signalith itself: who signs in to admin accounts, failed
+sign-ins and lockouts, changes to users, tenants, tokens and settings, deletions, and audit
+records that were lost. They come from Signalith's [audit records](audit.md), not from
+detections. Each one is built in and **off** until you turn it on and pick its channels, in
+the **Audit alerts** card on the Notifications page.
+
+| Audit alert | Urgency | Sent when |
+| --- | --- | --- |
+| Audit records lost or settings tampered with | Critical | Audit records could not be kept (an `audit.lost` record), a response action's audit record could not be written, or shared settings, the cluster document or a sign-in session were changed in OpenSearch outside Signalith |
+| Built-in admin signs in | High | Someone signs in as the built-in admin |
+| Sign-ins locked out | High | Wrong passwords or codes lock an account, or pause sign-ins from one address |
+| Users, roles and two-step sign-in change | High | A user is added, changed, turned off or on, or deleted; a role changes; a password is reset; two-step sign-in or passkeys are turned off or reset; the directory settings change |
+| Tenants change | High | A tenant is added, renamed, turned off or on |
+| Tokens made or revoked | Medium | An API, agent, SCIM, metrics scrape or cluster join token is made or revoked |
+| Settings change | Medium | Settings, notifications, retention, ticketing, agent collection, endpoint or vulnerability scan settings are saved, or the cluster's key or certificate authority is changed |
+| Deletions | Medium | A detection, lookup table, threat intel feed or indicator, custom parser, content update, endpoint, server, notebook or case file is deleted, sample data is removed, or a retention run is started by hand |
+| An admin signs in | Medium | Someone with the admin role signs in (other than the built-in admin) |
+| Failed sign-ins and refused tokens | Low | Every wrong password or code, failed single sign-on, and refused API, SCIM or agent token |
+
+A good start is the first five, sent to the channel your security team watches. **Failed
+sign-ins and refused tokens** is marked *Noisy*: on a server the internet can reach it can
+send many messages. **Sign-ins locked out** tells you about guessing with far fewer.
+
+What gets sent:
+
+- Only what happens **after** an alert is turned on. Each audit record goes to each channel
+  once, even when it matches two alerts (it is sent as the first one in the table).
+- A message says what happened, which alert matched, who did it, from which address, what it
+  was done to, the server, the tenant and, for a failed sign-in, why. It never holds the
+  rest of the audit record. It links to the **Audit** page (`server.public_url` + `/#audit`).
+- The flood guard, retries and **Recent deliveries** work as for findings. A summary reads
+  "And 12 more audit alerts".
+- Audit alerts never become findings, so audit records stay out of the Findings page, of
+  search, and of everyone but admins. A tenant's admins do not see the Audit alerts card:
+  the audit records are the provider's. Records about a tenant carry its ID.
+
+Where the records come from: once servers share one OpenSearch as a cluster, audit records
+are kept there, and the server that runs the background jobs sends alerts about **every**
+server's records. On a server of its own, audit records are only in its log, so it alerts on
+the records it logs while it runs: a record logged before a restart, while the server was
+stopped, is not sent.
+
+A webhook gets `"type": "audit"` and an `audit` object instead of `finding`:
+
+```json
+{
+  "version": 1,
+  "type": "audit",
+  "sent": "2026-11-01T09:30:02Z",
+  "audit": {
+    "id": "7f3c9a1b2d4e5f6a7b8c9d0e",
+    "alert": "Built-in admin signs in",
+    "title": "Built-in admin signs in: signed in",
+    "urgency": "high",
+    "action": "",
+    "user": "admin",
+    "source_ip": "203.0.113.7",
+    "target": "",
+    "server": "siem-1",
+    "tenant": "",
+    "reason": "",
+    "time": "2026-11-01T09:30:01Z",
+    "link": "https://siem.example.com/#audit"
+  }
+}
+```
+
+A summary of audit alerts has `"type": "audit_summary"` and a `summary` object.
+
 ## Send a test
 
 Each channel card has **Send test**, and so does the channel dialog. A test message is
@@ -456,8 +530,8 @@ Every `/api/notify` route is for admins.
 
 | Route | What it does |
 | --- | --- |
-| `GET /api/notify` | Channels, rules and the page's details: each channel without its secrets (`url_set`, `password_set`, `signing_secret_set`, header names only), its last delivery and the rules that use it; each rule with its `summary`; `revision`, `file`, `manage` (whether this server can change them) and `file_error` |
-| `PUT /api/notify` | Replaces channels and rules with the body (`revision`, `channels`, `rules`). A secret left empty keeps its saved value; `clear_password`, `clear_signing_secret` and a header with `clear` remove one. A secret must be typed again when a channel's URL or mail server moves to another server. A body with problems is refused with 400 and `problems` (`where`, `field`, `message`). A stale `revision`, or another server running the jobs, gives 409. |
+| `GET /api/notify` | Channels, rules and the page's details: each channel without its secrets (`url_set`, `password_set`, `signing_secret_set`, header names only), its last delivery and the rules that use it; each rule with its `summary`; `revision`, `file`, `manage` (whether this server can change them) and `file_error`; and, except on a tenant's server, `audit_alerts` (each built-in audit alert with `enabled` and `channels`) and `audit_from` (`cluster` or `server`) |
+| `PUT /api/notify` | Replaces channels and rules with the body (`revision`, `channels`, `rules`, and `audit_alerts`: a list of `{id, enabled, channels}`; left out, the saved audit alerts are kept). A secret left empty keeps its saved value; `clear_password`, `clear_signing_secret` and a header with `clear` remove one. A secret must be typed again when a channel's URL or mail server moves to another server. A body with problems is refused with 400 and `problems` (`where`, `field`, `message`). A stale `revision`, or another server running the jobs, gives 409. |
 | `POST /api/notify/test` | Sends a test message: `{"id": "<channel id>"}` for a saved channel, or `{"channel": {...}}` for a channel being edited. Its empty secrets are the saved ones. Answers `{ok, duration_ms, error}`. |
 | `GET /api/notify/deliveries?limit=50` | The latest deliveries, newest first (at most 500) |
 | `GET /api/notify/channels/{id}/teams-app` | The Teams app package (a zip) of a Teams app channel |

@@ -20,6 +20,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/clusterarchive"
 	"github.com/jrsamsanchez/signalith/internal/clustercfg"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/notify"
 	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -40,6 +41,9 @@ import (
 type processAudit struct {
 	sink *audit.Sink
 	on   atomic.Bool
+	// tap keeps this server's own audit records that an audit alert may
+	// be about, for the alerts while the records are not shared.
+	tap *notify.AuditTap
 }
 
 // auditSpoolDir is the spool's folder in the state folder.
@@ -56,7 +60,34 @@ func openAudit(c *config.Config, node *cluster.Node, log *slog.Logger) (*process
 		Log: log,
 	})
 	sink.SetEnabled(false)
-	return &processAudit{sink: sink}, slog.New(audit.Handler(log.Handler(), sink))
+	tap := &notify.AuditTap{}
+	sink.SetTap(tap.Add)
+	return &processAudit{sink: sink, tap: tap}, slog.New(audit.Handler(log.Handler(), sink))
+}
+
+// auditAlertSource is where the audit alerts read audit records in this
+// start: the audit indices when the cluster keeps them, so the records of
+// every server are sent, else this server's own.
+func (r *runner) auditAlertSource(c *config.Config, cl *store.Client) func() notify.AuditSource {
+	if r.audit == nil {
+		return nil
+	}
+	prefix := c.OpenSearch.IndexPrefix
+	return func() notify.AuditSource {
+		if r.auditOn() {
+			return notify.AuditIndex{Client: cl, Prefix: prefix}
+		}
+		return r.audit.tap
+	}
+}
+
+// auditAlertFrom says, for the Notifications page, where the audit
+// alerts' records come from: "cluster" or "server".
+func (r *runner) auditAlertFrom() string {
+	if r.auditOn() {
+		return "cluster"
+	}
+	return "server"
 }
 
 // auditOn reports whether the components running now share the audit
@@ -477,4 +508,13 @@ func auditImporters(f clustercfg.Files) []shared.Importer {
 		}
 	}
 	return list
+}
+
+// auditFromFunc is api.Notify.AuditFrom: nil when this process keeps no
+// audit records, so the page offers no audit alerts.
+func (r *runner) auditFromFunc() func() string {
+	if r.audit == nil {
+		return nil
+	}
+	return r.auditAlertFrom
 }

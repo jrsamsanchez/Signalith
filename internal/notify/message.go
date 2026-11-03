@@ -24,7 +24,23 @@ const (
 	// KindApproval asks people to approve a playbook step about a
 	// finding: Ask says what waits, and Link opens the Approvals page.
 	KindApproval = "approval"
+	// KindAudit is about one of Signalith's own audit records, sent by an
+	// audit alert (see AuditAlerts).
+	KindAudit = "audit"
+	// KindAuditSummary stands for several audit alerts at once.
+	KindAuditSummary = "audit_summary"
 )
+
+// isSummary reports whether m stands for several messages at once.
+func (m Message) isSummary() bool { return m.Kind == KindSummary || m.Kind == KindAuditSummary }
+
+// summaryHint says, in a summary, where to see what it stands for.
+func (m Message) summaryHint() string {
+	if m.Kind == KindAuditSummary {
+		return "There were too many to send one message each. Open the Audit page to see them all."
+	}
+	return "There were too many to send one message each. Open the Findings page to see them all."
+}
 
 // Entities are the entity fields a message names, in order, with their
 // labels.
@@ -69,6 +85,18 @@ type Message struct {
 	// KindApproval message, for the buttons of interactive channels.
 	RunID string `json:"run_id,omitempty"`
 	Step  int    `json:"step,omitempty"`
+
+	// The audit record a KindAudit message is about: its ID, the audit
+	// alert that matched it, its action, what it was done to, the server
+	// that logged it, the tenant it was done in and, for a failed
+	// sign-in, why. Who did it and from where are Entities user and src.
+	AuditID     string `json:"audit_id,omitempty"`
+	AuditAlert  string `json:"audit_alert,omitempty"`
+	AuditAction string `json:"audit_action,omitempty"`
+	AuditTarget string `json:"audit_target,omitempty"`
+	AuditServer string `json:"audit_server,omitempty"`
+	AuditTenant string `json:"audit_tenant,omitempty"`
+	AuditReason string `json:"audit_reason,omitempty"`
 }
 
 // Limits on the text of a message, which comes from the events that
@@ -205,7 +233,7 @@ func UrgencyLabel(u string) string {
 // 10.0.0.5".
 func (m Message) headline() string {
 	switch m.Kind {
-	case KindSummary:
+	case KindSummary, KindAuditSummary:
 		return m.Title
 	case KindTest:
 		return m.Title
@@ -224,8 +252,13 @@ type fact struct{ Label, Value string }
 
 // facts are the message's details, in order, without the title.
 func (m Message) facts() []fact {
-	if m.Kind == KindSummary {
+	switch m.Kind {
+	case KindSummary:
 		return []fact{{"Findings", fmt.Sprint(m.Count)}}
+	case KindAuditSummary:
+		return []fact{{"Audit alerts", fmt.Sprint(m.Count)}}
+	case KindAudit:
+		return m.auditFacts()
 	}
 	var out []fact
 	if m.Urgency != "" {
@@ -261,14 +294,14 @@ func (m Message) text(channel string) string {
 	switch m.Kind {
 	case KindTest:
 		b.WriteString("This is a test message from Signalith. If you can read it, Signalith can send notifications to " + channel + ".\n\n")
-	case KindSummary:
-		fmt.Fprintf(&b, "%s.\n\nThere were too many to send one message each. Open the Findings page to see them all.\n\n", m.Title)
+	case KindSummary, KindAuditSummary:
+		fmt.Fprintf(&b, "%s.\n\n%s\n\n", m.Title, m.summaryHint())
 	case KindApproval:
 		b.WriteString(m.headline() + "\n\n" + m.Ask + " Approve or reject it on the Approvals page within 24 hours.\n\n")
 	default:
 		b.WriteString(m.headline() + "\n\n")
 	}
-	if m.Kind != KindSummary {
+	if !m.isSummary() {
 		facts := m.facts()
 		width := 0
 		for _, f := range facts {
@@ -303,13 +336,32 @@ const WebhookVersion = 1
 // WebhookBody is the JSON a webhook channel posts.
 type WebhookBody struct {
 	Version int    `json:"version"`
-	Type    string `json:"type"` // finding, summary or test
+	Type    string `json:"type"` // finding, summary, approval, audit, audit_summary or test
 	// Sent is when the message was sent; a receiver can refuse old ones.
 	Sent    time.Time       `json:"sent"`
 	Finding *WebhookFinding `json:"finding,omitempty"`
 	Summary *WebhookSummary `json:"summary,omitempty"`
 	// Approval, in an approval message, says what waits for approval.
 	Approval *WebhookApproval `json:"approval,omitempty"`
+	// Audit, in an audit message, is the audit record it is about.
+	Audit *WebhookAudit `json:"audit,omitempty"`
+}
+
+// WebhookAudit is the audit record an audit message is about.
+type WebhookAudit struct {
+	ID       string    `json:"id"`
+	Alert    string    `json:"alert"`
+	Title    string    `json:"title"`
+	Urgency  string    `json:"urgency"`
+	Action   string    `json:"action"`
+	User     string    `json:"user"`
+	SourceIP string    `json:"source_ip"`
+	Target   string    `json:"target"`
+	Server   string    `json:"server"`
+	Tenant   string    `json:"tenant"`
+	Reason   string    `json:"reason"`
+	Time     time.Time `json:"time"`
+	Link     string    `json:"link"`
 }
 
 // WebhookApproval is a playbook step waiting for approval.
@@ -348,7 +400,13 @@ type WebhookSummary struct {
 // webhookBody returns the webhook body of a message.
 func (m Message) webhookBody(sent time.Time) WebhookBody {
 	b := WebhookBody{Version: WebhookVersion, Type: m.Kind, Sent: sent.UTC()}
-	if m.Kind == KindSummary {
+	if m.Kind == KindAudit {
+		b.Audit = &WebhookAudit{ID: m.AuditID, Alert: m.AuditAlert, Title: m.Title, Urgency: m.Urgency, Action: m.AuditAction,
+			User: m.Entities["user"], SourceIP: m.Entities["src"], Target: m.AuditTarget, Server: m.AuditServer,
+			Tenant: m.AuditTenant, Reason: m.AuditReason, Time: m.Created, Link: m.Link}
+		return b
+	}
+	if m.isSummary() {
 		b.Summary = &WebhookSummary{Count: m.Count, Text: m.Title, Link: m.Link}
 		return b
 	}
@@ -402,12 +460,12 @@ func (m Message) slackBody(c Channel) map[string]any {
 			text += " Messages here carry buttons to acknowledge findings and approve or reject playbook steps."
 		}
 		blocks = append(blocks, map[string]any{"type": "section", "text": plain(text, 2000)})
-	case KindSummary:
-		blocks = append(blocks, map[string]any{"type": "section", "text": plain("There were too many to send one message each. Open the Findings page to see them all.", 2000)})
+	case KindSummary, KindAuditSummary:
+		blocks = append(blocks, map[string]any{"type": "section", "text": plain(m.summaryHint(), 2000)})
 	case KindApproval:
 		blocks = append(blocks, map[string]any{"type": "section", "text": plain(m.Ask+" "+m.approvalHint(c), 2000)})
 	}
-	if m.Kind != KindSummary {
+	if !m.isSummary() {
 		var fields []any
 		for _, f := range m.facts() {
 			if len(fields) == 10 {
@@ -489,12 +547,12 @@ func (m Message) teamsCard(c Channel) map[string]any {
 			text += " Messages here carry buttons to acknowledge findings and approve or reject playbook steps."
 		}
 		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape(text), "wrap": true})
-	case KindSummary:
-		body = append(body, map[string]any{"type": "TextBlock", "text": "There were too many to send one message each. Open the Findings page to see them all.", "wrap": true})
+	case KindSummary, KindAuditSummary:
+		body = append(body, map[string]any{"type": "TextBlock", "text": m.summaryHint(), "wrap": true})
 	case KindApproval:
 		body = append(body, map[string]any{"type": "TextBlock", "text": teamsEscape(m.Ask + " " + m.approvalHint(c)), "wrap": true})
 	}
-	if m.Kind != KindSummary {
+	if !m.isSummary() {
 		var facts []any
 		for _, f := range m.facts() {
 			facts = append(facts, map[string]any{"title": f.Label, "value": teamsEscape(f.Value)})
@@ -541,3 +599,25 @@ const TeamsButtonField = "signalith"
 
 // TeamsVerb is the Action.Execute verb of a button action.
 func TeamsVerb(action string) string { return "signalith." + action }
+
+// auditFacts are the details of an audit message.
+func (m Message) auditFacts() []fact {
+	out := []fact{{"Urgency", UrgencyLabel(m.Urgency)}}
+	add := func(label, v string) {
+		if v != "" {
+			out = append(out, fact{label, v})
+		}
+	}
+	add("Audit alert", m.AuditAlert)
+	add("Action", m.AuditAction)
+	add("User", m.Entities["user"])
+	add("From", m.Entities["src"])
+	add("Target", m.AuditTarget)
+	add("Reason", m.AuditReason)
+	add("Tenant", m.AuditTenant)
+	add("Server", m.AuditServer)
+	if !m.Created.IsZero() {
+		out = append(out, fact{"When", m.Created.UTC().Format("2006-01-02 15:04:05 UTC")})
+	}
+	return out
+}

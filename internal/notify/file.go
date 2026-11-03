@@ -233,13 +233,16 @@ func (m *Manager) Fingerprint() string {
 	m.load()
 	s, fileErr := m.cur.clone(), m.fileErr
 	m.mu.Unlock()
-	if fileErr == nil && len(s.Channels) == 0 && len(s.Rules) == 0 {
+	if fileErr == nil && len(s.Channels) == 0 && len(s.Rules) == 0 && len(s.AuditAlerts) == 0 {
 		return ""
 	}
 	// The secrets are not in the JSON form of a channel; secretShape adds
 	// which ones are set, without their values.
 	for i := range s.Rules {
 		s.Rules[i].Since = time.Time{}
+	}
+	for i := range s.AuditAlerts {
+		s.AuditAlerts[i].Since = time.Time{}
 	}
 	b, _ := json.Marshal(map[string]any{"settings": s, "secrets": secretShape(s), "file_ok": fileErr == nil})
 	sum := sha256.Sum256(b)

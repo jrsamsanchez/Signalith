@@ -40,6 +40,18 @@ type Input struct {
 	Revision string         `json:"revision"`
 	Channels []ChannelInput `json:"channels"`
 	Rules    []RuleInput    `json:"rules"`
+	// AuditAlerts sets which built-in audit alerts are on and where they
+	// go. Left out (nil), the saved ones are kept, less the channels
+	// being removed.
+	AuditAlerts *[]AuditRuleInput `json:"audit_alerts"`
+}
+
+// AuditRuleInput turns one built-in audit alert on or off and picks its
+// channels.
+type AuditRuleInput struct {
+	ID       string   `json:"id"`
+	Enabled  bool     `json:"enabled"`
+	Channels []string `json:"channels"`
 }
 
 // ChannelInput is a channel as the page sends it. A channel with an ID
@@ -254,6 +266,87 @@ func merge(cur Settings, in Input, now func() time.Time) (Settings, []Problem) {
 			ruleNames[key] = true
 		}
 		out.Rules = append(out.Rules, r)
+	}
+	auditRules, p := mergeAudit(cur, out, in.AuditAlerts, now)
+	out.AuditAlerts = auditRules
+	probs = append(probs, p...)
+	return out, probs
+}
+
+// mergeAudit builds the audit alerts of the new settings next from in,
+// or from the current ones when in is nil.
+func mergeAudit(cur, next Settings, in *[]AuditRuleInput, now func() time.Time) ([]AuditRule, []Problem) {
+	if in == nil {
+		// Kept as they are, less the channels being removed: an alert
+		// left with none is turned off, so removing a channel always
+		// works.
+		var out []AuditRule
+		for _, r := range cur.AuditAlerts {
+			kept := []string{}
+			for _, id := range r.Channels {
+				if containsChannel(next, id) {
+					kept = append(kept, id)
+				}
+			}
+			if len(kept) == 0 {
+				r.Enabled = false
+			}
+			r.Channels = kept
+			out = append(out, r)
+		}
+		return out, nil
+	}
+	var probs []Problem
+	var out []AuditRule
+	seen := map[string]bool{}
+	for _, ri := range *in {
+		id := strings.TrimSpace(ri.ID)
+		w := "audit:" + id
+		a, ok := FindAuditAlert(id)
+		if !ok {
+			probs = append(probs, Problem{Where: w, Field: "id", Msg: fmt.Sprintf("there is no audit alert %q", cut(id, 60))})
+			continue
+		}
+		if seen[id] {
+			probs = append(probs, Problem{Where: w, Field: "id", Msg: a.Name + ": listed twice"})
+			continue
+		}
+		seen[id] = true
+		r := AuditRule{ID: id, Enabled: ri.Enabled, Channels: []string{}}
+		removed, unknown := false, false
+		for _, cid := range ri.Channels {
+			cid = strings.TrimSpace(cid)
+			switch {
+			case cid == "" || slices.Contains(r.Channels, cid):
+			case containsChannel(next, cid):
+				r.Channels = append(r.Channels, cid)
+			case containsChannel(cur, cid):
+				removed = true
+			default:
+				unknown = true
+				probs = append(probs, Problem{Where: w, Field: "channels", Msg: a.Name + ": " + fmt.Sprintf("there is no channel with the ID %s", cut(cid, 60))})
+			}
+		}
+		if r.Enabled && len(r.Channels) == 0 && !unknown {
+			if removed {
+				r.Enabled = false
+			} else {
+				probs = append(probs, Problem{Where: w, Field: "channels", Msg: a.Name + ": pick at least one channel to send to"})
+			}
+		}
+		// Only records logged from when an alert is turned on are sent.
+		old := cur.AuditRule(id)
+		switch {
+		case !r.Enabled:
+			r.Since = old.Since
+		case !old.Enabled:
+			r.Since = now().UTC()
+		default:
+			r.Since = old.Since
+		}
+		if r.Enabled || len(r.Channels) > 0 {
+			out = append(out, r)
+		}
 	}
 	return out, probs
 }

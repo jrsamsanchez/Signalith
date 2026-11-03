@@ -120,7 +120,9 @@ type flatAttr struct {
 	key, value string
 }
 
-func (h *handler) capturing() bool { return h.sink != nil && h.sink.Enabled() }
+func (h *handler) capturing() bool {
+	return h.sink != nil && (h.sink.Enabled() || h.sink.tapped() != nil)
+}
 
 // Enabled reports whether next takes records of level l, or the sink
 // would: audit lines are logged at Info or above, and are kept even when
@@ -233,7 +235,11 @@ func (h *handler) capture(r slog.Record) {
 	if !audit {
 		return
 	}
-	h.sink.Add(eventOf(r, attrs))
+	ev := eventOf(r, attrs)
+	if tap := h.sink.tapped(); tap != nil {
+		tap(ev)
+	}
+	h.sink.Add(ev)
 }
 
 // eventOf maps a record and its flattened attributes to an Event.

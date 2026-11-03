@@ -1,8 +1,9 @@
 // Copyright 2026 The Signalith authors
 // SPDX-License-Identifier: Apache-2.0
 // Notifications page (admins): channels (where messages go: Slack, Teams,
-// email or a webhook), rules (which findings go to which channels) and
-// the latest deliveries. The server keeps channels and rules in one file
+// email or a webhook), rules (which findings go to which channels), the
+// built-in audit alerts (Signalith's own sign-ins and changes) and the
+// latest deliveries. The server keeps channels and rules in one file
 // and takes them whole (PUT api/notify): every change here sends the
 // whole list back, with the secrets left empty, which keeps them. Secrets
 // are never sent to the page; a channel only says whether each is set.
@@ -87,7 +88,8 @@
     $('nt-add-channel').classList.toggle('hidden', !manage() || !hasChannels);
     $('nt-add-rule').classList.toggle('hidden', !manage() || !hasChannels);
     const chat = d.chat && manage() && d.channels.some((c) => c.interactive);
-    fill(box(), notes(), channelsCard(), hasChannels ? rulesCard() : null, chat ? linksCard() : null, hasChannels || (NT.deliveries || []).length ? deliveriesCard() : null);
+    fill(box(), notes(), channelsCard(), hasChannels ? rulesCard() : null, hasChannels && d.audit_alerts ? auditCard() : null,
+      chat ? linksCard() : null, hasChannels || (NT.deliveries || []).length ? deliveriesCard() : null);
     if (focusKey) {
       const again = box().querySelector(`[data-key="${CSS.escape(focusKey)}"]`);
       if (again) (again.matches('details') ? again.querySelector('summary') : again).focus({ preventScroll: true });
@@ -369,6 +371,120 @@
       menu);
   }
 
+  // ---------- audit alerts ----------
+  // Built in: each is off until an admin turns it on and picks where it
+  // goes. They are about Signalith's own audit records and never become
+  // findings.
+  const AUDIT_SEV = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low', informational: 'Info' };
+  const auditInput = (list) => list.map((a) => ({ id: a.id, enabled: a.enabled, channels: [...a.channels] }));
+
+  function auditCard() {
+    const d = NT.data;
+    const on = d.audit_alerts.filter((a) => a.enabled).length;
+    const from = d.audit_from === 'cluster' ? 'from every server’s audit records' : 'from this server’s audit records';
+    const head = el('div', { class: 'card__head' }, el('div', {},
+      el('h3', { class: 'card__title', id: 'nt-audit-title' }, 'Audit alerts'),
+      el('p', { class: 'card__sub' }, `Sign-ins and changes in Signalith itself, ${from} · ${on} of ${d.audit_alerts.length} on`)));
+    const link = el('a', { href: '#audit', 'data-page': 'audit' }, 'Audit page');
+    const note = el('p', { class: 'hint nt-audit__note' }, 'Messages say what happened, who did it and from where, never the whole record, and link to the ', link,
+      '. They never become findings, so only admins see them.');
+    return el('section', { class: 'card nt-card', 'aria-labelledby': 'nt-audit-title' }, head, note,
+      el('ul', { class: 'nt-rules' }, ...d.audit_alerts.map(auditRow)));
+  }
+
+  function auditWhere(a) {
+    const names = a.channels.map((id) => channelByID(id)).filter(Boolean).map(label);
+    if (!names.length) return 'Goes nowhere yet: pick a channel.';
+    return 'Goes to ' + (names.length === 1 ? names[0] : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]) + '.';
+  }
+
+  function auditRow(a) {
+    const sw = el('input', { type: 'checkbox', role: 'switch', 'aria-label': `${a.name}: on`, 'data-key': 'asw:' + a.id });
+    sw.checked = a.enabled;
+    sw.disabled = !manage();
+    sw.addEventListener('change', async () => {
+      if (sw.checked && !a.channels.some((id) => channelByID(id))) {
+        sw.checked = false;
+        openAudit(a, true);
+        return;
+      }
+      sw.disabled = true;
+      const ok = await saveAudit(a.id, { enabled: sw.checked },
+        sw.checked ? `${a.name} is on. What happens from now on is sent.` : `${a.name} is off.`);
+      if (ok !== true) { sw.checked = !sw.checked; sw.disabled = false; if (ok) toastError('Couldn’t save', ok); }
+    });
+    const items = manage() ? [{ icon: 'send', label: 'Choose channels', run: () => openAudit(a, false) }] : [];
+    const menu = items.length ? dxMenu('Actions for ' + a.name, items) : null;
+    if (menu) {
+      menu.dataset.key = 'am:' + a.id;
+      menu.querySelector('summary').classList.add('btn--sm');
+      menu.addEventListener('toggle', () => { if (!menu.open && NT.deferred) setTimeout(render); });
+    }
+    return el('li', { class: 'nt-rule' + (a.enabled ? '' : ' is-off') },
+      el('label', { class: 'switch nt-rule__switch' }, sw),
+      el('div', { class: 'nt-rule__text' },
+        el('div', { class: 'nt-rule__name' }, a.name, sevBadge(a.urgency), a.noisy ? el('span', { class: 'badge badge--outline', title: 'Can send many messages' }, 'Noisy') : null,
+          a.enabled ? null : el('span', { class: 'badge badge--outline' }, 'Off')),
+        el('p', { class: 'nt-rule__sum' }, a.description),
+        a.enabled || a.channels.length ? el('p', { class: 'nt-rule__sum nt-audit__where' }, auditWhere(a)) : null),
+      menu);
+  }
+
+  // saveAudit changes one audit alert and saves; like save, it returns
+  // true, or the error for the caller to show.
+  function saveAudit(id, change, done) {
+    return save((inp) => {
+      inp.audit_alerts = auditInput(NT.data.audit_alerts);
+      Object.assign(inp.audit_alerts.find((x) => x.id === id), change);
+    }, done, { quiet: true }).then((res) => {
+      if (res === true && done) toast(done);
+      return res;
+    });
+  }
+
+  // openAudit picks an audit alert's channels; turnOn turns it on too.
+  function openAudit(a, turnOn) {
+    const dlg = $('nt-rule-dialog');
+    const st = { channels: a.channels.filter((id) => channelByID(id)) };
+    if (!st.channels.length && NT.data.channels.length === 1) st.channels = [NT.data.channels[0].id];
+    const msg = el('div', { class: 'nt-msg', 'aria-live': 'polite' });
+    const form = el('form', { class: 'nt-form', novalidate: '', autocomplete: 'off' });
+    const chans = el('div', { class: 'nt-picks', role: 'group', 'aria-label': 'Channels' }, ...NT.data.channels.map((c) => {
+      const cb = el('input', { type: 'checkbox' });
+      cb.checked = st.channels.includes(c.id);
+      cb.addEventListener('change', () => { st.channels = cb.checked ? [...st.channels, c.id] : st.channels.filter((x) => x !== c.id); });
+      return el('label', { class: 'check nt-pick' }, cb, el('span', { class: 'nt-type nt-type--sm', 'data-type': c.type }, icon(typeOf(c.type).icon)), el('span', {}, c.name));
+    }));
+    const enable = turnOn || a.enabled;
+    const saveBtn = el('button', { class: 'btn btn--primary', type: 'submit' }, turnOn ? 'Turn on' : 'Save');
+    form.addEventListener('submit', async (ev) => {
+      ev.preventDefault();
+      clearErrors(form);
+      fill(msg);
+      if (enable && !st.channels.length) { markError(form, 'channels', 'Pick at least one channel to send to.'); return; }
+      saveBtn.disabled = true;
+      const res = await saveAudit(a.id, { enabled: enable, channels: st.channels }, null);
+      saveBtn.disabled = false;
+      if (res !== true) { showProblems(form, msg, res, 'audit:' + a.id, 'Couldn’t save the audit alert.'); return; }
+      dlg.close();
+      toast(turnOn ? `${a.name} is on. What happens from now on is sent.` : `Saved ${a.name}.`);
+    });
+    fill(form,
+      el('div', { class: 'modal__body' }, msg, el('div', { class: 'field', 'data-field': 'channels' }, el('span', { class: 'label' }, 'Send to'), chans),
+        el('div', { class: 'nt-preview' }, icon('shield'), el('div', {}, el('b', {}, AUDIT_SEV[a.urgency] || a.urgency), el('p', { class: 'nt-preview__text' }, a.description)))),
+      el('div', { class: 'modal__foot nt-foot' }, el('span', { class: 'spacer' }),
+        el('button', { class: 'btn btn--ghost', type: 'button', onclick: () => dlg.close() }, 'Cancel'), saveBtn));
+    fill(dlg,
+      el('div', { class: 'modal__head' }, el('div', {},
+        el('h2', { class: 'modal__title', id: 'nt-rule-title' }, a.name),
+        el('p', { class: 'modal__desc' }, 'Where messages about this go. Only what happens after it is turned on is sent.')),
+      el('button', { class: 'btn btn--ghost btn--icon btn--sm', type: 'button', 'aria-label': 'Close', onclick: () => dlg.close() }, icon('x'))),
+      form);
+    dlg.showModal();
+    const firstBox = chans.querySelector('input');
+    if (firstBox) firstBox.focus();
+  }
+
   // ---------- deliveries ----------
   function deliveriesCard() {
     const list = NT.deliveries || [];
@@ -389,6 +505,7 @@
         const t = typeOf(x.channel_type);
         const title = x.kind === 'test' ? 'Test message' : x.title || x.finding_id;
         const sub = [];
+        if (x.kind === 'audit') sub.push('audit alert');
         if (x.summary > 1) sub.push(`in a summary of ${x.summary}`);
         if (x.rule_name) sub.push(`rule ${x.rule_name}`);
         if (x.playbook) sub.push(`playbook ${x.playbook}`);

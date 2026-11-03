@@ -1635,6 +1635,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	dispatcher := &notify.Dispatcher{
 		Settings: notes, Findings: fstore, Deliveries: deliveries, Sender: senders, Server: sampleServer, Log: log,
 		PublicURL: func() string { return c.Server.PublicURL },
+		Audit:     r.auditAlertSource(c, cl),
 	}
 	// Each server keeps the sample's asset and identity context in its own
 	// lookups folder, and its threat intel in memory: follow a load or
@@ -1793,7 +1794,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Assets:            lists,
 		Intel:             indicators,
 		Feeds:             feeds,
-		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer},
+		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer, AuditFrom: r.auditFromFunc()},
 		Dashboards:        boards,
 		Cases:             cstore,
 		CaseFiles:         cfiles,
