@@ -82,6 +82,11 @@ type Dispatcher struct {
 	// the audit indices when servers share them, else this server's own
 	// (AuditTap). nil, or a nil source, sends no audit alerts.
 	Audit func() AuditSource
+	// KnownUser reports whether a name is an account Signalith knows. The
+	// name of a failed sign-in is whatever was typed, perhaps a password
+	// typed in the wrong box, so an audit alert sends it only when it is
+	// a known account, and UnknownName otherwise. nil knows none.
+	KnownUser func(name string) bool
 
 	reader    Reader
 	auditDone time.Time // when the last audit pass that finished started
@@ -273,6 +278,9 @@ func (d *Dispatcher) collectAudit(ctx context.Context, s Settings, now time.Time
 				}
 				seen[id] = true
 				m := AuditMessage(o.alert, rec, link)
+				if u := m.Entities["user"]; u != "" && typedName(rec.Event) && (d.KnownUser == nil || !d.KnownUser(rec.Event.User)) {
+					m.Entities["user"] = UnknownName
+				}
 				wants = append(wants, item{msg: m, rule: Rule{ID: "audit:" + o.alert.ID, Name: o.alert.Name}, urgency: urgencyRank(m.Urgency)})
 				ids = append(ids, id)
 				channels = append(channels, cid)

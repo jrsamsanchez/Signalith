@@ -309,6 +309,9 @@ What gets sent:
 - A message says what happened, which alert matched, who did it, from which address, what it
   was done to, the server, the tenant and, for a failed sign-in, why. It never holds the
   rest of the audit record. It links to the **Audit** page (`server.public_url` + `/#audit`).
+- The name in a failed sign-in is whatever was typed, which may be a password typed in the
+  wrong box. It is sent only when it is an account Signalith knows; otherwise the message
+  says "(not a known account)" and gives the address it came from.
 - The flood guard, retries and **Recent deliveries** work as for findings. A summary reads
   "And 12 more audit alerts".
 - Audit alerts never become findings, so audit records stay out of the Findings page, of
@@ -320,6 +323,11 @@ are kept there, and the server that runs the background jobs sends alerts about 
 server's records. On a server of its own, audit records are only in its log, so it alerts on
 the records it logs while it runs: a record logged before a restart, while the server was
 stopped, is not sent.
+
+Audit alerts trust the audit records as the Audit page does: someone who can write to the
+audit indices in OpenSearch directly could add records that look real. Keep OpenSearch
+credentials to Signalith's own accounts, and use **Check integrity** on the Audit page to
+find records that were not signed by a Signalith server.
 
 A webhook gets `"type": "audit"` and an `audit` object instead of `finding`:
 
