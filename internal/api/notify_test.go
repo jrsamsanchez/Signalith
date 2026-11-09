@@ -200,3 +200,70 @@ func notifyJSON(t *testing.T, v any) string {
 	}
 	return string(b)
 }
+
+func TestNotifyAuditAlerts(t *testing.T) {
+	ts, n := newNotifyServer(t, func(s *Server) {})
+	// Without an audit source, the page offers none.
+	code, body := doAs(t, ts, "admin", "s3cret-pass", "GET", "/api/notify", "")
+	if code != 200 || body["audit_alerts"] != nil {
+		t.Fatalf("without audit records: %d %v", code, body["audit_alerts"])
+	}
+	n.AuditFrom = func() string { return "server" }
+	code, body = doAs(t, ts, "admin", "s3cret-pass", "GET", "/api/notify", "")
+	alerts, _ := body["audit_alerts"].([]any)
+	if code != 200 || len(alerts) != len(notify.AuditAlerts) || body["audit_from"] != "server" || body["audit_link"] != "https://siem.example.com/#audit" {
+		t.Fatalf("audit alerts: %d %v", code, body)
+	}
+	for _, a := range alerts {
+		if a.(map[string]any)["enabled"] != false {
+			t.Errorf("an audit alert is on before anyone turned it on: %v", a)
+		}
+	}
+	save := `{"channels":[{"id":"hook","name":"SOAR","type":"webhook","url":"https://soar.example.com/hook"}],"rules":[],
+		"audit_alerts":[{"id":"builtin_signin","enabled":true,"channels":["hook"]}]}`
+	code, body = doAs(t, ts, "admin", "s3cret-pass", "PUT", "/api/notify", save)
+	if code != 200 {
+		t.Fatalf("save: %d %v", code, body)
+	}
+	set, _ := n.Settings.Settings()
+	if r := set.AuditRule("builtin_signin"); !r.Enabled || len(r.Channels) != 1 {
+		t.Fatalf("saved %+v", set.AuditAlerts)
+	}
+	// A save that leaves them out keeps them.
+	code, _ = doAs(t, ts, "admin", "s3cret-pass", "PUT", "/api/notify", `{"channels":[{"id":"hook","name":"SOAR","type":"webhook"}],"rules":[]}`)
+	set, _ = n.Settings.Settings()
+	if code != 200 || !set.AuditRule("builtin_signin").Enabled {
+		t.Fatalf("after a save without them: %d %+v", code, set.AuditAlerts)
+	}
+	code, body = doAs(t, ts, "admin", "s3cret-pass", "PUT", "/api/notify", `{"channels":[],"audit_alerts":[{"id":"lockout","enabled":true}]}`)
+	if code != 400 {
+		t.Errorf("an alert on with no channel: %d %v", code, body)
+	}
+}
+
+func TestNotifyAuditAlertsNotOnTenantServers(t *testing.T) {
+	var acme *Server
+	newTestServerWith(t, func(s *Server) { acme, s.TenantID = s, "acme" })
+	n := &Notify{Settings: &notify.Manager{File: filepath.Join(t.TempDir(), "notifications.yaml")},
+		Deliveries: notify.NewMemory(), Sender: &notify.Senders{}, AuditFrom: func() string { return "server" }}
+	acme.Notify = n
+	if _, err := n.Settings.Save(notify.Input{Channels: []notify.ChannelInput{{ID: "hook", Name: "SOAR", Type: notify.TypeWebhook, URL: "https://soar.example.com/hook"}},
+		AuditAlerts: &[]notify.AuditRuleInput{{ID: "lockout", Enabled: true, Channels: []string{"hook"}}}}); err != nil {
+		t.Fatal(err)
+	}
+	if acme.auditAlertsHere() {
+		t.Fatal("a tenant's server offers the audit alerts")
+	}
+	set, _ := n.Settings.Settings()
+	if view := acme.notifyView(context.Background(), set, nil); view["audit_alerts"] != nil || view["audit_from"] != nil {
+		t.Fatalf("a tenant's page shows audit alerts: %v", view)
+	}
+	acme.conf().Detections.Scheduler = true
+	w := httptest.NewRecorder()
+	acme.handleNotifySave(w, httptest.NewRequest("PUT", "/api/notify",
+		strings.NewReader(`{"channels":[{"id":"hook","name":"SOAR","type":"webhook"}],"rules":[],"audit_alerts":[]}`)))
+	set, _ = n.Settings.Settings()
+	if w.Code != 200 || !set.AuditRule("lockout").Enabled {
+		t.Errorf("a tenant's save changed the audit alerts: %d %s %+v", w.Code, w.Body, set.AuditAlerts)
+	}
+}

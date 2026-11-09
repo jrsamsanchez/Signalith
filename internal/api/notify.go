@@ -28,6 +28,11 @@ type Notify struct {
 	Sender notify.Sender
 	// Server names this server in the test deliveries it records.
 	Server string
+	// AuditFrom, when set, offers the built-in audit alerts and says where
+	// their audit records come from now: "cluster" for the audit indices
+	// every server writes to, "server" for this server's own. It is nil on
+	// a tenant's server: the audit records are the provider's.
+	AuditFrom func() string
 
 	testMu sync.Mutex // one test at a time
 
@@ -111,6 +116,22 @@ type channelView struct {
 type headerView struct {
 	Name string `json:"name"`
 	Set  bool   `json:"set"`
+}
+
+// auditAlertView is a built-in audit alert as the page shows it, with
+// whether it is on and where it goes.
+type auditAlertView struct {
+	notify.AuditAlert
+	Enabled  bool      `json:"enabled"`
+	Channels []string  `json:"channels"`
+	Since    time.Time `json:"since,omitzero"`
+}
+
+// auditAlertsHere reports whether this server offers the audit alerts:
+// never a tenant's, whose admins must not learn of the provider's audit
+// records.
+func (s *Server) auditAlertsHere() bool {
+	return s.TenantID == "" && s.Notify != nil && s.Notify.AuditFrom != nil
 }
 
 type ruleView struct {
@@ -206,6 +227,19 @@ func (s *Server) notifyView(ctx context.Context, set notify.Settings, fileErr er
 	}
 	out["channels"] = channels
 	out["rules"] = rules
+	if s.auditAlertsHere() {
+		alerts := make([]auditAlertView, 0, len(notify.AuditAlerts))
+		for _, a := range notify.AuditAlerts {
+			r := set.AuditRule(a.ID)
+			if r.Channels == nil {
+				r.Channels = []string{}
+			}
+			alerts = append(alerts, auditAlertView{AuditAlert: a, Enabled: r.Enabled, Channels: r.Channels, Since: r.Since})
+		}
+		out["audit_alerts"] = alerts
+		out["audit_from"] = s.Notify.AuditFrom()
+		out["audit_link"] = notify.AuditLink(strings.TrimSpace(s.conf().Server.PublicURL))
+	}
 	out["revision"] = s.Notify.Settings.Revision()
 	out["file"] = s.Notify.Settings.File
 	out["types"] = notify.Types
@@ -251,6 +285,10 @@ func (s *Server) handleNotifySave(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	if !s.auditAlertsHere() {
+		// Kept as they are where they are not offered.
+		in.AuditAlerts = nil
+	}
 	set, err := s.Notify.Settings.Save(in)
 	var ie *notify.InputError
 	var fe *notify.FileError
@@ -272,7 +310,14 @@ func (s *Server) handleNotifySave(w http.ResponseWriter, r *http.Request) {
 			on++
 		}
 	}
-	s.Log.Info("notification settings changed", "by", userOf(r), "channels", len(set.Channels), "rules", len(set.Rules), "rules_on", on)
+	var auditOn []string
+	for _, a := range set.AuditAlerts {
+		if a.Enabled {
+			auditOn = append(auditOn, a.ID)
+		}
+	}
+	s.audit(r, "notification settings changed", "channels", len(set.Channels), "rules", len(set.Rules), "rules_on", on,
+		"audit_alerts_on", strings.Join(auditOn, ","))
 	s.Notify.clearHealth()
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
