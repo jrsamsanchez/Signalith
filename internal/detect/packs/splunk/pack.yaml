@@ -3,8 +3,8 @@ name: splunk
 title: Splunk Security Content
 description: Windows detections for process, file and registry events, macOS detections for the program starts osquery reports, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.
 source: https://github.com/splunk/security_content
-version: 7f3d4309e35f319e4fd48339c5db311f8d27796c
-date: "2026-11-02"
+version: 4c1652e36f137c83d2279f455a4911ee5bd76305
+date: "2026-11-09"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.
@@ -274,6 +274,10 @@ rules:
     rule_id: 825fed20-309d-4fd1-8aaf-cd49c1bb093c
     file: azure_ad_global_administrator_role_assigned.yml
     path: detections/cloud/azure_ad_global_administrator_role_assigned.yml
+  - id: splunk-azure-ad-guest-user-type-changed-to-member
+    rule_id: 487e9b86-49dc-48a9-bbb3-747df56b4db0
+    file: azure_ad_guest_user_type_changed_to_member.yml
+    path: detections/cloud/azure_ad_guest_user_type_changed_to_member.yml
   - id: splunk-azure-ad-high-number-of-failed-authentications-for-user
     rule_id: 630b1694-210a-48ee-a450-6f79e7679f2c
     file: azure_ad_high_number_of_failed_authentications_for_user.yml
@@ -378,6 +382,14 @@ rules:
     rule_id: a560e7f6-1711-4353-885b-40be53101fcd
     file: azure_ad_successful_single_factor_authentication.yml
     path: detections/cloud/azure_ad_successful_single_factor_authentication.yml
+  - id: splunk-azure-ad-suspicious-device-registration
+    rule_id: 4cfe7afd-a22b-4af5-9520-39f7f6564e7f
+    file: azure_ad_suspicious_device_registration.yml
+    path: detections/cloud/azure_ad_suspicious_device_registration.yml
+  - id: splunk-azure-ad-temporary-access-pass-created
+    rule_id: f820b423-7299-4bb6-9bf3-860bd475cddb
+    file: azure_ad_temporary_access_pass_created.yml
+    path: detections/cloud/azure_ad_temporary_access_pass_created.yml
   - id: splunk-azure-ad-tenant-wide-admin-consent-granted
     rule_id: dc02c0ee-6ac0-4c7f-87ba-8ce43a4e4418
     file: azure_ad_tenant_wide_admin_consent_granted.yml
@@ -1490,6 +1502,10 @@ rules:
     rule_id: ce2bde4d-a1d4-4452-8c87-98440e5adfb3
     file: linux_auditd_shred_overwrite_command.yml
     path: detections/endpoint/linux_auditd_shred_overwrite_command.yml
+  - id: splunk-linux-auditd-sock-raw-eafnosupport-from-user-writable-pat
+    rule_id: 7c1c36e6-014d-4a2c-b3ab-84d7cec3bbc2
+    file: linux_auditd_sock_raw_eafnosupport_from_user_writable_path.yml
+    path: detections/endpoint/linux_auditd_sock_raw_eafnosupport_from_user_writable_path.yml
   - id: splunk-linux-auditd-sudo-or-su-execution
     rule_id: 817a5c89-5b92-4818-a22d-aa35e1361afe
     file: linux_auditd_sudo_or_su_execution.yml

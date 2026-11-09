@@ -3,8 +3,8 @@ name: sigmahq
 title: SigmaHQ community rules
 description: Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, macOS rules for the program starts osquery reports, network rules for Zeek's logs and for DNS, web proxy and firewall data, and antivirus rules for any antivirus product's alerts, from the SigmaHQ project, converted to Signalith detections. Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.
 source: https://github.com/SigmaHQ/sigma
-version: ccbb0369507f796db0b0ae6854c8a2be471b9d84
-date: "2026-11-02"
+version: 53b90df66c5b6d1b9be6ba9289c56fe49dd74a73
+date: "2026-11-09"
 license: DRL-1.1
 license_url: https://github.com/SigmaHQ/Detection-Rule-License
 notice: The rules in this pack are by the SigmaHQ authors named in each rule and are licensed under the Detection Rule License (DRL) 1.1. Findings from them name the rule's author.
@@ -7753,6 +7753,10 @@ rules:
     rule_id: 193d5ccd-6f59-40c6-b5b0-8e32d5ddd3d1
     file: proc_creation_win_xwizard_execution_non_default_location.yml
     path: rules/windows/process_creation/proc_creation_win_xwizard_execution_non_default_location.yml
+  - id: sigma-proc-xwizard-runwizard-com-object-exec
+    rule_id: 53d4bb30-3f36-4e8a-b078-69d36c4a79ff
+    file: proc_creation_win_xwizard_runwizard_com_object_exec.yml
+    path: rules/windows/process_creation/proc_creation_win_xwizard_runwizard_com_object_exec.yml
   - id: sigma-proxy-downloadcradle-webdav
     rule_id: e09aed7a-09e0-4c9a-90dd-f0d52507347e
     file: proxy_downloadcradle_webdav.yml

@@ -2,7 +2,8 @@
   {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"9389","Initiated":"true"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"9389","Image":"C:\\Windows\\system32\\dsac.exe","Initiated":"true"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"9389","Image":"C:\\Program Files\\Microsoft Monitoring Agent\\","Initiated":"true"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"9389","Image":"C:\\Windows\\SysWOW64\\WindowsPowerShell\\","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"9389","Image":"C:\\Windows\\SysWOW64\\WindowsPowerShell\\v1.0\\powershell.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"9389","Image":"\\AppData\\Local\\Microsoft\\WindowsApps\\Microsoft.PowerShellPreview \\pwsh.exe","Initiated":"true"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"9389"}}
 ]}
