@@ -171,7 +171,7 @@ func (s *Server) handleHEC(w http.ResponseWriter, r *http.Request, raw bool) {
 		return
 	}
 	defer slot()
-	ctx := withOrigin(r, ingest.IntakeHEC, who)
+	ctx := s.withOrigin(r, ingest.IntakeHEC, who)
 	var res *ingest.Result
 	if raw {
 		res, err = s.Pipeline.IngestHECRaw(ctx, body, meta)

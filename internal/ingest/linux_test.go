@@ -164,3 +164,38 @@ func TestSSHLineShapes(t *testing.T) {
 		}
 	}
 }
+
+// TestZonelessRecordTime: a JSON record's or Windows event's time with no
+// zone could be in any zone, so, as for a syslog line, the event takes the
+// collector's time or when it arrived, and the time as written is kept in
+// device_clock (ING-214).
+func TestZonelessRecordTime(t *testing.T) {
+	n := time.Now().UTC().Truncate(time.Second)
+	stated := n.Add(-3 * time.Hour)
+	collected := n.Add(-time.Minute)
+	for _, layout := range []string{"2006-01-02 15:04:05", "2006-01-02 15:04:05.000", "2006-01-02T15:04:05"} {
+		at := stated.Format(layout)
+		ev := Normalize("app", map[string]any{"msg": "x", "@timestamp": at}, n)
+		if !ev.Time.Equal(n) || ev.Fields[DeviceClockField] != stated.Format("2006-01-02T15:04:05") {
+			t.Errorf("%s: %v %v", at, ev.Time, ev.Fields[DeviceClockField])
+		}
+		ev = Normalize("app", map[string]any{"msg": "x", "date": float64(collected.Unix()), "@timestamp": at}, n)
+		if !ev.Time.Equal(collected) || ev.Fields[DeviceClockField] != nil {
+			t.Errorf("%s with the collector's date: %v %v", at, ev.Time, ev.Fields[DeviceClockField])
+		}
+	}
+	// With a zone the record's own time stands.
+	if ev := Normalize("app", map[string]any{"msg": "x", "@timestamp": stated.Format("2006-01-02 15:04:05 -0700")}, n); !ev.Time.Equal(stated) || ev.Fields[DeviceClockField] != nil {
+		t.Errorf("with a zone: %v %v", ev.Time, ev.Fields[DeviceClockField])
+	}
+	win := func(created string) Event {
+		return Normalize("win.security", map[string]any{"Channel": "Security", "Computer": "DC1", "EventID": 4625, "TimeCreated": created, "date": float64(collected.Unix())}, n)
+	}
+	// The format the agent's Fluent Bit sends, with a zone.
+	if ev := win(stated.Format("2006-01-02 15:04:05 -0700")); !ev.Time.Equal(stated) {
+		t.Errorf("TimeCreated with a zone: %v", ev.Time)
+	}
+	if ev := win(stated.Format("2006-01-02 15:04:05")); !ev.Time.Equal(collected) || ev.Fields[DeviceClockField] != stated.Format("2006-01-02T15:04:05") {
+		t.Errorf("TimeCreated with no zone: %v %v", ev.Time, ev.Fields[DeviceClockField])
+	}
+}

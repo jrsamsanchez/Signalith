@@ -34,6 +34,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/cluster"
@@ -75,6 +76,9 @@ const (
 	maxHeaderValue = 64
 	// maxName is the longest host name kept.
 	maxName = 253
+	// maxTag is the longest X-Signalith-Tag kept, in bytes: the sender
+	// chooses it (ING-211).
+	maxTag = 128
 )
 
 // Contact is one batch an agent sent.
@@ -339,6 +343,18 @@ func CleanName(s string) string {
 	return s
 }
 
+// capTag cuts a tag to maxTag bytes, at the start of a character.
+func capTag(s string) string {
+	if len(s) <= maxTag {
+		return s
+	}
+	i := maxTag
+	for i > 0 && !utf8.RuneStart(s[i]) {
+		i--
+	}
+	return s[:i]
+}
+
 // ParseConfig reads an X-Signalith-Config header, "ca=<pins>;v=<version>"
 // or "v=<version>", where pins are one or more pins separated by commas:
 // a configuration made while a new certificate authority was prepared
@@ -469,7 +485,7 @@ func (v *Inventory) Note(c Contact) {
 		e.dirty = true
 		return
 	}
-	d.Name, d.Address, d.Tag, d.Intake, d.Transport, d.Local = name, c.Address, c.Tag, c.Intake, transport, c.Local
+	d.Name, d.Address, d.Tag, d.Intake, d.Transport, d.Local = name, c.Address, capTag(c.Tag), c.Intake, transport, c.Local
 	d.Token, d.TokenName, d.CA, d.ConfigVersion, d.ServerCA = c.TokenID, c.TokenName, ca, version, serverCA
 	d.LastSeen = now
 	// The status line of the batch that came last, whatever time the line

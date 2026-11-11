@@ -691,7 +691,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	if tag == "" {
 		tag = r.URL.Query().Get("tag")
 	}
-	res, err = s.Pipeline.IngestBody(withOrigin(r, ingest.IntakeAgent, who), tag, body)
+	res, err = s.Pipeline.IngestBody(s.withOrigin(r, ingest.IntakeAgent, who), tag, body)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
 		// Only a token made for a sensor speaks for a sensor's health:
@@ -824,6 +824,18 @@ func (s *Server) batchFailure(r *http.Request, err error) (int, string, error) {
 var lastSlowBatchWarning atomic.Int64
 
 // warnSlowBatch logs at most once a minute.
+// otlpBatchFailure is batchFailure for the OTLP route: a batch that took
+// too long to arrive is answered 503 with Retry-After, which OTLP senders
+// retry, rather than 408, which the OpenTelemetry Collector takes as
+// final and drops the batch (ING-210).
+func (s *Server) otlpBatchFailure(r *http.Request, err error) (int, string, error) {
+	status, retry, err := s.batchFailure(r, err)
+	if status == http.StatusRequestTimeout {
+		status, retry = http.StatusServiceUnavailable, "5"
+	}
+	return status, retry, err
+}
+
 func (s *Server) warnSlowBatch(msg string, args ...any) {
 	now := time.Now().UnixNano()
 	prev := lastSlowBatchWarning.Load()
@@ -865,8 +877,14 @@ func (b *batchBody) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// bearerToken is the token in r's Authorization header. The scheme is
+// matched in any case, as HTTP's are ("bearer <token>" too) (ING-212).
 func bearerToken(r *http.Request) string {
-	return strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	h := r.Header.Get("Authorization")
+	if len(h) >= len("Bearer ") && strings.EqualFold(h[:len("Bearer ")], "Bearer ") {
+		h = h[len("Bearer "):]
+	}
+	return strings.TrimSpace(h)
 }
 
 // retiredTokenAccepted decides on a batch whose token is not one of this
