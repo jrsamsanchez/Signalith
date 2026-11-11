@@ -83,4 +83,28 @@ repo_gpgcheck=1
 gpgkey=$url/rpm/signalith.asc
 REPO
 
+# A page for each folder, which a browser or search engine opening
+# https://signalith.io/apt/ would otherwise get as 403 Forbidden. It points to
+# the install steps and asks search engines not to list it.
+page() {
+  cat > "$1/index.html" <<PAGE
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, follow">
+<title>Signalith $2 repository</title>
+</head>
+<body>
+<h1>Signalith $2 repository</h1>
+<p>This folder is the signed $2 repository for <a href="$url/">Signalith</a>. To use it, follow
+<a href="$url/docs/install-packages/">Install from packages</a>.</p>
+</body>
+</html>
+PAGE
+}
+page "$apt" apt
+page "$rpm" "dnf, yum and zypper"
+
 echo "Built the apt and rpm repositories in $out, signed with $key."

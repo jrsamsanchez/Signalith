@@ -359,3 +359,36 @@ func TestMitigationsRulesReadBothLogs(t *testing.T) {
 		t.Error("no exploit protection rules in the Sigma pack")
 	}
 }
+
+// DQ-102: a Security or System log rule is about the account, service or
+// object it names, not the program (which those events do not have), so
+// a second service install or logon on the same host raises its own
+// finding.
+func TestWindowsLogPackThrottle(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]int{}
+	for _, d := range ds {
+		if d.Origin == nil || d.Origin.Pack != "sigmahq" {
+			continue
+		}
+		model := ""
+		switch {
+		case strings.HasPrefix(d.ID, "sigma-win-system-service-install-"):
+			model = "Change"
+		case d.ID == "sigma-win-security-successful-external-remote-rdp-login":
+			model = "Authentication"
+		default:
+			continue
+		}
+		seen[model]++
+		if want := windowsLogThrottle(model); !slices.Equal(d.Throttle.Fields, want) {
+			t.Errorf("%s: throttle %v, want %v", d.ID, d.Throttle.Fields, want)
+		}
+	}
+	if seen["Change"] == 0 || seen["Authentication"] != 1 {
+		t.Errorf("rules checked: %v", seen)
+	}
+}

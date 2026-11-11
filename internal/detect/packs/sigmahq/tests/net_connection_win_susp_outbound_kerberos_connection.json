@@ -4,6 +4,7 @@
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"88","Image":"C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe","Initiated":"true"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"88","Image":"C:\\Program Files\\Mozilla Firefox\\firefox.exe","Initiated":"true"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"88","Image":"\\tomcat\\bin\\tomcat8.exe","Initiated":"true"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"88","Image":"C:\\Program Files\\Zscaler\\ZSATunnel\\ZSATunnel.exe","Initiated":"true"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"Initiated":"true"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"3","data":{"DestinationPort":"88"}}
 ]}

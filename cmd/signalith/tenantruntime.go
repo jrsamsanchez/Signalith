@@ -538,6 +538,8 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 		Limiter:       front.Limiter,
 		Started:       front.Started,
 		Tenants:       t.reg,
+		// Read when asked: the front's is set once the cluster is known.
+		AgentHostKeys: func() bool { return front.AgentHostKeys == nil || front.AgentHostKeys() },
 		TenantID:      id,
 		Log:           log,
 		Version:       front.Version,

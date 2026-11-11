@@ -76,7 +76,15 @@ func TestCapabilityWording(t *testing.T) {
 		{"retention-90", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 120, MaxSizeGB: 1.5} }), Partial, "size cap of 1.5 GB"},
 		{"config-checks", base(func(s *Snapshot) { s.Checks = []CheckStat{} }), Missing, "No host runs osquery"},
 		{"retention-limit", base(func(s *Snapshot) { s.Retention = &Retention{} }), Missing, "kept until it is deleted by hand"},
-		{"retention-limit", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 180} }), Met, "deleted after 180 days."},
+		{"retention-limit", base(func(s *Snapshot) {
+			s.Retention = &Retention{KeepDays: 180, OldestRead: true, Oldest: now.Add(-100 * 24 * time.Hour)}
+		}), Met, "deleted after 180 days."},
+		{"retention-limit", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 180, OldestRead: true} }), Met, "deleted after 180 days."},
+		// The policy is not the data.
+		{"retention-limit", base(func(s *Snapshot) {
+			s.Retention = &Retention{KeepDays: 90, OldestRead: true, Oldest: now.Add(-400 * 24 * time.Hour)}
+		}), Partial, "are still stored."},
+		{"retention-limit", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 180} }), Partial, "could not be read."},
 		{"retention-limit", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 180, Archive: true} }), Partial, "archive files are kept until you delete them"},
 		{"retention-limit", base(func(s *Snapshot) { s.Retention = &Retention{KeepDays: 90, Longer: []string{"Endpoint (kept forever)"}} }), Partial, "kept longer: Endpoint (kept forever)."},
 		{"retention-limit", base(func(*Snapshot) {}), Missing, "could not be read"},

@@ -37,7 +37,7 @@ The computer needs systemd, `curl`, and outbound HTTPS to Signalith's agent port
 default), to `packages.fluentbit.io` and, for osquery, to `pkg.osquery.io`.
 
 On **Windows**: Windows 10 or 11 and Windows Server 2016 or later on 64-bit x86, or
-Windows 11 on ARM (from the release after 0.3.2), with
+Windows 11 on ARM (from 0.4.0), with
 outbound HTTPS to Signalith's agent port, to `packages.fluentbit.io`, for osquery to
 `pkg.osquery.io`, and for Sysmon to `download.sysinternals.com`. The line runs in Windows PowerShell 5.1 (part of Windows) or
 PowerShell 7, opened with **Run as administrator**.
@@ -85,7 +85,10 @@ the agent has reported.
 
 Use the same line on as many computers as you like: they share its token. Make a new line
 (with a new token) for each group you may want to cut off on its own, such as web servers
-and domain controllers.
+and domain controllers. The first time the agent talks to Signalith, it trades the line's
+token for a key of the computer's own and sends with that from then on, so one computer
+can be cut off by itself and no computer of the line can report as another (see
+[Computer keys](agent-tokens.md#computer-keys)).
 
 To see what it would change first, add `--dry-run /tmp/agent` (Linux and macOS) or
 `-DryRun $env:TEMP\agent` (Windows) to the end of the line: it writes every file under
@@ -456,6 +459,9 @@ up.
 
 Agents installed before signed updates, and builds made from source (which have no
 release key), do not update themselves; run the install line again to upgrade them.
+This includes every agent installed from 0.3.0, 0.3.1 or 0.3.2: they trust a release
+key whose private half was lost (key ID `99e8601b3328`, now revoked), so they cannot
+check later agent programs.
 To see what the server hands out, run `signalith agent-programs status` on it.
 
 ## Computers without internet access
@@ -523,7 +529,8 @@ The server side is in `internal/api/agentmanaged.go`: `GET /api/agent/install` (
 makes the line, and the routes the script and agent call with the agent token are
 `GET /api/agent/program`, `GET /api/agent/manifest` (the programs' signed manifest),
 `GET /api/agent/config` (answered `304` when the agent has the latest; it offers an
-update in `update`) and `POST /api/agent/status`. Updates are in
+update in `update`), `POST /api/agent/status` and `POST /api/agent/enroll` (the computer's
+key, in `internal/api/agenthosts.go` and `internal/agentd/enroll.go`). Updates are in
 `internal/agentd/update.go` and the release key in `internal/agentproto/release.keys`. What the agent and server say to each other is in
 `internal/agentproto`. The agent is `cmd/signalith-agent` and `internal/agentd`; the
 install scripts are `deploy/agent/install.sh`, `deploy/agent/install.ps1` and

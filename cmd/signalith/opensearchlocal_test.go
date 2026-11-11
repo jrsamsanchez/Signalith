@@ -11,8 +11,10 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -530,5 +532,36 @@ func TestAdoptOpenSearch(t *testing.T) {
 	out.Reset()
 	if err := adoptOpenSearch(context.Background(), &out, sys, l, "", nil, heapKept, path, load(), nothing); err != nil || out.Len() != 0 {
 		t.Fatalf("%v\n%s", err, out.String())
+	}
+}
+
+// CM-107: the snapshot role is mapped only on request, and taken away
+// again, with the admin certificate.
+func TestSetSnapshotRole(t *testing.T) {
+	var got []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		got = append(got, r.Method+" "+r.URL.Path+" "+string(b))
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+	var out strings.Builder
+	if err := setSnapshotRole(&out, ts.Client(), ts.URL, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := setSnapshotRole(&out, ts.Client(), ts.URL, false); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		`PUT /_plugins/_security/api/rolesmapping/signalith_snapshots {"users":["signalith","signalith-server-*"]}`,
+		`DELETE /_plugins/_security/api/rolesmapping/signalith_snapshots `,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("requests %q", got)
+	}
+	if !strings.Contains(out.String(), "may now take and delete snapshots") || !strings.Contains(out.String(), "did not have") {
+		t.Errorf("said %q", out.String())
 	}
 }

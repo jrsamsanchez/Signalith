@@ -133,8 +133,9 @@ func TestValidateUser(t *testing.T) {
 	bad("t2", &UserBody{Username: "t2", Role: users.Viewer, Source: users.SourceDirectory, Tenant: "acme"}, "its tenant")
 	bad("t3", &UserBody{Username: "t3", Role: users.Viewer, Source: users.SourceLocal, Tenant: "Not A Tenant"}, "its tenant")
 	bad("root", &UserBody{Username: "root", Role: users.Admin, Source: users.SourceBuiltin}, "the cluster document does not name")
-	bad("admin", &UserBody{Username: "admin", Role: users.Viewer, Source: users.SourceBuiltin}, "must be an enabled admin")
-	bad("admin", &UserBody{Username: "admin", Role: users.Admin, Source: users.SourceBuiltin, Disabled: true}, "must be an enabled admin")
+	bad("admin", &UserBody{Username: "admin", Role: users.Viewer, Source: users.SourceBuiltin}, "must be an admin")
+	// Turned off (shared.LevelBuiltinOff).
+	ok("admin", &UserBody{Username: "admin", Role: users.Admin, Source: users.SourceBuiltin, Disabled: true})
 }
 
 // A sign-out made while OpenSearch cannot be written ends the session at

@@ -9,7 +9,7 @@ nist-800-53 AU-5 | Audit and Accountability | Response to Audit Logging Process 
 nist-800-53 AU-6 | Audit and Accountability | Audit Record Review, Analysis, and Reporting | caps detect-any,triage | nist AU-6
 nist-800-53 AU-7 | Audit and Accountability | Audit Record Reduction and Report Generation | caps search | nist AU-7
 nist-800-53 AU-8 | Audit and Accountability | Time Stamps | caps timestamps,config-checks | nist AU-8
-nist-800-53 AU-9 | Audit and Accountability | Protection of Audit Information | caps siem-access,siem-tls,siem-secrets | nist AU-9
+nist-800-53 AU-9 | Audit and Accountability | Protection of Audit Information | caps siem-access,siem-tls,siem-secrets | nist AU-9 | also Events cannot be changed from Signalith, but OpenSearch does not make them immutable; whoever can write to it directly can.
 nist-800-53 AU-11 | Audit and Accountability | Audit Record Retention | caps retention-1y | nist AU-11
 nist-800-53 AU-12 | Audit and Accountability | Audit Record Generation | caps data-any,config-checks | nist AU-12
 nist-800-53 CA-7 | Assessment, Authorization, and Monitoring | Continuous Monitoring | caps detect-any,config-checks,vuln-scan | nist CA-7,CM-6
@@ -88,7 +88,7 @@ iso-27001 A.8.2 | Technological controls | Privileged access rights are managed 
 iso-27001 A.8.7 | Technological controls | Protect against malware | caps data-malware,detect-malware | nist SI-3
 iso-27001 A.8.8 | Technological controls | Manage technical vulnerabilities | caps vuln-scan | nist RA-5,SI-2
 iso-27001 A.8.9 | Technological controls | Manage secure configurations | caps config-checks | nist CM-6
-iso-27001 A.8.15 | Technological controls | Produce, keep and protect logs | caps data-any,retention-1y,siem-access | nist AU-2,AU-12
+iso-27001 A.8.15 | Technological controls | Produce, keep and protect logs | caps data-any,retention-1y,siem-access | nist AU-2,AU-12 | also Events cannot be changed from Signalith, but OpenSearch does not make them immutable; whoever can write to it directly can.
 iso-27001 A.8.16 | Technological controls | Monitor for unusual behaviour | caps detect-any,data-network,notify | nist SI-4
 iso-27001 A.8.17 | Technological controls | Synchronize clocks | caps timestamps,config-checks | nist AU-8
 # HIPAA Security Rule 45 CFR 164 Subpart C (7 controls)
@@ -122,7 +122,7 @@ nis2 IR 3.2 | Implementing Regulation 2024/2690 (digital providers) | Monitoring
 nis2 IR 3.5 | Implementing Regulation 2024/2690 (digital providers) | Incident response | caps cases,response,notify | nist IR-4
 # GDPR (EU) 2016/679 (11 controls)
 gdpr 5(1)(e) | Personal data in your logs | Logs are kept no longer than needed | caps retention-limit | nist 
-gdpr 5(1)(f) | Personal data in your logs | Logs are protected from unauthorized access and change | caps siem-access,siem-tls,siem-secrets | nist 
+gdpr 5(1)(f) | Personal data in your logs | Logs are protected from unauthorized access and change | caps siem-access,siem-tls,siem-secrets | nist  | also Events cannot be changed from Signalith, but OpenSearch does not make them immutable; whoever can write to it directly can.
 gdpr 5(2) | Personal data in your logs | Who did what in Signalith is recorded | caps siem-audit,siem-access | nist 
 gdpr 25 | Personal data in your logs | Data protection by default in the SIEM | caps siem-access,siem-mfa,retention-limit | nist 
 gdpr 32(1)(a) | Art. 32: Security of processing | Encryption of personal data | caps config-checks,siem-tls | nist SC-8,SC-28

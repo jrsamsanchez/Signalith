@@ -45,7 +45,7 @@ frameworks:
       - {id: AU-6, group: Audit and Accountability, title: "Audit Record Review, Analysis, and Reporting", caps: [detect-any, triage], nist: [AU-6]}
       - {id: AU-7, group: Audit and Accountability, title: Audit Record Reduction and Report Generation, caps: [search], nist: [AU-7]}
       - {id: AU-8, group: Audit and Accountability, title: Time Stamps, caps: [timestamps, config-checks], nist: [AU-8]}
-      - {id: AU-9, group: Audit and Accountability, title: Protection of Audit Information, caps: [siem-access, siem-tls, siem-secrets], nist: [AU-9]}
+      - {id: AU-9, group: Audit and Accountability, title: Protection of Audit Information, also: "Events cannot be changed from Signalith, but OpenSearch does not make them immutable; whoever can write to it directly can.", caps: [siem-access, siem-tls, siem-secrets], nist: [AU-9]}
       - {id: AU-11, group: Audit and Accountability, title: Audit Record Retention, caps: [retention-1y], nist: [AU-11]}
       - {id: AU-12, group: Audit and Accountability, title: Audit Record Generation, caps: [data-any, config-checks], nist: [AU-12]}
       - {id: CA-7, group: "Assessment, Authorization, and Monitoring", title: Continuous Monitoring, caps: [detect-any, config-checks, vuln-scan], nist: [CA-7, CM-6]}
@@ -145,7 +145,7 @@ frameworks:
       - {id: A.8.7, group: Technological controls, title: Protect against malware, caps: [data-malware, detect-malware], nist: [SI-3]}
       - {id: A.8.8, group: Technological controls, title: Manage technical vulnerabilities, caps: [vuln-scan], nist: [RA-5, SI-2]}
       - {id: A.8.9, group: Technological controls, title: Manage secure configurations, caps: [config-checks], nist: [CM-6]}
-      - {id: A.8.15, group: Technological controls, title: "Produce, keep and protect logs", caps: [data-any, retention-1y, siem-access], nist: [AU-2, AU-12]}
+      - {id: A.8.15, group: Technological controls, title: "Produce, keep and protect logs", also: "Events cannot be changed from Signalith, but OpenSearch does not make them immutable; whoever can write to it directly can.", caps: [data-any, retention-1y, siem-access], nist: [AU-2, AU-12]}
       - {id: A.8.16, group: Technological controls, title: Monitor for unusual behaviour, caps: [detect-any, data-network, notify], nist: [SI-4]}
       - {id: A.8.17, group: Technological controls, title: Synchronize clocks, caps: [timestamps, config-checks], nist: [AU-8]}
 
@@ -209,7 +209,7 @@ frameworks:
     scope: The GDPR is about how personal data is used, and logs hold personal data too (user names, addresses, hosts). Signalith gives evidence for two things. First, how it treats the personal data in your logs itself (limited access, two-step sign-in, encryption, an audit trail, deletion after a set time). Second, security of processing and breach notification for your other systems. Lawful basis, records of processing, data subject rights and the notifications themselves are your organization's, and your data protection officer decides what is enough.
     controls:
       - {id: 5(1)(e), group: Personal data in your logs, title: Logs are kept no longer than needed, caps: [retention-limit], nist: []}
-      - {id: 5(1)(f), group: Personal data in your logs, title: Logs are protected from unauthorized access and change, caps: [siem-access, siem-tls, siem-secrets], nist: []}
+      - {id: 5(1)(f), group: Personal data in your logs, title: Logs are protected from unauthorized access and change, also: "Events cannot be changed from Signalith, but OpenSearch does not make them immutable; whoever can write to it directly can.", caps: [siem-access, siem-tls, siem-secrets], nist: []}
       - {id: 5(2), group: Personal data in your logs, title: Who did what in Signalith is recorded, caps: [siem-audit, siem-access], nist: []}
       - {id: "25", group: Personal data in your logs, title: Data protection by default in the SIEM, caps: [siem-access, siem-mfa, retention-limit], nist: []}
       - {id: 32(1)(a), group: "Art. 32: Security of processing", title: Encryption of personal data, caps: [config-checks, siem-tls], nist: [SC-8, SC-28]}

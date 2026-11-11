@@ -26,7 +26,8 @@ var cloudRuleFields = []string{
 	"properties.resourceDisplayName", "properties.result", "properties.riskEventType", "properties.riskLevel",
 	"properties.riskState", "properties.status.additionalDetails", "properties.status.errorCode",
 	"properties.targetResources{}.displayName", "properties.targetResources{}.modifiedProperties{}.displayName",
-	"properties.targetResources{}.modifiedProperties{}.newValue", "properties.userAgent",
+	"properties.targetResources{}.modifiedProperties{}.newValue", "properties.targetResources{}.modifiedProperties{}.oldValue",
+	"properties.userAgent",
 	// Microsoft 365.
 	"AppId", "ApplicationId", "Category", "ClientAppId", "ClientInfoString", "DeliveryAction", "Directionality",
 	"ErrorNumber", "LogonError", "Name", "Payload",

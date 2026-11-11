@@ -1,0 +1,5 @@
+{"rule": "53d4bb30-3f36-4e8a-b078-69d36c4a79ff", "cases": [
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"RunWizard {AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA}","OriginalFileName":"xwizard.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"OriginalFileName":"xwizard.exe"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"1","data":{"CommandLine":"RunWizard {AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA}"}}
+]}

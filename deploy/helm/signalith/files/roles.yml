@@ -44,15 +44,16 @@
 # an OpenSearch Snapshot Management policy, <prefix>-daily, which takes
 # snapshots of Signalith's indices into the repository the settings name
 # and deletes the oldest. OpenSearch runs the policy with the roles of the
-# user that wrote it, so Signalith needs these itself. Its certificates
-# get the role in roles_mapping.yml; nothing uses it until scheduled
-# snapshots are turned on. It names each action, so it cannot restore or
+# user that wrote it, so Signalith needs these itself. roles_mapping.yml
+# leaves the role out: Signalith's certificates get it only when you want
+# scheduled snapshots (snapshot.sh register in the Docker quick start,
+# opensearch.snapshotRole in the Helm chart, docs/backup.md). It names each action, so it cannot restore or
 # clone snapshots. OpenSearch's snapshot permissions are not limited to
 # one repository, so Signalith could delete any repository's snapshots,
 # and snapshots it can delete do not protect against someone who has
 # Signalith's credentials: copy the repository off-site or to WORM
 # (object lock) storage (docs/backup.md). On an OpenSearch shared with
-# others, remove the mapping and take snapshots another way. To stop
+# others, leave it unmapped and take snapshots another way. To stop
 # scheduled snapshots for good, also delete the policy
 # (DELETE _plugins/_sm/policies/<prefix>-daily): OpenSearch keeps running
 # it with the roles stored with it.
@@ -71,8 +72,8 @@
 # keeps old days in a snapshot repository such as an S3 bucket. It is
 # mapped to Signalith when cold storage is turned on
 # (roles_mapping.cold.yml); it can also restore (mount) snapshots, which
-# signalith_snapshots cannot. signalith_snapshots, mapped by default, also
-# takes and deletes snapshots, so remove both mappings to keep Signalith
+# signalith_snapshots cannot. signalith_snapshots, once mapped, also
+# takes and deletes snapshots, so leave both unmapped to keep Signalith
 # away from snapshots.
 # Signalith itself only touches snapshots named <prefix>-* in the
 # repository <prefix>-cold.

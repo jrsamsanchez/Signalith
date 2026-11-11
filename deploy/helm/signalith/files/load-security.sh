@@ -223,6 +223,38 @@ if [ "$code" = 000 ]; then
 fi
 answered=yes
 
+# 1b. The role signalith_snapshots (roles.yml) lets Signalith take and
+# delete snapshots, so roles_mapping.yml leaves it out until scheduled
+# snapshots are wanted: SIGNALITH_SNAPSHOT_ROLE=on (the Helm chart's
+# opensearch.snapshotRole), or it is mapped already (snapshot.sh register
+# maps it) and a snapshot repository or Signalith's snapshot policy
+# exists. Loading the files would drop a mapping made that way, so this
+# loads a copy of them with it added.
+admin_get() {
+	curl -s --max-time 20 --cacert "$certs/root-ca.pem" --cert "$certs/admin.pem" --key "$certs/admin-key.pem" \
+		"https://$host:9200$1"
+}
+snapshot_role() {
+	[ "${SIGNALITH_SNAPSHOT_ROLE:-}" = on ] && return 0
+	case $(admin_get /_plugins/_security/api/rolesmapping/signalith_snapshots) in
+	*'"signalith_snapshots"'*) ;;
+	*) return 1 ;;
+	esac
+	admin_get '/_plugins/_sm/policies?size=1000' | grep -Eq '"created_by" *: *"signalith"' && return 0
+	# Any repository but cold storage's (<prefix>-cold), which has its own role.
+	admin_get '/_cat/repositories?h=id' | grep -v '^[{[]' | grep -v -- '-cold$' | grep -q .
+}
+src=$dir
+dir=/tmp/opensearch-security
+rm -rf "$dir" && mkdir -p "$dir" && cp "$src"/*.yml "$dir"/ || {
+	say "Could not copy the security settings files to $dir."
+	exit 1
+}
+if snapshot_role; then
+	printf '\nsignalith_snapshots:\n  users:\n    - "signalith"\n    - "signalith-server-*"\n' >> "$dir/roles_mapping.yml"
+	say "Signalith keeps the snapshot role (signalith_snapshots) for scheduled snapshots."
+fi
+
 all=""
 for k in $kinds; do
 	[ -f "$dir/${k#*:}" ] && all="$all ${k%%:*}"

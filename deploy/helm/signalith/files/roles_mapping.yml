@@ -14,9 +14,10 @@ signalith_server:
     - "signalith"
     - "signalith-server-*"
 
-# For scheduled snapshots (roles.yml says what it allows, and why it is
-# mapped before they are turned on).
-signalith_snapshots:
-  users:
-    - "signalith"
-    - "signalith-server-*"
+# signalith_snapshots (roles.yml, for scheduled snapshots) is not mapped
+# here: it lets Signalith delete snapshots, so it is mapped only once you
+# want them. The Docker quick start maps it with snapshot.sh register (and
+# load-security.sh keeps it while a snapshot repository or Signalith's
+# snapshot policy exists), the Helm chart with opensearch.snapshotRole:
+# true, and other installs with signalith opensearch snapshot-role on
+# (Scheduled snapshots in docs/backup.md).

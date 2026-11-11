@@ -36,6 +36,8 @@ var Features = []Feature{
 	{"api_tokens", "API tokens", LevelAPITokens, (*Runtime).APITokens},
 	{"tenants", "Tenants (multi-tenant mode)", LevelTenants, (*Runtime).Tenants},
 	{"detection_epochs", "Detection run state ready to spread across servers", LevelDetectionEpochs, (*Runtime).DetectionEpochs},
+	{"builtin_off", "Turn off the built-in admin", LevelBuiltinOff, (*Runtime).BuiltinOff},
+	{"agent_host_keys", "A key of its own for each agent computer", LevelAgentHostKeys, (*Runtime).AgentHostKeys},
 }
 
 // FeatureState is whether a feature is on, on this server, and if not

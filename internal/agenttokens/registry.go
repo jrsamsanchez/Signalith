@@ -130,6 +130,9 @@ type snapshot struct {
 	idKey   []byte
 	tokens  map[string]*tokenDoc
 	refused map[string]refusal
+	// hosts are the host keys by hostDocKey, keys the same by key ID.
+	hosts map[string]*hostDoc
+	keys  map[string]*hostDoc
 }
 
 func (s *snapshot) clone() *snapshot {
@@ -139,6 +142,14 @@ func (s *snapshot) clone() *snapshot {
 	}
 	for k, v := range s.refused {
 		n.refused[k] = v
+	}
+	n.hosts = make(map[string]*hostDoc, len(s.hosts)+1)
+	n.keys = make(map[string]*hostDoc, len(s.keys)+1)
+	for k, v := range s.hosts {
+		n.hosts[k] = v
+	}
+	for k, v := range s.keys {
+		n.keys[k] = v
 	}
 	return n
 }
@@ -181,9 +192,13 @@ type Registry struct {
 		once sync.Once
 		key  []byte
 	}
-	ensured  atomic.Bool
-	hooksMu  sync.Mutex
-	onRevoke []func(ctx context.Context, tokenID string) (int, error)
+	ensured atomic.Bool
+	// loadedAt is when Load last read everything (Unix ns), and missMu
+	// lets one Check at a time read again for a key it does not know.
+	loadedAt, missTry atomic.Int64
+	missMu            sync.Mutex
+	hooksMu           sync.Mutex
+	onRevoke          []func(ctx context.Context, tokenID string) (int, error)
 
 	useMu sync.Mutex
 	uses  map[string]*use
@@ -298,6 +313,9 @@ type Identity struct {
 	// Legacy is true for a shared token from the configuration, and
 	// Public for the example token of an older docker-compose.yml.
 	Legacy, Public bool
+	// Host is the computer a host key is for, and HostKey its ID; both
+	// are "" for a token (see hosts.go). ID and Name are then its line's.
+	Host, HostKey string
 }
 
 // Check finds the token secret. Agent tokens are compared by their
@@ -307,6 +325,9 @@ type Identity struct {
 func (r *Registry) Check(secret string) (Identity, Result) {
 	if secret == "" {
 		return Identity{}, Unknown
+	}
+	if strings.HasPrefix(secret, HostPrefix) {
+		return r.checkHost(secret)
 	}
 	if strings.HasPrefix(secret, Prefix) {
 		if !IsToken(secret) {
@@ -412,6 +433,9 @@ func (r *Registry) Active(id string) bool {
 	if d := snap.tokens[id]; d != nil {
 		return isActive(d)
 	}
+	if d := snap.keys[id]; d != nil {
+		return hostActive(snap, d)
+	}
 	if _, pub, ok := r.findShared(snap, id); ok {
 		if pub == "" {
 			return true
@@ -429,6 +453,11 @@ func (r *Registry) Lookup(id string) (Identity, bool) {
 	snap := r.current()
 	if d := snap.tokens[id]; d != nil {
 		return Identity{ID: d.ID, Name: d.Name}, true
+	}
+	if h := snap.keys[id]; h != nil {
+		if d := snap.tokens[h.Line]; d != nil {
+			return Identity{ID: d.ID, Name: d.Name, Host: h.Host, HostKey: h.ID}, true
+		}
 	}
 	if l, pub, ok := r.findShared(snap, id); ok {
 		if pub == "" {
@@ -468,11 +497,11 @@ func (r *Registry) load(ctx context.Context) error {
 	r.writeMu.Lock()
 	gen := r.gen
 	r.writeMu.Unlock()
-	docs, err := r.Client.SearchDocs(ctx, r.index(), map[string]any{"terms": map[string]any{"kind": []string{kindToken, kindLegacy}}})
+	docs, err := r.Client.SearchDocs(ctx, r.index(), map[string]any{"terms": map[string]any{"kind": []string{kindToken, kindLegacy, kindHost}}})
 	if err != nil {
 		return err
 	}
-	s := &snapshot{loaded: true, tokens: map[string]*tokenDoc{}, refused: map[string]refusal{}}
+	s := &snapshot{loaded: true, tokens: map[string]*tokenDoc{}, refused: map[string]refusal{}, hosts: map[string]*hostDoc{}, keys: map[string]*hostDoc{}}
 	for _, d := range docs {
 		switch {
 		case strings.HasPrefix(d.ID, "agenttoken:"):
@@ -481,6 +510,8 @@ func (r *Registry) load(ctx context.Context) error {
 				continue
 			}
 			s.tokens[t.ID] = &t
+		case strings.HasPrefix(d.ID, "agenthost:"):
+			s.loadHost(d.ID, d.Source)
 		case d.ID == legacyDocID:
 			var l legacyDoc
 			if json.Unmarshal(d.Source, &l) == nil {
@@ -508,6 +539,7 @@ func (r *Registry) load(ctx context.Context) error {
 		return errRaced
 	}
 	r.snap.Store(s)
+	r.loadedAt.Store(time.Now().UnixNano())
 	return nil
 }
 
@@ -1163,7 +1195,14 @@ func (r *Registry) Revoke(ctx context.Context, id, by string) (Token, int, error
 	// Even when it was revoked already, so hosts a failed removal left
 	// behind go now.
 	r.apply(func(s *snapshot) { s.tokens[id] = d })
-	return r.listed(ctx, d), r.revoked(ctx, id), nil
+	n := r.revoked(ctx, id)
+	// osquery hosts that enrolled with one of the line's host keys.
+	for _, h := range r.current().hosts {
+		if h.Line == id {
+			n += r.revoked(ctx, h.ID)
+		}
+	}
+	return r.listed(ctx, d), n, nil
 }
 
 // FindByName returns the ID of the active token called name, or of the

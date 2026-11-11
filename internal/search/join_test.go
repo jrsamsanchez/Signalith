@@ -118,3 +118,47 @@ func TestJoinCountsAgainstTheBudget(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// A plain event search inside join, append, union, multisearch or set
+// takes up to search.max_events, not the newest 100, and marks the result
+// Sampled when more match.
+func TestSubsearchEventsAreNotCappedAt100(t *testing.T) {
+	const many = `{"hits":{"total":{"value":100000},"hits":[
+	{"_source":{"@timestamp":"2026-10-15T11:00:00Z","user":"amy"}},
+	{"_source":{"@timestamp":"2026-10-15T10:00:00Z","user":"bob"}}]}}`
+	for _, tc := range []struct {
+		q     string
+		outer int // the outer search's size, when it has one of its own
+	}{
+		// An inner join drops the outer events without a match, so the
+		// outer search takes them all too.
+		{`* | join user [search datamodel=Authentication]`, 10000},
+		{`* | append [search datamodel=Authentication] | stats count by user`, 10000},
+		{`* | union [search datamodel=Authentication] [search datamodel=Change]`, 100},
+		{`| multisearch [search datamodel=Authentication] [search datamodel=Change] | stats count by user`, 0},
+		{`| set union [search datamodel=Authentication | fields user] [search datamodel=Change | fields user]`, 0},
+	} {
+		q := tc.q
+		fs := &fakeStore{responses: []string{many}}
+		e := &Engine{Store: fs, Opt: Options{MaxEvents: 10000}}
+		res, err := e.Run(context.Background(), q)
+		if err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		if len(fs.bodies) < 2 {
+			t.Fatalf("%s: %d searches", q, len(fs.bodies))
+		}
+		for i, b := range fs.bodies {
+			want := 10000
+			if i == 0 && tc.outer > 0 {
+				want = tc.outer
+			}
+			if size, _ := b["size"].(int); size != want {
+				t.Errorf("%s: search %d size = %v, want %d", q, i, b["size"], want)
+			}
+		}
+		if res.Sampled != 2 {
+			t.Errorf("%s: sampled = %d", q, res.Sampled)
+		}
+	}
+}

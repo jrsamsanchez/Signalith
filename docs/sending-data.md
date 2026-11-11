@@ -148,6 +148,12 @@ under the time it arrived and its own time is kept in `device_time`, so a wrong 
 a forged date cannot create indices for other days. Search `device_time=*` to find these
 events.
 
+Within that window the sender's time is the event's time, so a sender can date an event
+days back or up to an hour ahead. When that time is more than 5 minutes from when the
+event arrived, the arrival is stored with it in `signalith_received` (as Splunk's
+`_indextime`), so `signalith_received=*` finds events whose time came from the sender
+and differs from when Signalith got them.
+
 A syslog line with no time zone, such as `Oct 11 09:15:02` in an RFC 3164 auth.log, could
 be in any zone, and reading it as the server's would file the event hours off. Such an
 event takes the collector's time instead (Fluent Bit's `date`, the OpenTelemetry record's

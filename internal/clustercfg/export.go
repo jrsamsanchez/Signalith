@@ -215,6 +215,11 @@ func exportUsers(ctx context.Context, a *clusterauth.Docs, f Files, t shared.Exp
 	if err := users.WriteFileMFA(p, recs, builtinLast, builtinMFA); err != nil {
 		return nil, err
 	}
+	if (&clusterauth.UsersBackend{Docs: a}).BuiltinDisabled() {
+		if _, err := users.SetFileBuiltinDisabled(p, true); err != nil {
+			return nil, err
+		}
+	}
 	return []shared.ExportedFile{{Path: p, Dest: dest, Secret: true}}, nil
 }
 

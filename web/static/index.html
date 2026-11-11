@@ -219,6 +219,7 @@
       <a class="nav__item" href="#settings" data-page="settings" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
       <a class="nav__item" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
       <a class="nav__item" href="#sso" data-page="sso" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span>Single sign-on</span></a>
+      <a class="nav__item" href="#notice" data-page="notice" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-file-text"/></svg><span>Sign-in notice</span></a>
       <a class="nav__item" href="#apitokens" data-page="apitokens" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="nav__item" href="#metrics" data-page="metrics" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-chart-line"/></svg><span>Metrics</span></a>
       <a class="nav__item" href="#tenants" data-page="tenants" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>Tenants</span></a>
@@ -298,6 +299,7 @@
       <a class="set-tab" href="#settings" data-page="settings" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-sliders-horizontal"/></svg><span>Server</span></a>
       <a class="set-tab" href="#users" data-page="users" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg><span>Users</span></a>
       <a class="set-tab" href="#sso" data-page="sso" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-building-2"/></svg><span>Single sign-on</span></a>
+      <a class="set-tab" href="#notice" data-page="notice" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-file-text"/></svg><span>Sign-in notice</span></a>
       <a class="set-tab" href="#apitokens" data-page="apitokens" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-key-round"/></svg><span>API tokens</span></a>
       <a class="set-tab" href="#metrics" data-page="metrics" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-chart-line"/></svg><span>Metrics</span></a>
       <a class="set-tab" href="#tenants" data-page="tenants" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-layers"/></svg><span>Tenants</span></a>
@@ -313,6 +315,11 @@
       <a class="set-tab" href="#audit" data-page="audit" data-min-role="admin" data-provider-only><svg class="icon" aria-hidden="true"><use href="#i-scroll-text"/></svg><span>Audit</span></a>
       <a class="set-tab" href="#health" data-page="health"><svg class="icon" aria-hidden="true"><use href="#i-activity"/></svg><span>Health</span></a>
     </div>
+    <!-- Shown with a mouse when the row scrolls sideways and has tabs out
+         of view on that side. Keyboard users Tab through the tabs instead,
+         and each one scrolls into view as it is focused. -->
+    <button type="button" class="set-tabs__arrow set-tabs__arrow--prev" data-dir="-1" tabindex="-1" aria-hidden="true" title="More tabs" hidden><svg class="icon"><use href="#i-chevron-left"/></svg></button>
+    <button type="button" class="set-tabs__arrow set-tabs__arrow--next" data-dir="1" tabindex="-1" aria-hidden="true" title="More tabs" hidden><svg class="icon"><use href="#i-chevron-right"/></svg></button>
   </nav>
   <!-- Search -->
   <section id="page-search" class="page">
@@ -1936,6 +1943,23 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
   </section>
 
   <!-- Metrics (admins): the scrape endpoint for Prometheus -->
+  <section id="page-notice" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Sign-in notice</h2>
+        <p class="page-head__desc">A notice on the sign-in page, such as who may use this system and that use is monitored, with an optional I agree step before signing in.</p>
+      </div>
+    </div>
+    <div class="card nt-card">
+      <div class="card__head">
+        <div>
+          <h3 class="card__title" id="nt-title">Notice</h3>
+          <p class="card__sub">Shown as plain text to everyone who opens the sign-in page, on every server.</p>
+        </div>
+      </div>
+      <div class="card__body nt-body" id="nt-body" aria-busy="true" aria-labelledby="nt-title"></div>
+    </div>
+  </section>
   <section id="page-metrics" class="page">
     <div class="page-head">
       <div>
@@ -2118,6 +2142,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="tokens.js"></script>
 <script src="apitokens.js"></script>
 <script src="metrics.js"></script>
+<script src="notice.js"></script>
 <script src="tenants.js"></script>
 <script src="sso.js"></script>
 <script src="baselines.js"></script>

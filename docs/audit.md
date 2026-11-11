@@ -12,6 +12,10 @@ When servers share one OpenSearch as a cluster (see
 server also writes its audit lines to OpenSearch, and the **Audit** tab of **Settings**
 (admins only) searches the lines of every server in one place.
 
+To be told about the audit lines that matter most, such as the built-in admin signing in,
+lockouts, user and settings changes or lost audit records, turn on
+[audit alerts](notifications.md#audit-alerts) on the Notifications page.
+
 ## The Audit page
 
 Filter by time range, server, user, words, and named actions (data retention, shared

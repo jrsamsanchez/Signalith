@@ -52,6 +52,27 @@ type otlpLog struct {
 	eventName string
 }
 
+const (
+	// maxOTLPAttributes is the most attributes kept from one attribute
+	// list: a resource's, a record's or a map value's. The rest are
+	// dropped; an event keeps at most maxFieldsPerEvent fields anyway.
+	maxOTLPAttributes = 256
+	// maxOTLPExpandedBytes caps a request's size counting its resource
+	// once for each of its records, which is about what writing it costs:
+	// every record's event carries a copy of its resource's attributes, so
+	// a small request with a large resource and many records could
+	// otherwise make the server build and write gigabytes.
+	maxOTLPExpandedBytes = 4 * MaxBodyBytes
+)
+
+// putAttribute sets m[k] = v unless m already holds maxOTLPAttributes
+// other keys.
+func putAttribute(m map[string]any, k string, v any) {
+	if _, ok := m[k]; ok || len(m) < maxOTLPAttributes {
+		m[k] = v
+	}
+}
+
 // IngestOTLP writes the log records of an OTLP/HTTP logs request body:
 // protobuf, or JSON when isJSON. The whole body is checked first, as in
 // IngestBody, so a refused request (a *BodyError) writes nothing. A record
@@ -63,11 +84,14 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 	if isJSON {
 		walk = walkOTLPJSON
 	}
-	n := 0
-	if err := walk(body, false, func(*otlpLog, int, *BodyError) error {
+	n, expanded := 0, 0
+	if err := walk(body, false, func(_ *otlpLog, size int, _ *BodyError) error {
 		n++
 		if n > MaxRecords {
 			return tooLarge("the request has more than %d log records; send smaller batches (send_batch_max_size in the Collector's batch processor)", MaxRecords)
+		}
+		if expanded += size; expanded > maxOTLPExpandedBytes {
+			return tooLarge("the request's log records with their resource attributes, which each record carries, come to more than %d MB; send smaller batches or fewer resource attributes", maxOTLPExpandedBytes>>20)
 		}
 		return nil
 	}); err != nil {
@@ -388,6 +412,9 @@ func otlpGeneric(l *otlpLog) Event {
 		}
 	}
 	for k, v := range l.resource {
+		if len(f) >= maxFieldsPerEvent {
+			break // the event would drop the rest
+		}
 		if k == "host.name" || k == "service.name" {
 			continue
 		}

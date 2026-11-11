@@ -586,9 +586,13 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		passkeyAnswer
 		Remember bool `json:"remember"`
+		Agreed   bool `json:"agreed"`
 	}
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if s.noticeRefused(w, req.Agreed) {
 		return
 	}
 	p, err := s.passkeySignIn(r, &req.passkeyAnswer)
@@ -674,6 +678,12 @@ func (s *Server) passkeySignIn(r *http.Request, a *passkeyAnswer) (*principal, e
 			attempt.Done()
 			return nil, errDegraded
 		}
+		if s.builtinOff() {
+			attempt.Done()
+			s.Log.Warn("sign-in failed", slices.Concat([]any{"audit", true, "user", name}, from.logAttrs(),
+				[]any{"method", "passkey", "reason", "built-in admin turned off"})...)
+			return nil, errBuiltinOff
+		}
 		store.RecordBuiltinSignIn(clusterauth.WithMethod(r.Context(), "passkey"))
 		p = s.builtinPrincipal()
 	default:
@@ -706,6 +716,6 @@ func (s *Server) passkeySignIn(r *http.Request, a *passkeyAnswer) (*principal, e
 	s.noteName(r)
 	p.codeUsed = &users.CodeResult{Kind: users.CodePasskey}
 	s.Log.Info("signed in", slices.Concat([]any{"audit", true, "user", p.Username, "role", p.Role, "source", p.Source}, from.logAttrs(),
-		[]any{"method", "passkey"})...)
+		[]any{"method", "passkey"}, s.noticeLog())...)
 	return p, nil
 }

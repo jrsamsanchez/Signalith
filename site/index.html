@@ -262,7 +262,7 @@
       <article class="card" data-clip="detections">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-crosshair"/></svg></span>
         <h3>Thousands of detections, tested</h3>
-        <p>2,641 SigmaHQ and 1,332 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 60 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
+        <p>2,642 SigmaHQ and 1,337 Splunk Security Content rules, each with test events that prove it fires and mapped to ATT&amp;CK, next to 60 built-in detections. Describe a new detection in plain English and backtest it on the past 7, 30 or 90 days before you turn it on.</p>
       </article>
       <article class="card" data-clip="findings">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-gauge"/></svg></span>
@@ -506,7 +506,7 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
 
       <div class="start__panel" role="tabpanel" id="sp-windows" aria-labelledby="s-windows" hidden>
         <ol class="steps">
-          <li><p>Download <a href="https://github.com/jrsamsanchez/Signalith/releases/download/v0.3.2/signalith-0.3.2-x64.msi">signalith-0.3.2-x64.msi</a> (or the newest from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>). There is nothing to install first.</p></li>
+          <li><p>Download <a href="https://github.com/jrsamsanchez/Signalith/releases/download/v0.4.0/signalith-0.4.0-x64.msi">signalith-0.4.0-x64.msi</a> (or the newest from the <a href="https://github.com/jrsamsanchez/Signalith/releases/latest">latest release</a>). There is nothing to install first.</p></li>
           <li><p>Double-click it and follow the steps. It downloads and sets up OpenSearch 3.9 on this computer, then installs and starts the <b>Signalith</b> and <b>SignalithOpenSearch</b> services, each under its own account. The first install downloads about 1 GB.</p></li>
           <li><p>In PowerShell as Administrator, show the admin password, then open <code>https://localhost:9000</code> and sign in as <code>signalithadmin</code>.</p>
 <div class="code"><pre><code>signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
@@ -536,7 +536,7 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg></span>
-        <div><h3>A seven-day lab run</h3><p>A week of real Windows and Sysmon events through three servers, with the disk, memory and shards it took published.</p></div>
+        <div><h3>Real installs</h3><p>Installs outside the lab running for 30 days, and a published false-positive rate for the starter rule set.</p></div>
       </article>
       <article class="soon__item">
         <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-flag"/></svg></span>
@@ -577,10 +577,12 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
       <a href="https://github.com/jrsamsanchez/signalith/blob/main/LICENSE">Apache License 2.0</a>
       <a href="docs/code-signing/">Code signing policy</a>
     </nav>
-    <p class="foot__legal">Signalith is an independent project. It is not affiliated with, endorsed by or sponsored by Splunk or Cisco, and contains no Splunk software code (its optional Splunk Security Content pack ships rules from Splunk’s Apache 2.0 security_content project). Splunk, Splunk Enterprise Security and SPL are trademarks or registered trademarks of Splunk LLC, a Cisco company, in the United States and other countries; they are named here only to describe the rules Signalith can run and its search syntax. OpenSearch, Fluent Bit, Sigma and MITRE ATT&amp;CK are trademarks of their respective owners. Fonts: Inter and JetBrains Mono (SIL Open Font License). Icons: Lucide (ISC). Music in the demos: an original track made for Signalith, CC0.</p>
+    <p class="foot__legal">Signalith is an independent project. It is not affiliated with, endorsed by or sponsored by Splunk or Cisco, and contains no Splunk software code (its optional Splunk Security Content pack ships rules from Splunk’s Apache 2.0 security_content project). Splunk, Splunk Enterprise Security and SPL are trademarks or registered trademarks of Splunk LLC, a Cisco company, in the United States and other countries; they are named here only to describe the rules Signalith can run and its search syntax. OpenSearch, Fluent Bit, Sigma and MITRE ATT&amp;CK are trademarks of their respective owners. Fonts: Inter and JetBrains Mono (SIL Open Font License). Icons: Lucide (ISC). Music in the demos: an original track made for Signalith, CC0. Visits are counted with <a href="https://www.goatcounter.com">GoatCounter</a>, which sets no cookies and keeps no personal data.</p>
   </div>
 </footer>
 
 <script src="assets/site.js" defer></script>
+<!-- Visit counts with GoatCounter: no cookies, no personal data. -->
+<script data-goatcounter="https://signalith.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </body>
 </html>

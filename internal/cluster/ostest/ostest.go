@@ -1335,6 +1335,16 @@ func equalValues(a, b any) bool {
 	return compareValues(a, b) == 0
 }
 
+// keywordLookup is lookup, where a text field's keyword sub-field (such
+// as message.keyword) is the field itself.
+func keywordLookup(src map[string]any, field string) any {
+	v := lookup(src, field)
+	if v == nil && strings.HasSuffix(field, ".keyword") {
+		v = lookup(src, strings.TrimSuffix(field, ".keyword"))
+	}
+	return v
+}
+
 // matches reports whether a document matches a query.
 func matches(q map[string]any, id string, src map[string]any) bool {
 	if len(q) == 0 {
@@ -1355,7 +1365,17 @@ func matches(q map[string]any, id string, src map[string]any) bool {
 					}
 					continue
 				}
-				if !equalValues(lookup(src, field), v) {
+				if !equalValues(keywordLookup(src, field), v) {
+					return false
+				}
+			}
+		case "prefix":
+			for field, v := range m {
+				if inner, ok := v.(map[string]any); ok {
+					v = inner["value"]
+				}
+				got, ok := keywordLookup(src, field).(string)
+				if !ok || !strings.HasPrefix(got, fmt.Sprint(v)) {
 					return false
 				}
 			}
@@ -1364,7 +1384,7 @@ func matches(q map[string]any, id string, src map[string]any) bool {
 				list, _ := v.([]any)
 				ok := false
 				for _, want := range list {
-					if field == "_id" && fmt.Sprint(want) == id || field != "_id" && equalValues(lookup(src, field), want) {
+					if field == "_id" && fmt.Sprint(want) == id || field != "_id" && equalValues(keywordLookup(src, field), want) {
 						ok = true
 						break
 					}

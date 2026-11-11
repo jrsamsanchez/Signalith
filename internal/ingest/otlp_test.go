@@ -562,6 +562,9 @@ func TestOTLPRefusesBadRequests(t *testing.T) {
 	for range MaxDepth + 1 {
 		deep = []any{deep}
 	}
+	// A 200 KB resource on 400 records: small to send, about 80 MB to
+	// write, since every record's event carries the resource.
+	bigRes := tRes{attrs: []tKV{{"k", strings.Repeat("x", 200<<10)}}, recs: make([]tRec, 400)}
 	cases := []struct {
 		name   string
 		body   []byte
@@ -575,6 +578,8 @@ func TestOTLPRefusesBadRequests(t *testing.T) {
 		{"group wire type", []byte{0x0b}, false, http.StatusBadRequest},
 
 		{"not JSON", []byte("[1,2"), true, http.StatusBadRequest},
+		{"resource repeated too often", encodeProto(bigRes), false, http.StatusRequestEntityTooLarge},
+		{"resource repeated too often JSON", encodeJSON(bigRes), true, http.StatusRequestEntityTooLarge},
 	}
 	for _, tc := range cases {
 		b := &countingBulk{}
@@ -586,6 +591,47 @@ func TestOTLPRefusesBadRequests(t *testing.T) {
 		}
 		if len(b.calls) != 0 || p.Stats().Received != 0 {
 			t.Errorf("%s: wrote %v", tc.name, b.calls)
+		}
+	}
+}
+
+// An attribute list keeps at most maxOTLPAttributes entries, so a request
+// can't make every record's event copy thousands of resource attributes.
+func TestOTLPCapsAttributes(t *testing.T) {
+	many := func(prefix string) []tKV {
+		kvs := make([]tKV, 2000)
+		for i := range kvs {
+			kvs[i] = tKV{prefix + strconv.Itoa(i), "v"}
+		}
+		return kvs
+	}
+	recs := make([]tRec, 3)
+	for i := range recs {
+		recs[i] = tRec{body: "line", attrs: append(many("a"), tKV{"m", many("m")})}
+	}
+	r := tRes{attrs: append([]tKV{{"host.name", "web1"}}, many("r")...), recs: recs}
+	for _, isJSON := range []bool{false, true} {
+		walk, body := walkOTLPProto, encodeProto(r)
+		if isJSON {
+			walk, body = walkOTLPJSON, encodeJSON(r)
+		}
+		n := 0
+		err := walk(body, true, func(l *otlpLog, _ int, bad *BodyError) error {
+			if bad != nil {
+				return bad
+			}
+			n++
+			if len(l.resource) != maxOTLPAttributes || len(l.attrs) != maxOTLPAttributes || l.resource["host.name"] != "web1" {
+				t.Errorf("json=%v: resource %d, attributes %d", isJSON, len(l.resource), len(l.attrs))
+			}
+			ev := otlpGeneric(l)
+			if len(ev.Fields) > 2*maxOTLPAttributes {
+				t.Errorf("json=%v: event has %d fields", isJSON, len(ev.Fields))
+			}
+			return nil
+		})
+		if err != nil || n != len(recs) {
+			t.Fatalf("json=%v: %d records, %v", isJSON, n, err)
 		}
 	}
 }

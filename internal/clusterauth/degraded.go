@@ -38,6 +38,9 @@ func (s *Sessions) MayDegrade(user, method string) error {
 		return ErrDegraded
 	}
 	if b := s.Docs.builtinName(); b != "" && strings.EqualFold(user, b) {
+		if v, _, ok := s.Docs.BuiltinUser(); ok && v.Disabled {
+			return ErrDegraded
+		}
 		return nil
 	}
 	u, _, ok := s.Docs.Users().Get(users.NormalizeUsername(user))

@@ -75,7 +75,8 @@ func pbEach(b []byte, fn func(f pbField) error) error {
 }
 
 // walkOTLPProto calls fn for each log record of a protobuf
-// ExportLogsServiceRequest, with the size of its encoding. Without build,
+// ExportLogsServiceRequest, with the size of its encoding plus its
+// resource's. Without build,
 // it only checks the request (fn gets a nil record). A record that is over
 // MaxRecordBytes, nests a value more than MaxDepth levels or doesn't
 // decode is passed with a nil record and why (bad), so the caller can
@@ -88,9 +89,13 @@ func walkOTLPProto(body []byte, build bool, fn func(l *otlpLog, size int, bad *B
 			return nil
 		}
 		// resource (1) may come after scope_logs (2), so it is read first.
+		// Its size is added to each record's, since every record's event
+		// carries a copy of it.
 		var resource map[string]any
+		resSize := 0
 		err := pbEach(f.data, func(f pbField) error {
 			if f.num == 1 && f.wire == wireBytes {
+				resSize += len(f.data)
 				return pbEach(f.data, func(f pbField) error {
 					if f.num == 1 && f.wire == wireBytes { // Resource.attributes
 						if build && resource == nil {
@@ -130,17 +135,18 @@ func walkOTLPProto(body []byte, build bool, fn func(l *otlpLog, size int, bad *B
 					return nil
 				}
 				n++
+				size := len(f.data) + resSize
 				if len(f.data) > MaxRecordBytes {
-					return fn(nil, len(f.data), tooLarge("log record %d is %d bytes; the limit is %d bytes (1 MB) per record", n, len(f.data), MaxRecordBytes))
+					return fn(nil, size, tooLarge("log record %d is %d bytes; the limit is %d bytes (1 MB) per record", n, len(f.data), MaxRecordBytes))
 				}
 				var l *otlpLog
 				if build {
 					l = &otlpLog{resource: resource, scope: scope}
 				}
 				if err := pbLogRecord(f.data, l); err != nil {
-					return fn(nil, len(f.data), recordError(n, err))
+					return fn(nil, size, recordError(n, err))
 				}
-				return fn(l, len(f.data), nil)
+				return fn(l, size, nil)
 			})
 		})
 	})
@@ -201,7 +207,7 @@ func pbKeyValue(b []byte, m map[string]any, depth int, build bool) error {
 		return nil
 	})
 	if err == nil && build {
-		m[key] = val
+		putAttribute(m, key, val)
 	}
 	return err
 }

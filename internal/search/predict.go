@@ -26,7 +26,7 @@ func (e *Engine) setSearch(ctx context.Context, c *query.Set, outer *query.Query
 		if err != nil {
 			return nil, err
 		}
-		p, err := e.compile(sq)
+		p, err := e.compileSub(sq)
 		if err != nil {
 			return nil, err
 		}
@@ -62,6 +62,8 @@ func (e *Engine) setSearch(ctx context.Context, c *query.Set, outer *query.Query
 		}
 	}
 	res := &Result{Kind: subs[0].Kind, Truncated: subs[0].Truncated || subs[1].Truncated, Matched: subs[0].Matched + subs[1].Matched}
+	noteSampled(res, subs[0])
+	noteSampled(res, subs[1])
 	seen := map[string]bool{}
 	for i, sub := range subs {
 		if i == 1 && c.Op == "intersect" {

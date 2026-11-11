@@ -35,8 +35,9 @@ func TestCasesAPI(t *testing.T) {
 	if c["title"] != "Brute force from 10.0.0.9" || c["severity"] != "high" || len(out["failed"].(map[string]any)) != 1 {
 		t.Errorf("case = %v failed = %v", c, out["failed"])
 	}
-	if f, _ := fs.Get(ctx, "f1"); f.CaseID != id || f.Status != findings.StatusInProgress {
-		t.Errorf("finding after link = %s %s", f.CaseID, f.Status)
+	// Adding it to a case is the first response the SLA measures.
+	if f, _ := fs.Get(ctx, "f1"); f.CaseID != id || f.Status != findings.StatusInProgress || f.RespondedAt == nil {
+		t.Errorf("finding after link = %s %s responded %v", f.CaseID, f.Status, f.RespondedAt)
 	}
 
 	if code, out := do(t, ts, "POST", "/api/cases/"+id+"/entries", `{"kind":"note","text":"Blocked 10.0.0.9 at the firewall"}`, true); code != 201 {

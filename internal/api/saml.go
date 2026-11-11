@@ -214,10 +214,17 @@ func (s *Server) handleSAMLStart(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "off", "", "SAML single sign-on is off")
 		return
 	}
+	if c.NoticeAgree() && r.URL.Query().Get("agreed") != "1" {
+		s.ssoFail(w, r, "notice", "", "the sign-in notice was not agreed to")
+		return
+	}
 	next := localPath(r.URL.Query().Get("next"))
 	// The cookie must be set on the host the provider posts back to.
 	if pu, err := url.Parse(c.Server.PublicURL); err == nil && pu.Host != "" && !strings.EqualFold(pu.Host, r.Host) && r.URL.Query().Get("hop") == "" {
 		q := url.Values{"next": {next}, "hop": {"1"}}
+		if a := r.URL.Query().Get("agreed"); a != "" {
+			q.Set("agreed", a)
+		}
 		http.Redirect(w, r, strings.TrimRight(c.Server.PublicURL, "/")+samlStartPath+"?"+q.Encode(), http.StatusSeeOther)
 		return
 	}

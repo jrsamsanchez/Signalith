@@ -134,7 +134,8 @@ func TestImportUsers(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, nu := range []users.NewUser{{Username: "jlee", Role: users.Analyst, Password: "a-good-password"},
-		{Username: "off", Role: users.Viewer, Password: "a-good-password"}, {Username: "admin", Role: users.Admin, Password: "a-good-password"}} {
+		{Username: "off", Role: users.Viewer, Password: "a-good-password"}, {Username: "admin", Role: users.Admin, Password: "a-good-password"},
+		{Username: "kim", Role: users.Admin, Password: "a-good-password"}} {
 		if _, err := fileStore.Create(ctx, nu); err != nil {
 			t.Fatal(err)
 		}
@@ -148,6 +149,10 @@ func TestImportUsers(t *testing.T) {
 	}
 	fileStore.RecordSignIn(ctx, "jlee")
 	fileStore.RecordBuiltinSignIn(ctx)
+	// The built-in admin turned off here stays off.
+	if _, err := users.SetFileBuiltinDisabled(c.UsersFile(), true); err != nil {
+		t.Fatal(err)
+	}
 	jleeHash := mustRecord(t, c.UsersFile(), "jlee").Hash
 	passwd, _ := users.HashPassword("from-passwd")
 	if err := os.WriteFile(c.AdminHashFile(), []byte(passwd+"\n"), 0o600); err != nil {
@@ -168,8 +173,11 @@ func TestImportUsers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recs) != 3 {
+	if len(recs) != 4 {
 		t.Fatalf("imported %d users: %v", len(recs), recs)
+	}
+	if !ub.BuiltinDisabled() {
+		t.Error("the built-in admin turned off was imported on")
 	}
 	if r := recs["jlee"]; r.Hash != jleeHash || r.Role != users.Analyst || r.Epoch != 1 || r.LastSignIn != nil {
 		t.Errorf("jlee %+v", r)

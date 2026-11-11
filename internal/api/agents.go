@@ -70,7 +70,12 @@ func (s *Server) agents() *agentinv.Inventory { return s.Agents }
 // event, so a batch with one host name is named by it. A Collector that
 // forwards other computers' events is told apart by address and token.
 func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string, sensor *ingest.SensorStatus) {
-	name := r.Header.Get(agentinv.AgentHeader)
+	name, ok := s.agentHostName(r, who)
+	if !ok {
+		// The line's token, naming a computer with a key of its own: the
+		// events are kept, but its row does not move.
+		return
+	}
 	if name == "" && (intake == ingest.IntakeOTLP || intake == ingest.IntakeHEC) {
 		if len(hosts) != 1 && events == 0 {
 			return // nothing to tell it by, and nothing stored

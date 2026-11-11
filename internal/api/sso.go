@@ -145,12 +145,19 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "off", "", "single sign-on is off")
 		return
 	}
+	if c.NoticeAgree() && r.URL.Query().Get("agreed") != "1" {
+		s.ssoFail(w, r, "notice", "", "the sign-in notice was not agreed to")
+		return
+	}
 	next := localPath(r.URL.Query().Get("next"))
 	// The cookie must be set on the host the provider sends the browser
 	// back to: a browser that came in another way is sent to the public
 	// address first, once.
 	if pu, err := url.Parse(c.Server.PublicURL); err == nil && pu.Host != "" && !strings.EqualFold(pu.Host, r.Host) && r.URL.Query().Get("hop") == "" {
 		q := url.Values{"next": {next}, "hop": {"1"}}
+		if a := r.URL.Query().Get("agreed"); a != "" {
+			q.Set("agreed", a)
+		}
 		http.Redirect(w, r, strings.TrimRight(c.Server.PublicURL, "/")+ssoStartPath+"?"+q.Encode(), http.StatusSeeOther)
 		return
 	}
@@ -389,7 +396,7 @@ func (s *Server) signInSSO(w http.ResponseWriter, r *http.Request, u users.SSOUs
 	}
 	s.setSessionCookie(w, r, token, false)
 	s.Log.Info("signed in", slices.Concat([]any{"audit", true, "user", p.Username, "role", p.Role, "source", p.Source}, s.client(r).logAttrs(),
-		[]any{"method", "sso"}, logAttrs)...)
+		[]any{"method", "sso"}, s.noticeLog(), logAttrs)...)
 	// The session cookie is SameSite=Strict, and this answer ends a
 	// navigation that came from the provider's site, so a redirect would
 	// arrive without it. A page that moves on by itself starts a new,

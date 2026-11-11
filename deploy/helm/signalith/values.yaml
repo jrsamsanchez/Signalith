@@ -195,6 +195,11 @@ opensearch:
   priorityClassName: ""
   podDisruptionBudget:
     enabled: true
+  # true gives Signalith the signalith_snapshots role, which scheduled
+  # snapshots (Settings > Server > Backups) need: it may then take and
+  # delete snapshots in any repository of this OpenSearch. Off until you
+  # want them (docs/backup.md).
+  snapshotRole: false
   # OpenSearch you run yourself, when enabled is false. It must use HTTPS
   # and a sign-in (docs/multi-server.md, What a new server needs).
   external:

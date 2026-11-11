@@ -2,3 +2,4 @@
 # signalith content pubkey and the signature files name); # starts a
 # comment. A key that leaked is listed here in the next release, as well
 # as in the signed revocation list servers and agents fetch before it.
+99e8601b3328 # agent release key retired 2026-10-24: its private half was lost

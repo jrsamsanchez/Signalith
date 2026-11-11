@@ -404,7 +404,7 @@ func (e *Engine) appendSearch(ctx context.Context, res *Result, c *query.Append,
 	if err != nil {
 		return err
 	}
-	p, err := e.compile(sq)
+	p, err := e.compileSub(sq)
 	if err != nil {
 		return err
 	}
@@ -414,6 +414,7 @@ func (e *Engine) appendSearch(ctx context.Context, res *Result, c *query.Append,
 	}
 	appendRows(res, sub.Rows, sub.Columns, sub.Kind)
 	res.Truncated = res.Truncated || sub.Truncated
+	noteSampled(res, sub)
 	return nil
 }
 

@@ -3,8 +3,8 @@ name: splunk
 title: Splunk Security Content
 description: Windows detections for process, file and registry events, macOS detections for the program starts osquery reports, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.
 source: https://github.com/splunk/security_content
-version: a3f6523eabf696d66e20fdd80766bfae95575577
-date: "2026-10-26"
+version: 4c1652e36f137c83d2279f455a4911ee5bd76305
+date: "2026-11-09"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.
@@ -274,6 +274,10 @@ rules:
     rule_id: 825fed20-309d-4fd1-8aaf-cd49c1bb093c
     file: azure_ad_global_administrator_role_assigned.yml
     path: detections/cloud/azure_ad_global_administrator_role_assigned.yml
+  - id: splunk-azure-ad-guest-user-type-changed-to-member
+    rule_id: 487e9b86-49dc-48a9-bbb3-747df56b4db0
+    file: azure_ad_guest_user_type_changed_to_member.yml
+    path: detections/cloud/azure_ad_guest_user_type_changed_to_member.yml
   - id: splunk-azure-ad-high-number-of-failed-authentications-for-user
     rule_id: 630b1694-210a-48ee-a450-6f79e7679f2c
     file: azure_ad_high_number_of_failed_authentications_for_user.yml
@@ -378,6 +382,14 @@ rules:
     rule_id: a560e7f6-1711-4353-885b-40be53101fcd
     file: azure_ad_successful_single_factor_authentication.yml
     path: detections/cloud/azure_ad_successful_single_factor_authentication.yml
+  - id: splunk-azure-ad-suspicious-device-registration
+    rule_id: 4cfe7afd-a22b-4af5-9520-39f7f6564e7f
+    file: azure_ad_suspicious_device_registration.yml
+    path: detections/cloud/azure_ad_suspicious_device_registration.yml
+  - id: splunk-azure-ad-temporary-access-pass-created
+    rule_id: f820b423-7299-4bb6-9bf3-860bd475cddb
+    file: azure_ad_temporary_access_pass_created.yml
+    path: detections/cloud/azure_ad_temporary_access_pass_created.yml
   - id: splunk-azure-ad-tenant-wide-admin-consent-granted
     rule_id: dc02c0ee-6ac0-4c7f-87ba-8ce43a4e4418
     file: azure_ad_tenant_wide_admin_consent_granted.yml
@@ -1158,10 +1170,6 @@ rules:
     rule_id: d6e464e4-5c6a-474e-82d2-aed616a3a492
     file: impacket_lateral_movement_wmiexec_commandline_parameters.yml
     path: detections/endpoint/impacket_lateral_movement_wmiexec_commandline_parameters.yml
-  - id: splunk-inline-php-code-execution
-    rule_id: 312567b0-4e9b-4f3a-b842-a3ba17a89975
-    file: inline_php_code_execution.yml
-    path: detections/endpoint/inline_php_code_execution.yml
   - id: splunk-interactive-session-on-remote-endpoint-with-powershell
     rule_id: a4e8f3a4-48b2-11ec-bcfc-3e22fbd008af
     file: interactive_session_on_remote_endpoint_with_powershell.yml
@@ -1494,6 +1502,10 @@ rules:
     rule_id: ce2bde4d-a1d4-4452-8c87-98440e5adfb3
     file: linux_auditd_shred_overwrite_command.yml
     path: detections/endpoint/linux_auditd_shred_overwrite_command.yml
+  - id: splunk-linux-auditd-sock-raw-eafnosupport-from-user-writable-pat
+    rule_id: 7c1c36e6-014d-4a2c-b3ab-84d7cec3bbc2
+    file: linux_auditd_sock_raw_eafnosupport_from_user_writable_path.yml
+    path: detections/endpoint/linux_auditd_sock_raw_eafnosupport_from_user_writable_path.yml
   - id: splunk-linux-auditd-sudo-or-su-execution
     rule_id: 817a5c89-5b92-4818-a22d-aa35e1361afe
     file: linux_auditd_sudo_or_su_execution.yml
@@ -3218,6 +3230,10 @@ rules:
     rule_id: ce245717-779b-483b-bc52-fc7a94729973
     file: windows_chromium_process_with_disabled_extensions.yml
     path: detections/endpoint/windows_chromium_process_with_disabled_extensions.yml
+  - id: splunk-windows-chromium-session-restored-with-crash-bubble-suppr
+    rule_id: ff22a1c5-d30c-40c9-adc0-947ea51cc623
+    file: windows_chromium_session_restored_with_crash_bubble_suppressed.yml
+    path: detections/endpoint/windows_chromium_session_restored_with_crash_bubble_suppressed.yml
   - id: splunk-windows-cisco-secure-endpoint-related-service-stopped
     rule_id: df74f45f-01c8-4fd6-bcb8-f6a9ea58307a
     file: windows_cisco_secure_endpoint_related_service_stopped.yml
@@ -4790,6 +4806,10 @@ rules:
     rule_id: 2f15e1a4-0fc2-49dd-919e-cbbe60699218
     file: windows_scheduled_task_with_highest_privileges.yml
     path: detections/endpoint/windows_scheduled_task_with_highest_privileges.yml
+  - id: splunk-windows-scheduled-task-xml-built-via-console-echo
+    rule_id: 63081a3e-8546-4f2c-bd48-c7f96bb8ae14
+    file: windows_scheduled_task_xml_built_via_console_echo.yml
+    path: detections/endpoint/windows_scheduled_task_xml_built_via_console_echo.yml
   - id: splunk-windows-scheduled-tasks-for-compmgmtlauncher-or-eventvwr
     rule_id: feb43b86-8c38-46cd-865e-20ce8a96c26c
     file: windows_scheduled_tasks_for_compmgmtlauncher_or_eventvwr.yml

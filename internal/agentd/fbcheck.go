@@ -148,8 +148,15 @@ func checkFluentBit(conf string, r fbRules) error {
 			}
 			return ""
 		}
-		name := strings.ToLower(one("name"))
 		where := fmt.Sprintf("line %d [%s]", s.line, strings.ToUpper(s.kind))
+		// Fluent Bit runs a section's first Name, where this check reads
+		// the last value, so a setting checked by its value is set once.
+		for _, k := range []string{"name", "daemon", "host", "port", "tls", "tls.verify", "uri"} {
+			if len(s.kv[k]) > 1 {
+				return fmt.Errorf("%s: %s is set more than once", where, k)
+			}
+		}
+		name := strings.ToLower(one("name"))
 		var allowed map[string]bool
 		switch s.kind {
 		case "service":

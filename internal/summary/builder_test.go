@@ -402,7 +402,10 @@ func TestExistingIndexAndIndexSettings(t *testing.T) {
 	f.add("Authentication", at, map[string]any{"user": "a"})
 	// Another month's index was created by an earlier server: creating
 	// it again is refused, which is fine.
-	other := indexName("sig", at.AddDate(0, -1, 0))
+	// From the first of the month, so the 31st does not land back in
+	// this month.
+	u := at.UTC()
+	other := indexName("sig", time.Date(u.Year(), u.Month(), 1, 0, 0, 0, 0, time.UTC).AddDate(0, -1, 0))
 	f.indices[other] = true
 	if err := b.ensureIndex(context.Background(), other); err != nil {
 		t.Fatalf("ensureIndex of an existing index: %v", err)
@@ -874,5 +877,24 @@ func TestSmallHelpers(t *testing.T) {
 	var b Builder
 	if b.epochNow() != 0 || b.log() == nil || time.Since(b.now()) > time.Minute {
 		t.Error("defaults")
+	}
+}
+
+// Raising the days so the range reaches back into last month keeps the rows
+// built there, though every model's last start was in this month.
+func TestRaisedDaysBuildsLastMonth(t *testing.T) {
+	b, f, clk := newBuilder(t)
+	u := clk.Now()
+	clk.t = time.Date(u.Year(), u.Month(), 2, 2, 3, 0, 0, time.UTC)
+	days := 1
+	b.Days = func() int { return days }
+	f.add("Authentication", clk.Now().Add(-36*time.Hour), map[string]any{"user": "older"})
+	mustTick(t, b)
+	days = 2
+	for range 3 {
+		mustTick(t, b)
+	}
+	if rows, _ := f.rowCount("Authentication"); rows != 1 {
+		t.Errorf("%d rows, want last month's", rows)
 	}
 }

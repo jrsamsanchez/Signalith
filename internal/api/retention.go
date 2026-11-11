@@ -133,7 +133,7 @@ func (s *Server) retentionEditable(w http.ResponseWriter) bool {
 // shared and another server runs retention, that server is asked to.
 func (s *Server) retentionChanged(w http.ResponseWriter, r *http.Request, what string, out map[string]any) {
 	user := userOf(r)
-	s.Log.Info("retention settings changed", "what", what, "by", user)
+	s.audit(r, "retention settings changed", "what", what)
 	if tag := s.Retention.ETag(); tag != "" {
 		w.Header().Set("ETag", tag)
 	}
@@ -263,7 +263,7 @@ func (s *Server) handleRetentionRun(w http.ResponseWriter, r *http.Request) {
 		writeRetentionError(w, err)
 		return
 	}
-	s.Log.Info("retention run started by hand", "by", user)
+	s.audit(r, "retention run started by hand")
 	writeJSON(w, http.StatusAccepted, map[string]any{"started": true})
 }
 

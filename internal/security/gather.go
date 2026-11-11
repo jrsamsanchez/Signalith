@@ -460,6 +460,7 @@ func UserFactsFrom(st *users.Store, builtin string, now time.Time) UserFacts {
 		return u
 	}
 	u.BuiltinLastSignIn = st.BuiltinLastSignIn()
+	u.BuiltinOff = st.BuiltinDisabled()
 	week := now.Add(-7 * 24 * time.Hour)
 	for _, x := range st.List() {
 		if x.Source == users.SourceLocal {
@@ -470,6 +471,9 @@ func UserFactsFrom(st *users.Store, builtin string, now time.Time) UserFacts {
 		}
 		if x.Role == users.Admin {
 			u.OtherAdmins++
+			if x.Source == users.SourceLocal && x.Tenant == "" {
+				u.LocalAdmins++
+			}
 		} else {
 			u.Others++
 		}

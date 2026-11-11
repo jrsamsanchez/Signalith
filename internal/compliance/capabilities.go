@@ -268,6 +268,16 @@ var capabilities = []Capability{
 				return Missing, "Event data is kept until it is deleted by hand."
 			}
 			st, d := Met, fmt.Sprintf("Event data is deleted after %d days.", r.KeepDays)
+			// The policy is not the data: older events still stored mean
+			// the deletion is not happening (yet).
+			switch {
+			case !r.OldestRead:
+				st = Partial
+				d += " How far back the stored events go could not be read."
+			case !r.Oldest.IsZero() && s.Now.Sub(r.Oldest) > time.Duration(r.KeepDays+1)*24*time.Hour:
+				st = Partial
+				d += fmt.Sprintf(" But events from %s (%s) are still stored.", day(r.Oldest), ago(s.Now.Sub(r.Oldest)))
+			}
 			if len(r.Longer) > 0 {
 				st = Partial
 				d += fmt.Sprintf(" Some data is kept longer: %s.", strings.Join(r.Longer, ", "))

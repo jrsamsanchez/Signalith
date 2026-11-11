@@ -19,9 +19,8 @@ import (
 
 type otlpJSONRequest struct {
 	ResourceLogs []struct {
-		Resource struct {
-			Attributes []otlpJSONKeyValue `json:"attributes"`
-		} `json:"resource"`
+		// Kept as it was sent, so its size can be added to each record's.
+		Resource  json.RawMessage `json:"resource"`
 		ScopeLogs []struct {
 			Scope struct {
 				Name string `json:"name"`
@@ -80,11 +79,19 @@ func walkOTLPJSON(body []byte, build bool, fn func(l *otlpLog, size int, bad *Bo
 	}
 	n := 0
 	for _, rl := range req.ResourceLogs {
+		var res struct {
+			Attributes []otlpJSONKeyValue `json:"attributes"`
+		}
+		if len(rl.Resource) > 0 {
+			if err := json.Unmarshal(rl.Resource, &res); err != nil {
+				return badBody("invalid OTLP/JSON resource: %v", err)
+			}
+		}
 		var resource map[string]any
 		if build {
 			resource = map[string]any{}
 		}
-		if err := jsonKeyValues(rl.Resource.Attributes, resource, 1, build); err != nil {
+		if err := jsonKeyValues(res.Attributes, resource, 1, build); err != nil {
 			return err
 		}
 		for _, sl := range rl.ScopeLogs {
@@ -94,7 +101,7 @@ func walkOTLPJSON(body []byte, build bool, fn func(l *otlpLog, size int, bad *Bo
 				if bad != nil {
 					l = nil
 				}
-				if err := fn(l, len(raw), bad); err != nil {
+				if err := fn(l, len(raw)+len(rl.Resource), bad); err != nil {
 					return err
 				}
 			}
@@ -156,7 +163,7 @@ func jsonKeyValues(kvs []otlpJSONKeyValue, m map[string]any, depth int, build bo
 			return err
 		}
 		if build {
-			m[kv.Key] = v
+			putAttribute(m, kv.Key, v)
 		}
 	}
 	return nil

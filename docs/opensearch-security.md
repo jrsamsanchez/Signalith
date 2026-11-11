@@ -48,7 +48,8 @@ in `deploy/docker/opensearch/opensearch.yml`, and the users and roles in
 `deploy/docker/opensearch/security/`: `config.yml` (certificate sign-in only),
 `internal_users.yml` (empty), `roles.yml` (the `signalith_server` role, and
 `signalith_snapshots` for [scheduled snapshots](backup.md#scheduled-snapshots)) and
-`roles_mapping.yml` (Signalith's certificate gets those roles). OpenSearch publishes no
+`roles_mapping.yml` (Signalith's certificate gets `signalith_server`, and
+`signalith_snapshots` only once you register a snapshot repository with `snapshot.sh register`). OpenSearch publishes no
 port; only Signalith reaches it, on the Docker network.
 
 To look at OpenSearch yourself, use the admin certificate from inside its container. From
@@ -366,7 +367,8 @@ The `signalith_snapshots` role lets Signalith keep its
 and delete the snapshots as Signalith. It names each action it needs (the policy's
 `write`, `get`, `delete` and `explain`, and `cluster:admin/snapshot/create`, `get` and
 `delete`, with `cluster:admin/repository/get`), so it cannot restore or clone
-snapshots. Know what it still allows:
+snapshots. It is not given to Signalith until you want scheduled snapshots (see
+[What OpenSearch needs](backup.md#what-opensearch-needs)). Know what it allows:
 
 - **Snapshot rights cover every repository.** OpenSearch cannot limit them to one, so
   Signalith can list, take and delete snapshots in any repository, not only its own.

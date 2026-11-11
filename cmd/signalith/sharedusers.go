@@ -430,5 +430,19 @@ func passwdShared(path, stateDir, h string) (bool, error) {
 	}
 	x.audit("changed the built-in admin's password for every server of the cluster", "user", x.auth.BuiltinName())
 	fmt.Println("Password updated for every server of the cluster. It applies on every server within a few seconds; no restart needed.")
+	// Setting its password from a server is the way back in when every
+	// other admin is locked out, so a built-in admin turned off is turned
+	// on again.
+	if on, err := (&clusterauth.UsersBackend{Docs: x.auth}).ChangeBuiltinDisabled(ctx, x.by, false, nil); err != nil {
+		return true, fmt.Errorf("the password changed, but the built-in admin could not be turned on again: %w", err)
+	} else if on {
+		x.audit("turned the built-in admin on again", "user", x.auth.BuiltinName())
+		fmt.Println(builtinOnAgain)
+	}
 	return true, nil
 }
+
+// builtinOnAgain tells that signalith passwd turned the built-in admin on
+// again.
+const builtinOnAgain = "The built-in admin was turned off; it is on again, so you can sign in with it. " +
+	"Once you are done, turn it off again on Settings > Users."

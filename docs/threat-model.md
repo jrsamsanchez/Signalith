@@ -39,7 +39,7 @@ environment, and to decide what to check before putting it on a network that mat
 | --- | --- | --- |
 | **Someone on the network** with no account | Reach the web port (9000), the agent port (7779), syslog ports and, if exposed, OpenSearch (9200) | Sign in, read events, send forged events, crash the server |
 | **Someone who writes log text** (any user of a monitored computer, a web visitor whose request is logged) | Put any text in an event | Hide from detections, inject into searches or the AI features, attack the browser of whoever views the event |
-| **A stolen agent token, or a compromised computer with an agent** | Send events as that agent group | Flood or poison the data, hide its own activity |
+| **A stolen agent token, or a compromised computer with an agent** | Send events as that agent group; a Signalith Agent's computer can't report as another computer that has its [own key](agent-tokens.md#computer-keys) | Flood or poison the data, hide its own activity |
 | **A signed-in user with a low role** (Viewer, Analyst) | Use the UI and API within their role | Gain a higher role, read what their role or tenant doesn't allow, run actions |
 | **A tenant user** in multi-tenant mode | Work within their tenant | Read or change another tenant's data, reach server settings |
 | **Someone who can write to OpenSearch** but has no Signalith key | Change documents in Signalith's indices | Change shared settings, users or detections, forge audit records |

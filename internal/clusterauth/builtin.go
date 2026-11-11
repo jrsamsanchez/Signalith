@@ -220,3 +220,52 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 	}
 	return old, step(5)
 }
+
+// ErrBuiltinOffLevel refuses to turn the built-in admin off below
+// shared.LevelBuiltinOff, where a server of an older version would still
+// let it sign in.
+var ErrBuiltinOffLevel = errors.New("turning off the built-in admin needs every server on a version that supports it: upgrade the others first")
+
+// BuiltinDisabled reports whether the built-in admin is turned off.
+func (b *UsersBackend) BuiltinDisabled() bool {
+	v, _, ok := b.Docs.BuiltinUser()
+	return ok && v.Disabled
+}
+
+// ChangeBuiltinDisabled turns the built-in admin off or on, on the latest
+// copy of its document, once check allows it (check may be nil). Turning
+// it off moves its session epoch on, so its sessions end on every server.
+func (b *UsersBackend) ChangeBuiltinDisabled(ctx context.Context, by string, off bool, check func() error) (bool, error) {
+	v, _, ok := b.Docs.BuiltinUser()
+	if !ok {
+		return false, errors.New("the built-in admin is not in the shared settings yet")
+	}
+	if c, ok := b.Docs.clusterBody(); off && (!ok || c.Level < shared.LevelBuiltinOff) {
+		return false, ErrBuiltinOffLevel
+	}
+	changed := false
+	_, err := b.Docs.Users().Mutate(ctx, by, v.Username, func(v *UserBody) error {
+		if v.Source != users.SourceBuiltin {
+			return errors.New(v.Username + " is not the built-in admin")
+		}
+		if v.Disabled == off {
+			return users.ErrNoChange
+		}
+		if check != nil {
+			if err := check(); err != nil {
+				return err
+			}
+		}
+		v.Disabled = off
+		if off {
+			v.SessionEpoch++
+		}
+		v.Updated = time.Now().UTC()
+		changed = true
+		return nil
+	})
+	if errors.Is(err, users.ErrNoChange) {
+		return false, nil
+	}
+	return changed && err == nil, err
+}

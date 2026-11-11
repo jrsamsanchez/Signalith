@@ -76,6 +76,10 @@ func (s *Server) EnrollToken(secret string) (tokenID string, ok bool) {
 	if res != agenttokens.Valid || id.Purpose == agenttokens.PurposeSensor {
 		return "", false
 	}
+	if id.HostKey != "" {
+		// Revoking the computer's key removes its osquery host too.
+		return id.HostKey, true
+	}
 	return id.ID, true
 }
 

@@ -1,0 +1,9 @@
+# Terraform's working files and state: the state holds the lab's own SSH
+# key, so it stays on the computer that built the lab.
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+crash.log
+# Saved plans hold the server's setup data.
+*.plan

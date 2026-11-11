@@ -868,6 +868,9 @@ type Auth struct {
 	// authenticator app after the password): off, admins or everyone.
 	// See MFARequiredMode.
 	MFARequired string `yaml:"mfa_required,omitempty"`
+	// Notice is the sign-in notice, set on the Sign-in notice tab of
+	// Settings.
+	Notice Notice `yaml:"notice,omitempty"`
 }
 
 // MFARequiredMode returns auth.mfa_required: off, admins or everyone.
@@ -2755,6 +2758,7 @@ func (c *Config) Validate() error {
 	if g := c.OpenSearch.RolloverGB; g != 0 && (g < MinRolloverGB || g > MaxRolloverGB) {
 		p = append(p, fmt.Sprintf("opensearch.rollover_gb: enter a number of GB from %d to %d, or leave it empty for %d", MinRolloverGB, MaxRolloverGB, DefaultRolloverGB))
 	}
+	// Up to 100000 is accepted, as before, but searches use at most 10000.
 	if c.Search.MaxEvents < 1 || c.Search.MaxEvents > 100000 {
 		p = append(p, "search.max_events must be between 1 and 100000")
 	}
@@ -2817,6 +2821,7 @@ func (c *Config) Validate() error {
 	p = append(p, c.samlProblems()...)
 	p = append(p, c.scimProblems()...)
 	p = append(p, c.metricsProblems()...)
+	p = append(p, c.noticeProblems()...)
 	if c.Detections.Dir == "" {
 		p = append(p, "detections.dir is required, for example: detections")
 	}

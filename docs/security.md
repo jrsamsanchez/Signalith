@@ -494,7 +494,8 @@ first password the Docker setup made, a password set in the `SIGNALITH_ADMIN_PAS
 environment variable, or one read from the file in `SIGNALITH_ADMIN_PASSWORD_FILE`; and
 how strongly it is hashed.
 
-- Good: it has a password of its own.
+- Good: it has a password of its own, or it is turned off (unless its password is the
+  example one).
 - Needs attention: the Docker setup's first password, which is kept as plain text in a
   Docker volume; a password in an environment variable, or in a file named by one; or
   an older, weaker hash.
@@ -509,15 +510,18 @@ that keeps its own users takes `sudo signalith passwd` and a restart. See
 
 ### Everyday sign-in
 
-**Looks at:** when the built-in admin last signed in, and how many other people have
-admin accounts.
+**Looks at:** whether the built-in admin is turned off, when it last signed in, and
+how many other people have admin accounts.
 
-- Good: people sign in with their own accounts, or only the built-in admin exists so far
-  (with a tip to give yourself an account, so the audit log shows who did what).
-- Needs attention: the built-in admin signed in during the last 7 days, though others
-  have admin accounts. Keep it for emergencies.
+- Good: the built-in admin is turned off; or nobody has a local admin account of their
+  own yet, so it can't be (with a tip to give yourself one, so the audit log shows who
+  did what, and then turn it off).
+- Needs attention: someone has a local admin account of their own, but the built-in
+  admin is still on, a well-known name with full rights on every install; or it signed
+  in during the last 7 days.
 
-**To fix:** see [The built-in admin](users.md#the-built-in-admin).
+**To fix:** sign in with your own admin account and turn the built-in admin off on the
+Users page. See [Turning the built-in admin off](users.md#turning-the-built-in-admin-off).
 
 ### Temporary passwords
 

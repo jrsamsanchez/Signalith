@@ -73,6 +73,8 @@ type Agent struct {
 	// idle is whether the collectors are stopped for them.
 	refusals int
 	idle     bool
+	// enrollNext is when the agent may ask for the computer's key again.
+	enrollNext time.Time
 
 	// updateTried is when the agent last tried to get each version ready.
 	updateTried map[string]time.Time
@@ -186,7 +188,11 @@ func (a *Agent) Run(ctx context.Context) error {
 			return nil
 		case <-time.After(wait):
 		}
-		if err := a.sync(ctx); err != nil {
+		if err := a.sync(ctx); errors.Is(err, errHostKeyUnknown) {
+			a.forgetHostKey()
+			wait = 0
+			continue
+		} else if err != nil {
 			// Only a refusal counts; any other failure (the server is
 			// down, a timeout) leaves the count and the collectors as
 			// they are, so a revoked token that also meets outages
@@ -214,6 +220,9 @@ func (a *Agent) Run(ctx context.Context) error {
 			a.mu.Unlock()
 			wait = poll
 			a.checkUpdate(ctx)
+			// Once the server answered, so a key is asked only of one that
+			// works.
+			a.enroll(ctx)
 		}
 		a.sendStatus(ctx)
 		// Report again soon after a collector changes state, between
@@ -330,7 +339,7 @@ func (a *Agent) request(ctx context.Context, method, path string, q url.Values, 
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+a.Settings.Token)
+	req.Header.Set("Authorization", "Bearer "+a.Settings.secret())
 	req.Header.Set(agentproto.HeaderName, a.Name)
 	req.Header.Set(agentproto.HeaderVersion, a.Version)
 	req.Header.Set("User-Agent", "signalith-agent/"+a.Version)
@@ -346,11 +355,34 @@ func serverError(resp *http.Response) error {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	var e struct {
 		Error string `json:"error"`
+		Code  string `json:"code"`
 	}
 	if json.Unmarshal(b, &e) == nil && e.Error != "" {
-		return fmt.Errorf("Signalith answered %d: %s", resp.StatusCode, e.Error)
+		return &answerError{status: resp.StatusCode, code: e.Code, msg: e.Error}
 	}
-	return fmt.Errorf("Signalith answered %d", resp.StatusCode)
+	return &answerError{status: resp.StatusCode, code: e.Code}
+}
+
+// answerError is a server's refusal of a request.
+type answerError struct {
+	status    int
+	code, msg string
+}
+
+func (e *answerError) Error() string {
+	if e.msg != "" {
+		return fmt.Sprintf("Signalith answered %d: %s", e.status, e.msg)
+	}
+	return fmt.Sprintf("Signalith answered %d", e.status)
+}
+
+// errorCode is the code of the server's refusal err, "" for none.
+func errorCode(err error) string {
+	var e *answerError
+	if errors.As(err, &e) {
+		return e.code
+	}
+	return ""
 }
 
 // sync fetches the configuration and applies it when it changed.
@@ -385,7 +417,11 @@ func (a *Agent) sync(ctx context.Context) error {
 		return nil
 	case http.StatusOK:
 	case http.StatusUnauthorized:
-		return fmt.Errorf("%w: %w", errTokenRefused, serverError(resp))
+		err := serverError(resp)
+		if a.Settings.HostKey != "" && errorCode(err) == "token_unknown" {
+			return fmt.Errorf("%w: %w", errHostKeyUnknown, err)
+		}
+		return fmt.Errorf("%w: %w", errTokenRefused, err)
 	default:
 		return serverError(resp)
 	}
@@ -599,7 +635,7 @@ func (a *Agent) runFluentBit(cfg *agentproto.Config) {
 		a.fluentBit.set(nil)
 		return
 	}
-	env := []string{"SIGNALITH_TOKEN=" + a.Settings.Token, "HOSTNAME=" + a.Name}
+	env := []string{"SIGNALITH_TOKEN=" + a.Settings.secret(), "HOSTNAME=" + a.Name}
 	for _, kv := range os.Environ() {
 		k, _, _ := strings.Cut(kv, "=")
 		if strings.EqualFold(k, "SIGNALITH_TOKEN") || strings.EqualFold(k, "HOSTNAME") {

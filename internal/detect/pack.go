@@ -368,6 +368,24 @@ func packThrottle(category, datamodel string) []string {
 	return []string{"host", "user", "process"}
 }
 
+// windowsLogThrottle is what makes two findings of a Security or System
+// log rule different, by its data model, or nil to keep packThrottle's.
+// Their events name no process, so packThrottle's default (host, user,
+// process) would hold back every other service install on a host, or
+// every logon of an account, for a day after the first finding.
+func windowsLogThrottle(datamodel string) []string {
+	switch strings.ToLower(datamodel) {
+	case "authentication":
+		// A logon: which kind, of which account, from where.
+		return []string{"host", "signature_id", "user", "src", "logon_type"}
+	case "change":
+		// A service installed, an account or group changed, an object
+		// touched: which event, by whom, and on what.
+		return []string{"host", "signature_id", "user", "object", "member", "object_path", "service_name", "service_path"}
+	}
+	return nil
+}
+
 // sigmaCloudProduct is whether a Sigma product is a cloud or identity
 // provider's log (AWS, Azure and Entra ID, Google Cloud, GitHub,
 // Kubernetes, Microsoft 365, Okta) rather than a host's.
@@ -437,6 +455,11 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 		}
 	}
 	d.Throttle = Throttle{Window: "24h", Fields: packThrottle(strings.ToLower(category), q.Datamodel)}
+	if service := strings.ToLower(meta.Logsource.Service); category == "" && (service == "security" || service == "system") {
+		if f := windowsLogThrottle(q.Datamodel); f != nil {
+			d.Throttle.Fields = f
+		}
+	}
 	score := sigmaRisk[strings.ToLower(meta.Level)]
 	if score == 0 {
 		score = 25

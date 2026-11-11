@@ -472,6 +472,11 @@ func (s *Server) addCaseFindings(ctx context.Context, caseID string, ids []strin
 				f.History = append(f.History, findings.Change{Author: user, Field: "status", From: f.Status, To: findings.StatusInProgress, Time: now})
 				f.Status = findings.StatusInProgress
 			}
+			// Adding a finding to a case is picking it up, so it is the
+			// first response the SLA measures, as a status change is.
+			if f.RespondedAt == nil && !findings.IsAutomation(user) {
+				f.RespondedAt = &now
+			}
 			f.Updated = now
 			return true, nil
 		})
