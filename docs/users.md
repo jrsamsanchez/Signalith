@@ -1084,7 +1084,7 @@ Servers that share their users also log these:
 | `wrote through a session made while OpenSearch could not be written` | `user` |
 | `a session made while OpenSearch could not be written ended: …` | `user` |
 | `session.tamper: …` | `session`, `user`, `node`: a session in OpenSearch was changed or made outside Signalith, and is refused |
-| `changed the built-in admin's password for every server of the cluster` | `by`, `user` (from `signalith passwd`) |
+| `password reset`, `user enabled`, `user changed` with `source=builtin` and `changed_on` | `by` (`cli:` and the operating system user who ran the command), `user`, `changed_on` (the server the command ran on), `reason`; for a rename also `fields=username` and `from`. A change to the built-in admin made with a command on a server: `signalith passwd` (a new password for every server, and the built-in admin turned on again) or `signalith cluster apply` (renamed). The command itself only prints its lines to the terminal. The server that runs the cluster's jobs writes the record when it sees the change, within a few seconds, so there is one record whichever server the command ran on. No record is written while no server is running the jobs, or for a change made while that server was stopped. |
 | `auth.admin_password_hash applied from the environment on siem-b`, `auth.ldap applied from signalith.yaml on siem-b` | `setting`, `server` |
 
 `client` is the address the request came from. Behind a reverse proxy listed under

@@ -249,7 +249,7 @@ func cliUser() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
 		name = u.Username
 	}
-	return "cli:" + name
+	return cliByPrefix + name
 }
 
 func tokensList(ctx context.Context, reg *agenttokens.Registry, w io.Writer, asJSON, all bool) error {

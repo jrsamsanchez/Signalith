@@ -39,7 +39,7 @@ to 31 days and its first 10 rows are sent, and response actions need a person.
 
 ## Turning it on
 
-An admin opens **Settings → AI assistant**:
+An admin opens **Settings → Server → AI assistant**:
 
 1. Set up a model (**Provider**, **Model**, **API key**), the same one **Ask** uses.
 2. Turn on **Investigate with AI**. The page asks to confirm, since event data will be sent.
@@ -144,8 +144,8 @@ behind it. A model that says the data tried to instruct it is worth a closer loo
 - **Time limits.** One answer from the model may take 3 minutes and a whole investigation
   6 minutes. A local model on a CPU without a GPU is much slower: a 4B model on 4 cores took
   5 to 10 minutes for one turn in our tests. Raise **Answer time limit** (for example to
-  `15m`) and **Investigation time limit** (for example to `45m`) in **Settings → AI
-  assistant**, or `request_timeout` and `investigate_timeout` in `signalith.yaml`. When a
+  `15m`) and **Investigation time limit** (for example to `45m`) in **Settings → Server →
+  AI assistant**, or `request_timeout` and `investigate_timeout` in `signalith.yaml`. When a
   limit runs out, the dialog says which one.
 - The model can be wrong. Treat the verdict as a lead: the evidence lists the searches it
   came from, so you can check each one.
