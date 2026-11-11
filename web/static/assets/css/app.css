@@ -3724,6 +3724,11 @@ body:has(.page.active .inspector:not([hidden], .hidden)) #toast { bottom: 88px; 
 #page-users .u-mfa { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px 1px 6px; border-radius: var(--r-full); font-size: var(--fs-xs); font-weight: 600; color: var(--success); background: var(--success-soft); white-space: nowrap; }
 #page-users .u-mfa .icon { width: 13px; height: 13px; }
 .u-mfa-dialog { width: min(480px, calc(100vw - 32px)); }
+/* Signed-in sessions: up to 50 rows scroll inside the body, so the
+   buttons below stay in view */
+dialog.modal.u-sessions-dialog { max-height: calc(100dvh - 32px); display: none; flex-direction: column; }
+dialog.modal.u-sessions-dialog[open] { display: flex; }
+.u-sessions-dialog .modal__body { min-height: 0; overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
 #u-recheck { width: min(440px, calc(100vw - 32px)); }
 #u-recheck .field[hidden] { display: none; }
 .u-recheck__swap { margin: 0; font-size: var(--fs-sm); }

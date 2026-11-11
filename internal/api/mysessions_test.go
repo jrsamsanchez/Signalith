@@ -153,3 +153,34 @@ func TestKeepSignedInCanBeTurnedOff(t *testing.T) {
 		t.Errorf("the box is shown: %s", page)
 	}
 }
+
+// A session kept signed in before auth.keep_signed_in was turned off is
+// renewed by a password change (shared users) without a lasting cookie.
+func TestRenewedSessionFollowsKeepSignedIn(t *testing.T) {
+	c := newMemberCluster(t, nil)
+	code, _, resp := c.a.call("POST", "/api/login", `{"username":"admin","password":"s3cret-pass","remember":true}`, nil, nil)
+	var kept *http.Cookie
+	for _, ck := range resp.Cookies() {
+		if ck.Name == sessionCookie && ck.Value != "" {
+			kept = ck
+		}
+	}
+	if code != http.StatusOK || kept == nil || kept.MaxAge == 0 {
+		t.Fatalf("sign in kept signed in: %d %+v", code, kept)
+	}
+	off := false
+	c.a.srv.Config.Auth.KeepSignedIn = &off
+	code, out, resp := c.a.call("POST", "/api/me/password", `{"current_password":"s3cret-pass","new_password":"another-boss-pass"}`, kept, nil)
+	if code != http.StatusOK {
+		t.Fatalf("change: %d %v", code, out)
+	}
+	var fresh *http.Cookie
+	for _, ck := range resp.Cookies() {
+		if ck.Name == sessionCookie && ck.Value != "" {
+			fresh = ck
+		}
+	}
+	if fresh == nil || fresh.MaxAge != 0 {
+		t.Errorf("renewed cookie = %+v, want a session cookie", fresh)
+	}
+}

@@ -1365,7 +1365,7 @@
 
   async function openSessions() {
     const d = modalDialog('u-sessions-dialog');
-    d.classList.add('u-dialog', 'u-mfa-dialog');
+    d.classList.add('u-dialog', 'u-mfa-dialog', 'u-sessions-dialog');
     const close = () => d.close();
     const desc = 'Browsers signed in as you. End any you don’t recognize, then change your password.';
     if (!d.open) {

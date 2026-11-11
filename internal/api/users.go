@@ -194,7 +194,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			s.Log.Warn("password changed, but no new session could be started; sign in again with the new password", "user", p.Username, "err", err)
 		} else {
-			s.setSessionCookie(w, r, token, p.remember)
+			s.setSessionCookie(w, r, token, p.remember && s.conf().KeepSignedInOn())
 			s.sessions().Delete(r.Context(), p.token)
 			keep = token
 		}
