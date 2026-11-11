@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -134,7 +135,8 @@ func (r *Registry) checkHost(secret string) (Identity, Result) {
 	d := snap.keys[h[:12]]
 	if d == nil {
 		// Another server may have made it since this one last read the
-		// keys: read them again, at most once every missReload.
+		// keys: look whether anything changed since, and read them again
+		// if so.
 		var res Result
 		if snap, res = r.reloadForMiss(); res != Valid {
 			return Identity{}, res
@@ -155,36 +157,45 @@ func (r *Registry) checkHost(secret string) (Identity, Result) {
 	return id, Valid
 }
 
-// missReload is how long after a read Check reads the keys again for one
-// it does not know. Run reads them within a few seconds of any change
-// anyway; this covers a key made on another server since.
-var missReload = 2 * time.Second
+// missCheck is the least time between two looks at the watched document
+// for keys this server does not know. Anyone can send a key that looks
+// right, so this, and one look at a time, bound what they cost
+// OpenSearch; Run looks every few seconds anyway.
+var missCheck = 500 * time.Millisecond
 
-// reloadForMiss reads the tokens again for a key Check does not know,
-// unless they were read within missReload. While another Check reads
-// them it answers NotLoaded (try again), so a burst of unknown keys
-// costs one read. Valid means the snapshot returned is current.
+// reloadForMiss is for a key Check does not know.
+// It reads the version of the watched document, which every new key
+// rewrites, and reads the keys again only when it changed since the last
+// full read: a key made on another server is found, and random keys cost
+// one small request. Valid means the snapshot returned holds every key
+// made before this call, so a key not in it is unknown. Otherwise it answers
+// NotLoaded (try again): while another Check looks, within missCheck of
+// the last look, or when OpenSearch does not answer. A key is never
+// called unknown without a look that began after it was sent, so one
+// made a moment ago on another server is not refused for good.
 func (r *Registry) reloadForMiss() (*snapshot, Result) {
-	recent := func() bool {
-		last := max(r.loadedAt.Load(), r.missTry.Load())
-		return time.Since(time.Unix(0, last)) < missReload
-	}
-	if r.Client == nil || recent() {
+	if r.Client == nil {
 		return r.current(), Valid
 	}
 	if !r.missMu.TryLock() {
 		return nil, NotLoaded
 	}
 	defer r.missMu.Unlock()
-	if !recent() {
-		// Counted before the read, so an OpenSearch that does not answer
-		// is asked at most once every missReload.
-		r.missTry.Store(time.Now().UnixNano())
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		err := r.Load(ctx)
-		cancel()
-		if err != nil {
-			// OpenSearch did not answer: the key may be one made since.
+	if time.Since(r.missAt) < missCheck {
+		return nil, NotLoaded
+	}
+	// Counted before the look, so an OpenSearch that does not answer is
+	// asked at most once every missCheck.
+	r.missAt = time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	w, err := r.readWatch(ctx)
+	if err != nil {
+		return nil, NotLoaded
+	}
+	if r.watchChanged(w) {
+		if err := r.loadSince(ctx, w); err != nil {
+			// The key may be one made since.
 			return nil, NotLoaded
 		}
 	}
@@ -206,6 +217,18 @@ func errHostEnrolled(host string) *Error {
 func errHostRevoked(host string) *Error {
 	return &Error{Status: http.StatusConflict, Code: CodeHostRevoked,
 		Msg: fmt.Sprintf("The key of the computer called %s was revoked. An admin can release the name on the Agents page (or signalith tokens hosts release %s) to let it enroll again.", host, host)}
+}
+
+// warnHosts logs, at most once an hour, that n computers have keys,
+// which is near MaxHosts.
+func (r *Registry) warnHosts(n int) {
+	r.logMu.Lock()
+	defer r.logMu.Unlock()
+	if r.Log == nil || time.Since(r.lastFull) < time.Hour {
+		return
+	}
+	r.lastFull = time.Now()
+	r.Log.Warn("almost every computer key is taken: at 20,000, revoked ones included, new computers get none and keep sending with their line's token. Release the names you no longer use, or revoke a line that leaked", "hosts", n, "max", MaxHosts)
 }
 
 func errHostNotFound() *Error {
@@ -251,6 +274,8 @@ func (r *Registry) Enroll(ctx context.Context, lineID, host, addr, old string) (
 		}
 	} else if len(snap.hosts) >= MaxHosts {
 		return HostKey{}, "", errTooManyHosts()
+	} else if len(snap.hosts) >= MaxHosts*8/10 {
+		r.warnHosts(len(snap.hosts))
 	}
 	secret, err := newHostKey()
 	if err != nil {
@@ -410,6 +435,61 @@ func (r *Registry) ReleaseHost(ctx context.Context, host, by string) (HostKey, i
 			return k, n, errStore(err)
 		}
 	}
+}
+
+// dropLineHosts deletes the keys of the computers of the revoked line
+// id, so their names are free and no longer count towards MaxHosts: a
+// line token that leaked cannot keep thousands of names taken after it
+// is revoked. The keys were refused already, with the line. When it
+// fails, it is logged, and revoking the line again deletes what is left.
+func (r *Registry) dropLineHosts(ctx context.Context, id string) {
+	// Read again first, for keys made on other servers a moment ago.
+	if err := r.Load(ctx); err != nil && r.Log != nil {
+		r.Log.Warn("the agent tokens could not be read again before removing a revoked line's computer keys", "token_id", id, "err", err)
+	}
+	var hosts []string
+	for _, h := range r.current().hosts {
+		if h.Line == id {
+			hosts = append(hosts, h.Host)
+		}
+	}
+	if len(hosts) == 0 {
+		return
+	}
+	deleted := true
+	for start := 0; start < len(hosts); start += 1000 {
+		part := hosts[start:min(start+1000, len(hosts))]
+		ids := make([]string, len(part))
+		for i, h := range part {
+			ids[i] = hostDocID(h)
+		}
+		// A key replaced meanwhile (its computer moved to another line)
+		// has a new version, which conflicts=proceed leaves alone.
+		err := r.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(r.index())+"/_delete_by_query?conflicts=proceed&refresh=true", map[string]any{
+			"query": map[string]any{"bool": map[string]any{"filter": []any{
+				map[string]any{"ids": map[string]any{"values": ids}},
+				map[string]any{"term": map[string]any{"kind": kindHost}},
+			}}},
+		}, nil)
+		if err != nil {
+			if r.Log != nil {
+				r.Log.Warn("the computer keys of a revoked agent line could not all be removed; they are refused anyway. Revoke the line again to remove the rest", "token_id", id, "err", err)
+			}
+			deleted = false
+			break
+		}
+	}
+	// What was deleted, and what a failure left, is what OpenSearch says.
+	if err := r.Load(ctx); err != nil && deleted {
+		r.apply(func(s *snapshot) {
+			for _, h := range hosts {
+				if d := s.hosts[hostDocKey(h)]; d != nil && d.Line == id {
+					s.dropHost(h)
+				}
+			}
+		})
+	}
+	r.touch(ctx)
 }
 
 // loadHost reads a host document into s.
