@@ -25,5 +25,9 @@ criteria:
   # read is a get per server), so the limit here is looser. An idle pair
   # measures about 3.
   - {name: os_ops_per_server_per_second, phase: idle, max: 5}
-  - {name: os_ops_per_random_cookie, phase: cookies, baseline: idle, max: 0.01}
+  # The flood's operations, less the idle phase's, per cookie. Servers'
+  # own periodic work is not the same in both phases: it moves this by
+  # about 0.01 (1 to 2 operations a second at 200 cookies a second). A
+  # cookie looked up in OpenSearch would cost 1 or more.
+  - {name: os_ops_per_random_cookie, phase: cookies, baseline: idle, max: 0.05}
   - {name: leaders_at_once, max: 1}
