@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -68,6 +69,21 @@ func (s *Server) routeSAML(api *router) {
 // samlSP is Signalith as the provider knows it: the entity ID is the
 // address of Signalith's metadata, and the assertion consumer service
 // the address responses are posted to, both at the public address.
+// samlAuthnMethods is the attribute in which Microsoft's providers list
+// how the person signed in, multipleauthn among them after a second
+// factor.
+const samlAuthnMethods = "http://schemas.microsoft.com/claims/authnmethodsreferences"
+
+// samlMFAContext is the authentication context a SAML sign-in must show
+// (auth.saml.mfa_context), while auth.mfa_required is everyone; "" for
+// none (AUTH-209).
+func samlMFAContext(c *config.Config) string {
+	if c.MFARequiredMode() != "everyone" {
+		return ""
+	}
+	return strings.TrimSpace(c.Auth.SAML.MFAContext)
+}
+
 func samlSP(c *config.Config) saml.SP {
 	base := strings.TrimRight(c.Server.PublicURL, "/")
 	return saml.SP{EntityID: base + samlMetadataPath, ACSURL: base + samlACSPath}
@@ -241,7 +257,9 @@ func (s *Server) handleSAMLStart(w http.ResponseWriter, r *http.Request) {
 	}
 	s.noteSAMLEntity(c, idp)
 	req := saml.NewRequest(time.Now())
-	target, err := saml.RedirectURL(idp, samlSP(c), req)
+	sp := samlSP(c)
+	sp.AuthnContext = samlMFAContext(c)
+	target, err := saml.RedirectURL(idp, sp, req)
 	if err != nil {
 		s.ssoFail(w, r, "provider", "", err.Error())
 		return
@@ -338,6 +356,11 @@ func (s *Server) handleSAMLACS(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	set := c.SAMLSettings()
+	if want := samlMFAContext(c); want != "" && !slices.Contains(a.AuthnContexts, want) && !slices.Contains(a.Values(samlAuthnMethods), want) {
+		s.ssoFail(w, r, "mfa", oidcText(a.NameID), "the SAML assertion does not name the authentication context "+want+" (it names "+
+			oidcText(strings.Join(a.AuthnContexts, " "))+"); have the identity provider ask Signalith's users for a second factor, or empty Two-step sign-in context")
+		return
+	}
 	u, matched, code, reason := samlIdentityOf(set, idp.EntityID, a)
 	if code != "" {
 		s.ssoFail(w, r, code, oidcText(a.NameID), reason)

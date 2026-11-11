@@ -387,6 +387,33 @@ Okta's username must be what the username claim sends at sign-in (Okta's
 A username cannot change through provisioning: Signalith answers `400` (`mutability`). To
 rename someone, remove them from the app and assign them again.
 
+## Two-step sign-in at the provider
+
+Single sign-on users get their second step from the identity provider, so require it
+there, in the provider's own policy for Signalith's app (conditional access in Entra ID,
+an authentication policy in Okta, a flow with OTP in Keycloak). **Require two-step
+sign-in** (`auth.mfa_required`) asks only people whose password Signalith checks.
+
+With **Require two-step sign-in** set to `everyone`, Signalith can also check that the
+provider did ask. Both checks are off by default; turn one on only once the provider sends
+what it looks for, or nobody gets in with single sign-on:
+
+- **OpenID Connect: Check two-step sign-in** (`auth.oidc.require_mfa: true`). The ID
+  token's `amr` claim must name `mfa`, or two or more ways of signing in (such as `pwd`
+  and `otp`). Entra ID and Okta send `amr`; Keycloak does with its AMR mapper on the
+  client's scope; Google does not, so leave it off with Google. Only the signed ID token
+  counts, not userinfo.
+- **SAML: Two-step sign-in context** (`auth.saml.mfa_context`). Signalith asks for this
+  authentication context class (`RequestedAuthnContext`, exact) and lets in only people
+  whose assertion names it, as its `AuthnContextClassRef` or in Microsoft's
+  `http://schemas.microsoft.com/claims/authnmethodsreferences` attribute. For AD FS, use
+  `http://schemas.microsoft.com/claims/multipleauthn`. If the provider refuses the request
+  itself, leave this empty and rely on its own policy.
+
+Someone refused this way sees "Signalith needs you to sign in with two steps at your
+identity provider", and the server log names what the provider sent. Upgrade every server
+before turning a check on: a server from before this release does not check.
+
 ## Several servers
 
 Servers that share one OpenSearch share the single sign-on settings, and the users, like
@@ -425,6 +452,7 @@ auth:
     allowed_domains: []
     create_users: true
     # scopes, username_claim, groups_claim and button_label default to the provider's
+    # require_mfa: true         with auth.mfa_required: everyone (Two-step sign-in at the provider)
 ```
 
 SAML is under `auth.saml`:
@@ -441,6 +469,7 @@ auth:
     default_role: none
     create_users: true
     # username_attribute, groups_attribute and button_label default to the provider's
+    # mfa_context: http://schemas.microsoft.com/claims/multipleauthn   with auth.mfa_required: everyone
 ```
 
 Provisioning is under `auth.scim`: `enabled: true` and `token_sha256`, the SHA-256 (hex) of
@@ -467,6 +496,7 @@ operating system Signalith runs on.
 | The identity provider did not accept the sign-in | The redirect URI registered at the provider must match exactly, and the person must be assigned to the app. |
 | SAML sign-in needs HTTPS | Open Signalith at its `https://` address, and set that address on the **Server** tab. |
 | That sign-in was already used | A SAML response was posted twice, such as with the browser's back button. Start again. |
+| Signalith needs you to sign in with two steps at your identity provider | The provider did not show a second factor: see [Two-step sign-in at the provider](#two-step-sign-in-at-the-provider). |
 
 With SAML, the server log says why a response was refused: often an entity ID or ACS URL
 at the provider that differs from Signalith's, a clock more than 3 minutes off, or a

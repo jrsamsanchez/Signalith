@@ -527,6 +527,16 @@ func (c Claims) Strings(name string) []string {
 // Has reports whether a claim is there.
 func (c Claims) Has(name string) bool { return c.lookup(name) != nil }
 
+// MFA reports whether the amr claim (RFC 8176) shows a second factor: it
+// names mfa, or two or more ways of signing in, such as pwd and otp.
+func (c Claims) MFA() bool {
+	seen := map[string]bool{}
+	for _, m := range c.Strings("amr") {
+		seen[strings.ToLower(m)] = true
+	}
+	return seen["mfa"] || len(seen) >= 2
+}
+
 func (c Claims) lookup(name string) any {
 	if name == "" {
 		return nil

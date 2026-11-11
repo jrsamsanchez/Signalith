@@ -528,3 +528,63 @@ func TestSSONextCheckedAtCallback(t *testing.T) {
 		t.Errorf("landing = %s", body)
 	}
 }
+
+// With two-step sign-in required of everyone and Check two-step sign-in
+// on, only an ID token whose amr shows a second factor lets someone in
+// (AUTH-209).
+func TestSSORequiresSecondFactorFromProvider(t *testing.T) {
+	p := oidctest.New(t)
+	base := map[string]any{"preferred_username": "dana", "email": "dana@corp.example.com", "email_verified": true, "groups": []any{"/soc"}}
+	for _, tc := range []struct {
+		name     string
+		mode     string
+		check    bool
+		claims   map[string]any
+		userinfo map[string]any
+		want     string // sso_error, or "" for signed in
+	}{
+		{name: "no amr", mode: "everyone", check: true, want: "mfa"},
+		{name: "password only", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd"}}, want: "mfa"},
+		{name: "mfa", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd", "mfa"}}},
+		{name: "password and code", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd", "otp"}}},
+		// Only the signed ID token counts, not what userinfo adds.
+		{name: "amr from userinfo only", mode: "everyone", check: true, claims: map[string]any{"groups": nil},
+			userinfo: map[string]any{"groups": []any{"/soc"}, "amr": []any{"mfa"}}, want: "mfa"},
+		{name: "check off", mode: "everyone", check: false},
+		{name: "admins only", mode: "admins", check: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, s := newSSOServer(t, p, func(o *config.OIDC) { o.RequireMFA = tc.check })
+			s.Config.Auth.MFARequired = tc.mode
+			p.Set(func(p *oidctest.Provider) {
+				p.Claims = map[string]any{}
+				for k, v := range base {
+					p.Claims[k] = v
+				}
+				for k, v := range tc.claims {
+					if v == nil {
+						delete(p.Claims, k)
+					} else {
+						p.Claims[k] = v
+					}
+				}
+				p.UserInfo = tc.userinfo
+				if p.UserInfo == nil {
+					p.UserInfo = map[string]any{}
+				}
+			})
+			b := browser(t, p)
+			at, _ := ssoSignIn(t, b, ts, "")
+			code, _ := me(t, b, ts)
+			if tc.want != "" {
+				if at.Path != "/login" || at.Query().Get("sso_error") != tc.want || code != 401 {
+					t.Fatalf("ended at %s (me %d), want sso_error=%s", at, code, tc.want)
+				}
+				return
+			}
+			if code != 200 {
+				t.Fatalf("not signed in: ended at %s, me %d", at, code)
+			}
+		})
+	}
+}

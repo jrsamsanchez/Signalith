@@ -29,6 +29,10 @@ type Assertion struct {
 	Expires time.Time
 	// Attributes are the values of each attribute, by its Name.
 	Attributes map[string][]string
+	// AuthnContexts are the authentication context classes of its
+	// authentication statements (AuthnContextClassRef): how the person
+	// signed in.
+	AuthnContexts []string
 }
 
 // Values returns the values of the attribute with exactly this Name. A
@@ -448,6 +452,13 @@ func readAssertion(a *etree.Element, idp *IdP, sp SP, requestID string, now time
 			return nil, err
 		} else if !t.IsZero() && !now.Before(t) {
 			return nil, errors.New("the session at the identity provider has ended")
+		}
+		for _, ac := range children(s, nsAssertion, "AuthnContext") {
+			for _, ref := range children(ac, nsAssertion, "AuthnContextClassRef") {
+				if v := strings.TrimSpace(ref.Text()); v != "" && len(v) <= maxValueLen && len(out.AuthnContexts) < maxValues {
+					out.AuthnContexts = append(out.AuthnContexts, v)
+				}
+			}
 		}
 	}
 
