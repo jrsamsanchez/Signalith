@@ -105,6 +105,9 @@ const (
 	// maxArrivals is the most arrival events one hour raises, so they
 	// never take most of MaxRaisedPerHour from new countries.
 	maxArrivals = 10
+	// maxFleetFirsts is the most programs one hour raises as new to
+	// several hosts at once (see rareProcess).
+	maxFleetFirsts = 10
 )
 
 // Engine learns the baselines and raises their risk.
@@ -536,6 +539,10 @@ type hourRun struct {
 	// events this hour.
 	countryNew map[string]bool
 	arrivals   int
+	// fleetNew holds the programs no host had run before this hour, and
+	// fleetRaised those that added risk as new to many hosts at once.
+	fleetNew    map[string]bool
+	fleetRaised map[string]bool
 }
 
 // A unit is the checks that learn from the same searches. A unit learns
@@ -946,6 +953,18 @@ func (r *hourRun) learn(ctx context.Context, check string, all map[string]*seen,
 	return nil
 }
 
+// remembers is how many days back a check knows what was seen: since the
+// history it first learned, up to Forget after. A first-seen message says
+// "first in the last N days", as anything older is forgotten.
+func (r *hourRun) remembers(check string) int {
+	cs := r.state(check)
+	known := r.set.Forget()
+	if !cs.Started.IsZero() {
+		known = min(known, r.start.Sub(cs.Started.Add(-r.e.back(r.set))))
+	}
+	return max(int(known.Hours()/24), 1)
+}
+
 // arrival is the risk of a user with no sign-in from the internet on
 // record, or none for dormantAfter, signing in from the internet: how a
 // new or long-unused account is taken over, which the learning period
@@ -1175,7 +1194,7 @@ func (r *hourRun) networks(ctx context.Context, db *IPDB, rows []search.Row) err
 					for k, v := range sv.extra {
 						f[k] = v
 					}
-					msg := fmt.Sprintf("First sign-in from %s for %s, from %s", CountryName(c), s.name, sv.extra["src"])
+					msg := fmt.Sprintf("First sign-in from %s for %s in the last %d days, from %s", CountryName(c), s.name, r.remembers(NewCountry), sv.extra["src"])
 					out = append(out, r.event(NewCountry, "user", s.name, c, msg, sv.first, f))
 					r.countryNew[key] = true
 				}
@@ -1213,7 +1232,7 @@ func (r *hourRun) networks(ctx context.Context, db *IPDB, rows []search.Row) err
 					if n, _ := sv.extra["src_asn_name"].(string); n != "" {
 						name += " (" + n + ")"
 					}
-					msg := fmt.Sprintf("First sign-in from network %s for %s, from %s", name, s.name, sv.extra["src"])
+					msg := fmt.Sprintf("First sign-in from network %s for %s in the last %d days, from %s", name, s.name, r.remembers(NewNetwork), sv.extra["src"])
 					out = append(out, r.event(NewNetwork, "user", s.name, as, msg, sv.first, f))
 				}
 			}
@@ -1268,7 +1287,9 @@ func (r *hourRun) processes(ctx context.Context) error {
 		}
 	}
 	prevalence := map[string]int{}
+	r.fleetNew, r.fleetRaised = map[string]bool{}, map[string]bool{}
 	err = r.learn(ctx, prevalenceCheck, procs, func(p *Profile, key string, s *seen) []detect.RiskEvent {
+		r.fleetNew[key] = len(p.Values) == 0 && !p.Many
 		for _, h := range sortedValues(s) {
 			if p.has(h) {
 				p.see(h, r.start)
@@ -1298,6 +1319,17 @@ func (r *hourRun) processes(ctx context.Context) error {
 				continue
 			}
 			n, known := prevalence[proc]
+			if known && n > rare && r.fleetNew[proc] {
+				// More hosts than a rare program's ran it for the first
+				// time within one hour: a roll-out, or a tool pushed to
+				// many hosts at once. One low-risk event for the program,
+				// not one per host; an exception keeps planned roll-outs
+				// quiet.
+				if ev, ok := r.fleetFirst(proc, n, s.name, s.values[proc]); ok {
+					out = append(out, ev)
+				}
+				continue
+			}
 			if !known || n > rare {
 				continue
 			}
@@ -1307,12 +1339,30 @@ func (r *hourRun) processes(ctx context.Context) error {
 			if n != 1 {
 				hostsWord = "hosts"
 			}
-			msg := fmt.Sprintf("First run of %s on %s, a program %d %s ever ran", name, s.name, n, hostsWord)
+			days := r.remembers(RareProcess)
+			msg := fmt.Sprintf("First run of %s on %s in the last %d days, a program %d %s ran in that time", name, s.name, days, n, hostsWord)
 			out = append(out, r.event(RareProcess, "system", s.name, proc, msg, sv.first,
 				map[string]any{"dest": s.name, "process_name": name, "baseline_hosts": n}))
 		}
 		return out
 	})
+}
+
+// fleetFirst is the event of a program that more than RareHosts hosts ran
+// for the first time in the same hour: once per program, at a quarter of
+// the check's risk, to the program itself, at most maxFleetFirsts an hour.
+func (r *hourRun) fleetFirst(proc string, hosts int, host string, sv *seenValue) (detect.RiskEvent, bool) {
+	if r.fleetRaised[proc] || len(r.fleetRaised) >= maxFleetFirsts {
+		return detect.RiskEvent{}, false
+	}
+	r.fleetRaised[proc] = true
+	name := strings.TrimSpace(str(sv.row["process_name"]))
+	msg := fmt.Sprintf("First run of %s on %d hosts within one hour (%s among them), a program no host ran in the last %d days", name, hosts, host, r.remembers(RareProcess))
+	ev := r.event(RareProcess, "other", name, proc, msg, sv.first,
+		map[string]any{"dest": host, "process_name": name, "baseline_hosts": hosts, "baseline_reason": "many_hosts"})
+	ev.BaseScore = max(ev.BaseScore/4, 1)
+	ev.Score = max(math.Round(ev.Score*2.5)/10, 1)
+	return ev, true
 }
 
 // ---------- changes ----------
@@ -1347,7 +1397,7 @@ func (r *hourRun) changes(ctx context.Context) error {
 				for k, x := range sv.extra {
 					f[k] = x
 				}
-				msg := fmt.Sprintf("First time %s made this kind of change: %s", s.name, v)
+				msg := fmt.Sprintf("First time %s made this kind of change in the last %d days: %s", s.name, r.remembers(NewChange), v)
 				out = append(out, r.event(NewChange, "user", s.name, v, msg, sv.first, f))
 			}
 		}
@@ -1384,21 +1434,40 @@ func (r *hourRun) volume(ctx context.Context) error {
 		u := p.usual(r.start)
 		// Unusual for the host, and for this hour of the day: a backup
 		// that runs every night is not.
-		spike := r.canRaise(p) && p.Span >= minVolumeHours && u.HourN >= minHourDays && s.bytes >= minBytes &&
+		unusual := r.canRaise(p) && p.Span >= minVolumeHours && u.HourN >= minHourDays && s.bytes >= minBytes &&
 			s.bytes >= volumeFactor*u.Mean && s.bytes >= u.Mean+volumeSigmas*u.SD && s.bytes >= u.HourLimit
+		spike := unusual && s.bytes >= u.Early
+		// An hour held back as the next hour's job running early adds
+		// risk now if that job runs at its own hour as well.
+		var out []detect.RiskEvent
+		if held := p.Held; held != nil && held.At.Equal(r.start.Add(-time.Hour)) && r.canRaise(p) && u.HourMean > 0 && s.bytes >= u.HourMean/2 {
+			hr := held.At.Hour()
+			msg := fmt.Sprintf("%s sent %s between %02d:00 and %02d:00 UTC, %s its usual %s for that hour, and then its usual %s between %02d:00 and %02d:00 as well",
+				s.name, size(held.Bytes), hr, (hr+1)%24, timesOf(held.Bytes, held.Usual), size(held.Usual), size(s.bytes), (hr+1)%24, (hr+2)%24)
+			out = append(out, r.event(DataVolume, "system", s.name, size(held.Bytes), msg, held.At,
+				map[string]any{"src": s.name, "bytes_out": int64(held.Bytes), "baseline_usual_bytes": int64(held.Usual)}))
+		}
+		p.Held = nil
+		if unusual && !spike {
+			p.Held = &HeldHour{At: r.start, Bytes: s.bytes, Usual: u.HourMean}
+		}
 		p.addVolume(s.bytes, r.start)
 		if !spike {
-			return nil
-		}
-		times := "far more than"
-		if u.HourMean > 0 {
-			times = fmt.Sprintf("about %s times", strconv.FormatFloat(math.Round(s.bytes/u.HourMean), 'f', -1, 64))
+			return out
 		}
 		hr := r.start.Hour()
-		msg := fmt.Sprintf("%s sent %s between %02d:00 and %02d:00 UTC, %s its usual %s for that hour", s.name, size(s.bytes), hr, (hr+1)%24, times, size(u.HourMean))
-		return []detect.RiskEvent{r.event(DataVolume, "system", s.name, size(s.bytes), msg, s.first,
-			map[string]any{"src": s.name, "bytes_out": int64(s.bytes), "baseline_usual_bytes": int64(u.HourMean)})}
+		msg := fmt.Sprintf("%s sent %s between %02d:00 and %02d:00 UTC, %s its usual %s for that hour", s.name, size(s.bytes), hr, (hr+1)%24, timesOf(s.bytes, u.HourMean), size(u.HourMean))
+		return append(out, r.event(DataVolume, "system", s.name, size(s.bytes), msg, s.first,
+			map[string]any{"src": s.name, "bytes_out": int64(s.bytes), "baseline_usual_bytes": int64(u.HourMean)}))
 	})
+}
+
+// timesOf words how many times its usual amount an hour sent.
+func timesOf(bytes, usual float64) string {
+	if usual > 0 {
+		return fmt.Sprintf("about %s times", strconv.FormatFloat(math.Round(bytes/usual), 'f', -1, 64))
+	}
+	return "far more than"
 }
 
 // size words a number of bytes.

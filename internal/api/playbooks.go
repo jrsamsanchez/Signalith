@@ -184,7 +184,7 @@ func (s *Server) handlePlaybooksSave(w http.ResponseWriter, r *http.Request) {
 			on++
 		}
 	}
-	s.Log.Info("playbooks changed", "audit", true, "by", userOf(r), "playbooks", len(list), "on", on)
+	s.audit(r, "playbook.change: playbooks changed", "playbooks", len(list), "on", on)
 	writeJSON(w, http.StatusOK, s.playbooksView(r, list, nil))
 }
 
@@ -261,11 +261,11 @@ func (s *Server) decidePlaybookRun(w http.ResponseWriter, r *http.Request, appro
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	verb := "rejected"
+	action, verb := "playbook.reject", "rejected"
 	if approve {
-		verb = "approved"
+		action, verb = "playbook.approve", "approved"
 	}
-	s.Log.Info("playbook step "+verb, "audit", true, "by", user, "playbook", run.PlaybookName, "run", run.ID,
+	s.audit(r, action+": playbook step "+verb, "target", run.ID, "playbook", run.PlaybookName,
 		"finding", run.FindingID, "what", run.Approval.What)
 	writeJSON(w, http.StatusOK, run)
 }
