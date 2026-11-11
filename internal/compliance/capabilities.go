@@ -471,7 +471,7 @@ func detectCap(id, name, desc string, match func(Detection) bool) Capability {
 // control's evidence.
 func detectionStatus(s *Snapshot, matched []Detection, c *controlCtx) (Status, string) {
 	seen := map[string]bool{}
-	var on, withData, off int
+	var on, withData, off, runKnown, ranOK int
 	for _, d := range matched {
 		if seen[d.ID] {
 			continue
@@ -484,6 +484,12 @@ func detectionStatus(s *Snapshot, matched []Detection, c *controlCtx) (Status, s
 		on++
 		if detectionHasData(s, d) {
 			withData++
+		}
+		if d.RunKnown {
+			runKnown++
+			if !d.LastFailed && !d.LastRun.IsZero() && s.Now.Sub(d.LastRun) <= DataWindow {
+				ranOK++
+			}
 		}
 		if c != nil {
 			c.dets = append(c.dets, d)
@@ -502,8 +508,17 @@ func detectionStatus(s *Snapshot, matched []Detection, c *controlCtx) (Status, s
 		return Partial, fmt.Sprintf("%s %s on, but scheduled detections are turned off on this server.", count(int64(on)), plural(on, "detection is", "detections are"))
 	case withData == 0:
 		return Partial, fmt.Sprintf("%s %s on, but none of the data %s arrives.%s", count(int64(on)), plural(on, "detection is", "detections are"), plural(on, "it reads", "they read"), more)
+	case runKnown > 0 && ranOK == 0:
+		return Partial, fmt.Sprintf("%s %s on, %s with data arriving, but none ran successfully in the last %d days: see each one's last run on the Detections page.%s",
+			count(int64(on)), plural(on, "detection is", "detections are"), count(int64(withData)), int(DataWindow.Hours()/24), more)
+	case runKnown == 0:
+		// Without the scheduler's run state a run cannot be told from
+		// none: say so rather than claim more than is known.
+		return Met, fmt.Sprintf("%s %s on, %s with data arriving; whether %s ran could not be read.%s", count(int64(on)), plural(on, "detection is", "detections are"),
+			count(int64(withData)), plural(on, "it", "they"), more)
 	}
-	return Met, fmt.Sprintf("%s %s on, %s with data arriving.%s", count(int64(on)), plural(on, "detection is", "detections are"), count(int64(withData)), more)
+	return Met, fmt.Sprintf("%s %s on, %s with data arriving, %s ran successfully in the last %d days.%s", count(int64(on)), plural(on, "detection is", "detections are"),
+		count(int64(withData)), count(int64(ranOK)), int(DataWindow.Hours()/24), more)
 }
 
 func detectionHasData(s *Snapshot, d Detection) bool {

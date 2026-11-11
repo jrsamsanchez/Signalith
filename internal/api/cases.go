@@ -133,6 +133,39 @@ func (s *Server) writeModifyError(w http.ResponseWriter, err error) {
 	writeCaseError(w, err)
 }
 
+// errUnknownOwner is an owner that names no user Signalith knows.
+type errUnknownOwner string
+
+func (e errUnknownOwner) Error() string {
+	return fmt.Sprintf("no user is named %q: assign a user who can sign in to Signalith, or leave the owner empty", string(e))
+}
+
+// ownerFor checks the owner someone gives a finding, case or task and
+// returns it spelt as the user's name is: empty (unassigned), the one
+// assigning, the built-in admin, or a user Signalith knows (local, or
+// a directory or single sign-on user seen at sign-in), ignoring case. An
+// owner the item already has is kept as it is, so an item assigned before
+// owners were checked can still be saved.
+func (s *Server) ownerFor(owner, current, self string) (string, error) {
+	o := strings.TrimSpace(owner)
+	switch {
+	case o == "":
+		return "", nil
+	case current != "" && strings.EqualFold(o, strings.TrimSpace(current)):
+		return current, nil
+	case self != "" && strings.EqualFold(o, self):
+		return self, nil
+	case s.isBuiltin(o):
+		return s.builtinName(), nil
+	}
+	if st := s.userStore(); st != nil {
+		if u, ok := st.Get(o); ok {
+			return u.Username, nil
+		}
+	}
+	return "", errUnknownOwner(o)
+}
+
 func (s *Server) handleListCases(w http.ResponseWriter, r *http.Request) {
 	if !s.casesReady(w) {
 		return
@@ -236,6 +269,11 @@ func (s *Server) handleCreateCase(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	user := userOf(r)
+	owner, err := s.ownerFor(owner, "", user)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 	c := &cases.Case{
 		ID: cases.NewID(now), Title: title, Description: strings.TrimSpace(desc), Severity: sev,
 		Status: findings.StatusNew, Owner: strings.TrimSpace(owner), CreatedBy: user, Created: now, Updated: now,
@@ -372,8 +410,16 @@ func (s *Server) handleUpdateCase(w http.ResponseWriter, r *http.Request) {
 		if req.CloseFindings && findings.IsOpen(status) {
 			return false, badRequest{errors.New("set the case to resolved or closed to close its findings")}
 		}
+		u := req.Update
+		if u.Owner != nil {
+			o, err := s.ownerFor(*u.Owner, c.Owner, user)
+			if err != nil {
+				return false, badRequest{err}
+			}
+			u.Owner = &o
+		}
 		n := len(c.History)
-		changed := c.Apply(req.Update, user, time.Now().UTC())
+		changed := c.Apply(u, user, time.Now().UTC())
 		changes = slices.Clone(c.History[n:])
 		return changed, nil
 	})

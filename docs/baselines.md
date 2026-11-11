@@ -28,7 +28,7 @@ Open them at **Settings > Behavior baselines** (admins). They are on by default.
 | Sign-in from a new country | user | Authentication | a successful sign-in comes from a country none of the user's sign-ins came from before; or, at half the risk, from a user with no sign-in from the internet on record (a new or long-unused account) or none for 30 days | 40 |
 | Sign-in from a new network | user | Authentication | it comes from an AS (internet provider or cloud network) the user never signed in from, in a country they did sign in from | 15 |
 | Sign-in at an unusual hour | user | Authentication | it comes at an hour of the day (UTC) with under 2% of the user's activity, once they have been seen in at least 40 different hours | 10 |
-| Rare process on a host | host | Endpoint | a host runs a program it never ran before, which at most 3 hosts ever ran | 20 |
+| Rare process on a host | host | Endpoint | a host runs a program it did not run before, which at most 3 hosts ran, within what the baselines remember (**Forget after**, 90 days); or, at a quarter of the risk, once for the program itself, more hosts than that run a program no host ran before within the same hour (a roll-out, or a tool pushed to many hosts at once; add an exception for planned roll-outs) | 20 |
 | New kind of change by a user | user | Change | a user makes a kind of change they never made before, such as a cloud API call (`CreateAccessKey`) or deleting a group | 15 |
 | Unusual data volume from a host | host | Network_Traffic | a host on your network sends at least 100 MB in an hour, five times its usual hour and four standard deviations above it, and the same for that hour of the day (and the hours either side) on its other days | 30 |
 
@@ -37,7 +37,8 @@ Each risk event has `detection_id` `baseline-<check>` (for example
 new value, such as `BR`, `AS15169`, `03:00 UTC` or `teamviewer.exe`), the fields
 of the activity (`user`, `src`, `src_country`, `src_asn`, `dest`, `process_name`,
 `bytes_out` and so on) and a message such as *First sign-in from Brazil (BR) for
-alice, from 203.0.113.7*. Find them with:
+alice in the last 90 days, from 203.0.113.7*. "First" means first within what the
+check remembers: the history it learned, up to **Forget after**. Find them with:
 
 ```
 datamodel=Risk detection_id=baseline-*
@@ -85,9 +86,13 @@ What the checks leave out:
 - **Data volume by hour of the day.** Besides its usual hour, each host has a usual
   amount for each hour of the day, from one sample a day, and an hour must be
   unusual for both. A backup that sends a gigabyte every night at 02:00, or a sync
-  every Friday afternoon, is normal for that hour. An hour of the day needs 7 days
-  of history before it can be unusual. A job that runs only once a month still
-  stands out each time; add an exception for that host.
+  every Friday afternoon, is normal for that hour. So is the same amount an hour
+  early or late, as a job that ran a little early or late, or across a change of
+  daylight saving time; but not when the job also ran at its own hour that day. An
+  hour that sends that much just before the usual hour adds risk once the job then
+  runs at its usual hour as well, so it shows up an hour later. An hour of the day
+  needs 7 days of history before it can be unusual. A job that runs only once a
+  month still stands out each time; add an exception for that host.
 - **Each hour adds risk once.** A risk event's ID comes from the check, the user or
   host, the value and the hour, so an hour read twice (after a server takeover)
   writes nothing twice.
@@ -110,7 +115,8 @@ was misused, click **Forget it** on the baseline risk event on the Risk page, or
 is learned (within two hours, later while the baselines catch up) the check forgets
 that value for that user or host only, so the next time it is seen it adds
 risk as new; everything else the check learned stays. For **Unusual data volume** it
-forgets how much the host usually sends, and learns it again over the next 3 days.
+forgets how much the host usually sends, and learns it again over the next 7 days (each
+hour of the day needs 7 days of history), so the host's volume adds no risk until then.
 Each request is audited, and the check shows how many wait.
 
 First-seen checks only know what happened within the history they read and what

@@ -142,3 +142,45 @@ func TestListKeepsMonthly(t *testing.T) {
 		t.Errorf("%d monthly of %d", monthly, len(list))
 	}
 }
+
+// A record keeps who attested a control and when, and names the record
+// before it, so deleting or replacing that one shows (SRCH-221).
+func TestRecordsKeepTheAttesterAndChain(t *testing.T) {
+	priv, _, keys := keyring(t)
+	now := time.Now().UTC().Truncate(time.Second)
+	at := now.Add(-48 * time.Hour)
+	rep := &compliance.Report{Generated: now, Frameworks: []compliance.FrameworkReport{{
+		Framework: compliance.Framework{ID: "pci-dss", Name: "PCI DSS"},
+		Controls: []compliance.ControlReport{{Control: compliance.Control{ID: "10.7"}, Status: compliance.External,
+			Attestation: &compliance.Attestation{Note: "SOC tool", By: "ann", At: at}}},
+	}}}
+	r := FromReport(rep, MonthID(now), Monthly, "", "siem-1", "0.3.2", "signalith")
+	if c := r.Frameworks[0].Controls[0]; c.AttestedBy != "ann" || c.AttestedAt == nil || !c.AttestedAt.Equal(at) {
+		t.Errorf("attestation = %+v", c)
+	}
+
+	first, _ := Sign(record(now.Add(-60*24*time.Hour)), priv)
+	unsigned, _ := Sign(&Record{ID: ManualID(now.Add(-time.Hour)), Taken: now.Add(-time.Hour)}, nil)
+	id, sum := Previous([]*Signed{first, unsigned}, keys)
+	if id != first.ID || sum != first.SHA256 {
+		t.Fatalf("previous = %s %s, want the signed record %s", id, sum, first.ID)
+	}
+	r.PrevID, r.PrevSHA256 = id, sum
+	notFound := func(string) (*Signed, error) { return nil, ErrNotFound }
+	if p := BrokenLink(r, map[string]string{first.ID: first.SHA256}, notFound); p != "" {
+		t.Errorf("an intact link is reported: %s", p)
+	}
+	// Not in the list, but still stored: read it.
+	if p := BrokenLink(r, nil, func(string) (*Signed, error) { return first, nil }); p != "" {
+		t.Errorf("a link beyond the list is reported: %s", p)
+	}
+	if p := BrokenLink(r, nil, notFound); p == "" {
+		t.Error("a deleted record before it is not reported")
+	}
+	if p := BrokenLink(r, map[string]string{first.ID: "0000"}, notFound); p == "" {
+		t.Error("a replaced record before it is not reported")
+	}
+	if p := BrokenLink(&Record{}, nil, notFound); p != "" {
+		t.Errorf("a record from before chaining is reported: %s", p)
+	}
+}

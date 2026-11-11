@@ -6,6 +6,7 @@ package baselines
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -190,5 +191,43 @@ func TestArrivalsWaitForData(t *testing.T) {
 	}
 	if len(who) != 1 || who[0] != "carol" {
 		t.Errorf("raised for %v", who)
+	}
+}
+
+// After the usual volume of a host is forgotten, each hour of the day
+// needs minHourDays days again before the host can add risk, and the page
+// and the docs say as much (SRCH-224).
+func TestForgottenVolumeQuietFor(t *testing.T) {
+	at := time.Now().UTC().Truncate(24 * time.Hour).Add(-60 * 24 * time.Hour)
+	p := &Profile{Check: DataVolume}
+	h := at
+	for ; h.Before(at.Add(30 * 24 * time.Hour)); h = h.Add(time.Hour) {
+		p.addVolume(20e6, h)
+		p.Through = h.Add(time.Hour)
+	}
+	if !p.unlearn("") {
+		t.Fatal("nothing was forgotten")
+	}
+	quiet := 0
+	for ; ; h = h.Add(time.Hour) {
+		if u := p.usual(h); p.Span >= minVolumeHours && u.HourN >= minHourDays {
+			break
+		}
+		p.addVolume(20e6, h)
+		p.Through = h.Add(time.Hour)
+		quiet++
+	}
+	if days := (quiet + 23) / 24; days != minHourDays {
+		t.Errorf("quiet for %d days after forgetting, want %d", days, minHourDays)
+	}
+	said := fmt.Sprintf("next %d days", minHourDays)
+	for _, f := range []string{"../../docs/baselines.md", "../../web/static/baselines.js"} {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(strings.Join(strings.Fields(string(b)), " "), said) {
+			t.Errorf("%s does not say the volume adds no risk for the %s", f, said)
+		}
 	}
 }
