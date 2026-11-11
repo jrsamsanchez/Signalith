@@ -528,13 +528,30 @@ func (c Claims) Strings(name string) []string {
 func (c Claims) Has(name string) bool { return c.lookup(name) != nil }
 
 // MFA reports whether the amr claim (RFC 8176) shows a second factor: it
-// names mfa, or two or more ways of signing in, such as pwd and otp.
+// names mfa, or two or more of the factor values in amrFactors, such as
+// otp and hwk. A password with a federation, Windows sign-in or knowledge
+// question (pwd with fed, wia or kba) is not two factors, and neither is a
+// password with a channel some providers list without a second step, so
+// pwd itself does not count.
 func (c Claims) MFA() bool {
 	seen := map[string]bool{}
 	for _, m := range c.Strings("amr") {
-		seen[strings.ToLower(m)] = true
+		m = strings.ToLower(m)
+		if m == "mfa" {
+			return true
+		}
+		if amrFactors[m] {
+			seen[m] = true
+		}
 	}
-	return seen["mfa"] || len(seen) >= 2
+	return len(seen) >= 2
+}
+
+// amrFactors are the RFC 8176 values that count towards two factors.
+var amrFactors = map[string]bool{
+	"otp": true, "hwk": true, "swk": true, "sms": true, "tel": true,
+	"face": true, "fpt": true, "iris": true, "retina": true, "vbm": true,
+	"pop": true, "sc": true, "pin": true, "rsa": true, "user": true, "mca": true,
 }
 
 func (c Claims) lookup(name string) any {

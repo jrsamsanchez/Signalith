@@ -274,9 +274,16 @@ func TestClaimsMFA(t *testing.T) {
 		{[]any{"pwd"}, false},
 		{"mfa", true},
 		{[]any{"pwd", "mfa"}, true},
-		{[]any{"pwd", "otp"}, true},
+		{[]any{"pwd", "otp"}, false},
+		{[]any{"pwd", "otp", "MFA"}, true},
 		{[]any{"hwk", "user"}, true},
+		{[]any{"otp", "sms"}, true},
 		{[]any{"pwd", "PWD"}, false},
+		{[]any{"pwd", "fed"}, false},
+		{[]any{"pwd", "wia"}, false},
+		{[]any{"pwd", "kba"}, false},
+		{[]any{"pwd", "sms"}, false},
+		{[]any{"fed", "wia", "kba"}, false},
 	} {
 		c := oidc.Claims{}
 		if tc.amr != nil {
