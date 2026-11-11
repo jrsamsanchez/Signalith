@@ -234,38 +234,15 @@ admin_get() {
 	curl -s --max-time 20 --cacert "$certs/root-ca.pem" --cert "$certs/admin.pem" --key "$certs/admin-key.pem" \
 		"https://$host:9200$1"
 }
-# snapshot_role answers whether the mapping is kept: 0 yes, 1 no, and 2
-# when OpenSearch gave no answer that says (no answer at all, or an error
-# while its security index cannot be read yet). "Could not ask" is never
-# read as "not mapped": that would drop a mapping an admin made.
-# SIGNALITH_SNAPSHOT_ROLE=off leaves it out without asking.
 snapshot_role() {
-	case ${SIGNALITH_SNAPSHOT_ROLE:-} in
-	on) return 0 ;;
-	off) return 1 ;;
-	esac
-	# No security index yet (a new install): nothing is mapped.
-	[ "$(stored)" = 0 ] && return 1
-	map=$(admin_get /_plugins/_security/api/rolesmapping/signalith_snapshots) || return 2
-	case $map in
+	[ "${SIGNALITH_SNAPSHOT_ROLE:-}" = on ] && return 0
+	case $(admin_get /_plugins/_security/api/rolesmapping/signalith_snapshots) in
 	*'"signalith_snapshots"'*) ;;
-	*NOT_FOUND* | *'not found'*) return 1 ;;
-	*) return 2 ;;
+	*) return 1 ;;
 	esac
-	pol=$(admin_get '/_plugins/_sm/policies?size=1000') || return 2
-	echo "$pol" | grep -Eq '"created_by" *: *"signalith"' && return 0
-	# Any repository but cold storage's (<prefix>-cold), which has its own
-	# role. The list is plain text, one name a line; an error is JSON.
-	repos=$(admin_get '/_cat/repositories?h=id') || return 2
-	case $repos in
-	'{'* | '['*) return 2 ;;
-	esac
-	echo "$repos" | grep -v -- '-cold$' | grep -q . && return 0
-	# No repository, and the policies could not be listed: it cannot tell.
-	case $pol in
-	*'"policies"'* | *index_not_found_exception*) return 1 ;;
-	esac
-	return 2
+	admin_get '/_plugins/_sm/policies?size=1000' | grep -Eq '"created_by" *: *"signalith"' && return 0
+	# Any repository but cold storage's (<prefix>-cold), which has its own role.
+	admin_get '/_cat/repositories?h=id' | grep -v '^[{[]' | grep -v -- '-cold$' | grep -q .
 }
 src=$dir
 dir=/tmp/opensearch-security
@@ -273,53 +250,8 @@ rm -rf "$dir" && mkdir -p "$dir" && cp "$src"/*.yml "$dir"/ || {
 	say "Could not copy the security settings files to $dir."
 	exit 1
 }
-add_snapshot_role() {
+if snapshot_role; then
 	printf '\nsignalith_snapshots:\n  users:\n    - "signalith"\n    - "signalith-server-*"\n' >> "$dir/roles_mapping.yml"
-}
-had=$(cat "$state" 2> /dev/null)
-snapshot_role
-keep=$?
-# OpenSearch may answer its port before it can read its security index:
-# ask again for up to a minute.
-ask_again() {
-	i=0
-	while [ "$keep" = 2 ] && [ "$i" -lt "$1" ] && [ "$(left)" -gt "$2" ]; do
-		sleep 3
-		snapshot_role
-		keep=$?
-		i=$((i + 1))
-	done
-}
-if [ "$keep" = 2 ]; then
-	say "OpenSearch cannot say yet whether the snapshot role (signalith_snapshots) is in use. Asking again..."
-	ask_again 20 0
-fi
-if [ "$keep" = 2 ]; then
-	# It still cannot say: keep the role as the files loaded last had it,
-	# which the fingerprint of that load tells. When that does not tell
-	# either (nothing loaded before, or the files changed), keep asking
-	# for half the time there is, then stop without loading anything.
-	bare=$(fingerprint)
-	add_snapshot_role
-	if [ -n "$had" ] && [ "$had" = "$(fingerprint)" ]; then
-		say "OpenSearch could not say whether the snapshot role (signalith_snapshots) is in use, so it is kept as it was loaded last: mapped."
-	elif [ -n "$had" ] && [ "$had" = "$bare" ]; then
-		cp "$src/roles_mapping.yml" "$dir/roles_mapping.yml" || exit 1
-		say "OpenSearch could not say whether the snapshot role (signalith_snapshots) is in use, so it is kept as it was loaded last: not mapped."
-	else
-		cp "$src/roles_mapping.yml" "$dir/roles_mapping.yml" || exit 1
-		ask_again 1000 $((limit / 2))
-		if [ "$keep" = 2 ]; then
-			say "OpenSearch could not say whether the snapshot role (signalith_snapshots) is mapped to Signalith and in use,"
-			say "and loading the security settings without knowing could take that role away from Signalith. Nothing was changed."
-			say "If it stays so, say which it is in the opensearch-security service's environment: SIGNALITH_SNAPSHOT_ROLE=on"
-			say "(Signalith takes scheduled snapshots) or SIGNALITH_SNAPSHOT_ROLE=off (it does not)."
-			give_up "OpenSearch could not say whether the snapshot role is in use."
-		fi
-	fi
-fi
-if [ "$keep" = 0 ]; then
-	add_snapshot_role
 	say "Signalith keeps the snapshot role (signalith_snapshots) for scheduled snapshots."
 fi
 
@@ -348,6 +280,7 @@ fi
 
 # 3. Nothing to do when its settings are loaded, from these same files.
 want=$(fingerprint)
+had=$(cat "$state" 2> /dev/null)
 if [ "$code" = 200 ] && [ "$want" = "$had" ]; then
 	say "Nothing to do: OpenSearch has its security settings loaded, from these same files."
 	exit 0
