@@ -449,7 +449,7 @@ func (r *Registry) dropLineHosts(ctx context.Context, id string) {
 	}
 	var hosts []string
 	for _, h := range r.current().hosts {
-		if h.Line == id {
+		if h.Line == id && h.State == StateActive {
 			hosts = append(hosts, h.Host)
 		}
 	}
@@ -463,12 +463,16 @@ func (r *Registry) dropLineHosts(ctx context.Context, id string) {
 		for i, h := range part {
 			ids[i] = hostDocID(h)
 		}
-		// A key replaced meanwhile (its computer moved to another line)
-		// has a new version, which conflicts=proceed leaves alone.
+		// Only the line's active keys: a key an admin revoked by itself
+		// keeps its name taken until an admin releases it, and a key
+		// replaced meanwhile (its computer moved to another line) no
+		// longer names this line.
 		err := r.Client.Do(ctx, http.MethodPost, "/"+url.PathEscape(r.index())+"/_delete_by_query?conflicts=proceed&refresh=true", map[string]any{
 			"query": map[string]any{"bool": map[string]any{"filter": []any{
 				map[string]any{"ids": map[string]any{"values": ids}},
 				map[string]any{"term": map[string]any{"kind": kindHost}},
+				map[string]any{"term": map[string]any{"line": id}},
+				map[string]any{"term": map[string]any{"state": StateActive}},
 			}}},
 		}, nil)
 		if err != nil {
@@ -483,7 +487,7 @@ func (r *Registry) dropLineHosts(ctx context.Context, id string) {
 	if err := r.Load(ctx); err != nil && deleted {
 		r.apply(func(s *snapshot) {
 			for _, h := range hosts {
-				if d := s.hosts[hostDocKey(h)]; d != nil && d.Line == id {
+				if d := s.hosts[hostDocKey(h)]; d != nil && d.Line == id && d.State == StateActive {
 					s.dropHost(h)
 				}
 			}

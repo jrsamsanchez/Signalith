@@ -381,3 +381,50 @@ func TestRevokeLineFreesItsNames(t *testing.T) {
 		t.Errorf("hosts %+v", a.Hosts())
 	}
 }
+
+// Revoking a line removes only its active keys: a key an admin revoked by
+// itself keeps its name taken, and a computer that moved to another line
+// keeps its new key.
+func TestRevokeLineKeepsRevokedAndMovedKeys(t *testing.T) {
+	fake := ostest.New(t)
+	ctx := context.Background()
+	a, b := newReg(t, fake.URL, "n1"), newReg(t, fake.URL, "n2")
+	leaked, _, err := a.Create(ctx, "Leaked", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, _, err := a.Create(ctx, "Good", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Enroll(ctx, leaked.ID, "blocked-01", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.RevokeHost(ctx, "blocked-01", "sam"); err != nil {
+		t.Fatal(err)
+	}
+	_, old, err := a.Enroll(ctx, leaked.ID, "moved-01", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The computer moves to the good line on the other server.
+	_, moved, err := b.Enroll(ctx, good.ID, "moved-01", "", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Revoke(ctx, leaked.ID, "sam"); err != nil {
+		t.Fatal(err)
+	}
+	if fake.Source("tt_runtime", hostDocID("blocked-01")) == nil {
+		t.Error("the key an admin revoked by itself was deleted with the line")
+	}
+	if _, _, err := b.Enroll(ctx, good.ID, "blocked-01", "", ""); err == nil {
+		t.Error("the name an admin revoked became free when its line was revoked")
+	}
+	if fake.Source("tt_runtime", hostDocID("moved-01")) == nil {
+		t.Fatal("the key of a computer that moved to another line was deleted")
+	}
+	if _, res := a.Check(moved); res == Unknown {
+		t.Errorf("the moved computer's new key: %v", res)
+	}
+}
