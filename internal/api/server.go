@@ -343,6 +343,7 @@ type Server struct {
 	samlEntity           atomic.Value // the SAML provider's entity ID, from its metadata
 	samlLoading          atomic.Bool  // whether its metadata is being read for samlIssuerOK
 	scimRefused          scimRefusals // when a refused SCIM token was last logged, by address
+	ssoRefused           ssoRefusals  // failed single sign-ons that name no user, to limit their audit records
 	creds                credCache    // recently checked Basic credentials
 	passkeyChallenges    challengeSet // passkey challenges answered on this server
 	routes               []route      // every API route and its role, from Handler

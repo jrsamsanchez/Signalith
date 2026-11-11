@@ -1815,7 +1815,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Assets:            lists,
 		Intel:             indicators,
 		Feeds:             feeds,
-		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer, AuditFrom: r.auditFromFunc()},
+		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer, AuditFrom: r.auditFromFunc(), AuditWarning: dispatcher.AuditWarning},
 		Dashboards:        boards,
 		Cases:             cstore,
 		CaseFiles:         cfiles,

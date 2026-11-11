@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -67,7 +68,10 @@ func field(ev audit.Event, k string) string { return ev.Fields[k] }
 
 // The failed sign-in messages of the sign-in page, single sign-on, the
 // two-step code, passkeys and password changes.
-var failedSignIns = []string{"sign-in failed", "single sign-on failed", "two-step code refused", "passkey refused", "password change refused"}
+var failedSignIns = []string{"sign-in failed", ssoFailed, "two-step code refused", "passkey refused", "password change refused"}
+
+// ssoFailed is the record of a failed single sign-on.
+const ssoFailed = "single sign-on failed"
 
 // typedName reports whether an audit record's user is a name someone
 // typed to sign in, which may be anything, a password typed in the wrong
@@ -258,10 +262,15 @@ func (a AuditIndex) AuditRecords(ctx context.Context, m audit.Match, limit int) 
 // AuditTap keeps, in memory, the audit records this server logs that an
 // audit alert may be about, for a server whose audit records are kept
 // only in its log (audit.Sink.SetTap hands them over). It keeps at most
-// TapSize of them, for at most CatchUp.
+// TapSize of them, for at most CatchUp. When there are more it lets go
+// of the least urgent first, so a burst of records of little weight
+// (failed sign-ins, say) never pushes out one an urgent alert is about.
 type AuditTap struct {
 	mu   sync.Mutex
 	list []AuditRecord
+	// rank is, for each record of list, the urgency of the most urgent
+	// alert that matches it.
+	rank []int
 	// dropped counts records let go because there were too many.
 	dropped int64
 }
@@ -271,7 +280,13 @@ const TapSize = 5000
 
 // Add keeps ev when an audit alert may be about it. It returns at once.
 func (t *AuditTap) Add(ev audit.Event) {
-	if !slices.ContainsFunc(AuditAlerts, func(a AuditAlert) bool { return a.Matches(ev) }) {
+	rank := -1
+	for _, a := range AuditAlerts {
+		if a.Matches(ev) {
+			rank = max(rank, urgencyRank(a.Urgency))
+		}
+	}
+	if rank < 0 {
 		return
 	}
 	if ev.Time.IsZero() {
@@ -285,14 +300,21 @@ func (t *AuditTap) Add(ev audit.Event) {
 	for cut < len(t.list) && t.list[cut].Event.Time.Before(old) {
 		cut++
 	}
-	if len(t.list)-cut >= TapSize {
-		t.dropped += int64(len(t.list) - cut - TapSize + 1)
-		cut = len(t.list) - TapSize + 1
-	}
 	if cut > 0 {
-		t.list = slices.Delete(t.list, 0, cut)
+		t.list, t.rank = slices.Delete(t.list, 0, cut), slices.Delete(t.rank, 0, cut)
 	}
-	t.list = append(t.list, rec)
+	if len(t.list) >= TapSize {
+		// Full: the oldest of the least urgent goes, or this record when
+		// everything kept is more urgent than it.
+		t.dropped++
+		least := slices.Min(t.rank)
+		if rank < least {
+			return
+		}
+		i := slices.Index(t.rank, least)
+		t.list, t.rank = slices.Delete(t.list, i, i+1), slices.Delete(t.rank, i, i+1)
+	}
+	t.list, t.rank = append(t.list, rec), append(t.rank, rank)
 }
 
 // Dropped returns how many records were let go because there were more
@@ -309,7 +331,7 @@ func (t *AuditTap) AuditRecords(_ context.Context, m audit.Match, limit int) ([]
 	defer t.mu.Unlock()
 	var out []AuditRecord
 	for _, r := range t.list {
-		if r.Event.Time.Before(m.Since) {
+		if !m.Selects(r.Event) {
 			continue
 		}
 		if len(out) == limit {
@@ -371,6 +393,15 @@ func AuditMessage(a AuditAlert, rec AuditRecord, link string) Message {
 		AuditTarget: clean(ev.Target, maxEntity), AuditServer: clean(ev.Server, 200),
 		AuditTenant: clean(field(ev, "tenant"), 100), AuditReason: clean(field(ev, "reason"), maxEntity),
 	}
+	if ev.Message == ssoFailed {
+		// The reason of a failed single sign-on may quote text the sender
+		// or the identity provider chose, so the message carries only the
+		// sign-in page's code for it; the audit log has the rest.
+		m.AuditReason = ""
+		if code := clean(field(ev, "code"), 40); code != "" {
+			m.AuditReason = "code " + code + " (the audit log says more)"
+		}
+	}
 	if u := clean(ev.User, maxEntity); u != "" {
 		m.Entities = map[string]string{"user": u}
 	}
@@ -383,8 +414,174 @@ func AuditMessage(a AuditAlert, rec AuditRecord, link string) Message {
 	return m
 }
 
-// auditSummaryMessage stands for count audit alerts sent in one message.
-func auditSummaryMessage(count int, link string, now time.Time) Message {
-	return Message{Kind: KindAuditSummary, Title: fmt.Sprintf("And %d more %s", count, plural(count, "audit alert", "audit alerts")),
-		Count: count, Link: link, Created: now.UTC()}
+// auditSummaryMessage stands for the audit alerts in names (an alert's
+// name once for each record) sent in one message. It says how many of
+// each alert there are, so none is hidden behind a count.
+func auditSummaryMessage(names []string, link string, now time.Time) Message {
+	count := len(names)
+	title := fmt.Sprintf("And %d more %s", count, plural(count, "audit alert", "audit alerts"))
+	var order []string
+	per := map[string]int{}
+	for _, n := range names {
+		if n == "" {
+			continue
+		}
+		if per[n] == 0 {
+			order = append(order, n)
+		}
+		per[n]++
+	}
+	for i, n := range order {
+		sep := ", "
+		if i == 0 {
+			sep = ": "
+		}
+		title += fmt.Sprintf("%s%s (%d)", sep, n, per[n])
+	}
+	return Message{Kind: KindAuditSummary, Title: clean(title, maxTitle), Count: count, Link: link, Created: now.UTC()}
+}
+
+// AuditLoss is what a change to the notification settings takes from a
+// channel that audit alerts went to.
+type AuditLoss struct {
+	// Channel is the channel as it was before the change.
+	Channel Channel
+	// Alerts names the audit alerts that no longer go to it: they were
+	// turned off, or the channel was taken off them.
+	Alerts []string
+	// Removed says the channel was deleted, and Moved that it stays but
+	// sends to another address.
+	Removed, Moved bool
+}
+
+// What says what was lost, as a sentence or more.
+func (l AuditLoss) What() string {
+	var out []string
+	switch {
+	case l.Removed:
+		out = append(out, "This channel was removed from Signalith.")
+	case l.Moved:
+		out = append(out, "The address this channel sends to was changed, so later audit alerts go elsewhere.")
+	}
+	if len(l.Alerts) > 0 {
+		out = append(out, "No longer sent here: "+strings.Join(l.Alerts, ", ")+".")
+	}
+	return strings.Join(out, " ")
+}
+
+// address is where a channel sends to, to tell whether it was moved.
+func (c Channel) address() string {
+	return strings.Join([]string{c.Type, c.URL, c.Host, strconv.Itoa(c.Port), strings.Join(c.To, ","), c.AppID, c.TenantID}, "\x00")
+}
+
+// AuditLosses returns what a change of the settings from old to next
+// takes from each channel that audit alerts were going to under old: an
+// alert turned off or no longer sent to it, the channel removed, or its
+// address changed. Whoever watched that channel would otherwise hear
+// nothing more and not know why, which is what someone hiding their
+// tracks wants.
+func AuditLosses(old, next Settings) []AuditLoss {
+	var out []AuditLoss
+	for _, c := range old.Channels {
+		l := AuditLoss{Channel: c}
+		watching := false
+		for _, a := range AuditAlerts {
+			was := old.AuditRule(a.ID)
+			if !was.Enabled || !slices.Contains(was.Channels, c.ID) {
+				continue
+			}
+			watching = true
+			if now := next.AuditRule(a.ID); !now.Enabled || !slices.Contains(now.Channels, c.ID) {
+				l.Alerts = append(l.Alerts, a.Name)
+			}
+		}
+		if !watching {
+			continue
+		}
+		if nc, ok := next.Channel(c.ID); !ok {
+			l.Removed = true
+		} else if nc.address() != c.address() {
+			l.Moved = true
+		}
+		if l.Removed || l.Moved || len(l.Alerts) > 0 {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// AuditLossMessage is the last message to a channel about what it loses:
+// who made the change, from where and on which server.
+func AuditLossMessage(l AuditLoss, user, from, server, link string, now time.Time) Message {
+	title := "Audit alerts were turned off for this channel"
+	switch {
+	case l.Removed:
+		title = "This channel was removed and gets no more audit alerts"
+	case l.Moved:
+		title = "This channel's address was changed"
+	}
+	m := Message{
+		Kind: KindAudit, AuditID: "change-" + newID() + newID(), Title: title, Urgency: "critical",
+		AuditAlert: "Audit alerts turned off or sent elsewhere", AuditAction: "notify.audit_alerts",
+		Created: now.UTC(), Link: link, AuditServer: clean(server, 200), AuditReason: clean(l.What(), 1000),
+		Entities: map[string]string{},
+	}
+	if u := clean(user, maxEntity); u != "" {
+		m.Entities["user"] = u
+	}
+	if ip := clean(from, maxEntity); ip != "" {
+		m.Entities["src"] = ip
+	}
+	return m
+}
+
+// AuditLossTimeout is how long the last messages of one save may take
+// in all; the save goes on whether they arrived or not, so that a dead
+// channel can still be removed.
+const AuditLossTimeout = 10 * time.Second
+
+// SendAuditLosses sends each channel of losses its last message, as the
+// channel was before the change, all at once and within
+// AuditLossTimeout, and records each in deliveries (when not nil) so the
+// page shows how it went. A message that fails is not sent again: the
+// channel may be gone. It returns how many could not be sent.
+func SendAuditLosses(ctx context.Context, sender Sender, deliveries Deliveries, losses []AuditLoss, user, from, server, link string, now func() time.Time) (failed int) {
+	if now == nil {
+		now = time.Now
+	}
+	ctx, cancel := context.WithTimeout(ctx, AuditLossTimeout)
+	defer cancel()
+	errs := make([]error, len(losses))
+	dels := make([]Delivery, len(losses))
+	var wg sync.WaitGroup
+	for i, l := range losses {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			c, start := l.Channel, now()
+			m := AuditLossMessage(l, user, from, server, link, start)
+			errs[i] = sender.Send(ctx, c, m)
+			end := now()
+			dels[i] = Delivery{
+				ID: AuditDeliveryID(m.AuditID, c.ID), Kind: KindAudit, Channel: c.ID, ChannelName: c.Name, ChannelType: c.Type,
+				Rule: "audit:change", RuleName: m.AuditAlert, Status: StatusSent, Attempts: 1, DurationMS: end.Sub(start).Milliseconds(),
+				Message: m, Server: server, Created: start, Updated: end, Claimed: start,
+			}
+			if errs[i] != nil {
+				dels[i].Status, dels[i].Error, dels[i].Final = StatusFailed, errs[i].Error(), true
+			}
+		}()
+	}
+	wg.Wait()
+	for i := range dels {
+		if errs[i] != nil {
+			failed++
+		}
+		if deliveries != nil {
+			wctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+			_, _ = deliveries.Claim(wctx, &dels[i])
+			cancel()
+		}
+	}
+	return failed
 }
