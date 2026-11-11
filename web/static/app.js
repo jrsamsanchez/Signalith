@@ -2293,7 +2293,8 @@ function fmtTime(v) {
 
 // ---------- export ----------
 // exportResults downloads what the open tab shows as CSV. Cells that a
-// spreadsheet would run as a formula get a leading quote.
+// spreadsheet would run as a formula get a leading quote, multi-value
+// cells too; a plain number (-5) cannot be one and is left as it is.
 function exportResults() {
   const run = lastSearch;
   if (!run) return;
@@ -2301,7 +2302,7 @@ function exportResults() {
   const cols = res.columns || [];
   const cell = (v) => {
     let s = v == null ? '' : Array.isArray(v) ? v.join(', ') : String(v);
-    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+    if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
     return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
   const csv = [cols.map(cell).join(','), ...(res.rows || []).map((r) => cols.map((c) => cell(r[c])).join(','))].join('\r\n');

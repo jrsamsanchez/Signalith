@@ -21,8 +21,10 @@ import (
 	"html/template"
 	"strings"
 	"time"
+	"unicode/utf16"
 
 	"github.com/jrsamsanchez/signalith/internal/cases"
+	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/reportkeys"
 )
@@ -146,13 +148,38 @@ func (r *Report) Canonical() ([]byte, error) {
 }
 
 // JSON is the report's data: indented, with its hash. These are the
-// bytes Sign signs.
+// bytes Sign signs. Characters that hide or disguise text (right-to-left
+// override, zero-width space and the like, see detect.ShowHidden) are
+// written as \u escapes, so the data reads on the page as it is; the
+// values, and so the hash, are the same.
 func (r *Report) JSON() ([]byte, error) {
 	b, err := json.MarshalIndent(r, "", "  ")
 	if err != nil {
 		return nil, err
 	}
-	return append(b, '\n'), nil
+	return append(escapeHidden(b), '\n'), nil
+}
+
+// escapeHidden writes each hidden character in JSON as a \u escape. JSON
+// holds such characters only inside strings, where the escape stands for
+// the same character.
+func escapeHidden(b []byte) []byte {
+	if !bytes.ContainsFunc(b, detect.Hidden) {
+		return b
+	}
+	var out bytes.Buffer
+	for _, r := range string(b) {
+		switch {
+		case !detect.Hidden(r):
+			out.WriteRune(r)
+		case r > 0xffff:
+			hi, lo := utf16.EncodeRune(r)
+			fmt.Fprintf(&out, `\u%04x\u%04x`, hi, lo)
+		default:
+			fmt.Fprintf(&out, `\u%04x`, r)
+		}
+	}
+	return out.Bytes()
 }
 
 // MaxSize caps a report Verify reads.
@@ -384,8 +411,11 @@ func Verify(data []byte, keys Keys, requireSigned bool) (*Result, error) {
 	}
 	if f.page != nil {
 		// The page is made from its data alone, so making it again shows
-		// whether anything the reader sees was edited.
-		again, err := (&Signed{Report: &r, Payload: f.payload, KeyID: f.keyID, Sig: f.sig}).HTML()
+		// whether anything the reader sees was edited. A page made before
+		// hidden characters were shown as markers is made again the way
+		// it was then.
+		s := &Signed{Report: &r, Payload: f.payload, KeyID: f.keyID, Sig: f.sig}
+		again, err := s.html(tmpl)
 		if err != nil {
 			return res, err
 		}
@@ -394,7 +424,13 @@ func Verify(data []byte, keys Keys, requireSigned bool) (*Result, error) {
 		// a Windows tool may add them to every line end when it saves the
 		// page. A CR put anywhere else is an edit, as a browser sees one.
 		if !bytes.Equal(htmlLines(again), htmlLines(f.page)) {
-			return res, changed("its page was edited: it differs from the page its data makes")
+			old, err := s.html(rawTmpl)
+			if err != nil {
+				return res, err
+			}
+			if !bytes.Equal(htmlLines(old), htmlLines(f.page)) {
+				return res, changed("its page was edited: it differs from the page its data makes")
+			}
 		}
 	}
 	return res, nil
@@ -432,12 +468,24 @@ var tmpl = template.Must(template.New("report").Funcs(template.FuncMap{
 		}
 		return strings.ToUpper(s[:1]) + strings.ReplaceAll(s[1:], "_", " ")
 	},
+	// shown writes characters that hide or disguise text, such as a
+	// right-to-left override in a user name from an event, as markers
+	// like ⟨U+202E⟩, as the web UI does, so the page reads as the data is.
+	"shown": detect.ShowHidden,
 }).Parse(strings.ReplaceAll(page, "\r\n", "\n"))) // the same page from a Windows checkout
+
+// rawTmpl is the page as it was made before hidden characters were shown
+// as markers, which Verify still accepts for reports made then.
+var rawTmpl = template.Must(tmpl.Clone()).Funcs(template.FuncMap{"shown": func(s string) string { return s }})
 
 // HTML renders the report as a page that stands alone: no scripts, no
 // requests, everything escaped, with the exact bytes signed and the
 // signature at the end.
 func (s *Signed) HTML() ([]byte, error) {
+	return s.html(tmpl)
+}
+
+func (s *Signed) html(t *template.Template) ([]byte, error) {
 	var b bytes.Buffer
 	data := struct {
 		*Report
@@ -445,7 +493,7 @@ func (s *Signed) HTML() ([]byte, error) {
 		Signature string
 		KeyID     string
 	}{s.Report, string(s.Payload), s.SignatureLine(), s.KeyID}
-	if err := tmpl.Execute(&b, data); err != nil {
+	if err := t.Execute(&b, data); err != nil {
 		return nil, err
 	}
 	return b.Bytes(), nil

@@ -1146,6 +1146,13 @@ func bucketKeys(b map[string]any, fields []string) Row {
 	key, _ := b["key"].(map[string]any)
 	for i, f := range fields {
 		row[f] = normalize(key[fmt.Sprintf("k%d", i)])
+		if f == "_time" {
+			// OpenSearch gives a date key in milliseconds since 1970;
+			// _time reads as it does on events (SRCH-211).
+			if ms, ok := row[f].(int64); ok {
+				row[f] = time.UnixMilli(ms).UTC().Format(time.RFC3339Nano)
+			}
+		}
 	}
 	return row
 }

@@ -34,7 +34,7 @@ const checkWork = 1 << 20
 func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 	switch c := c.(type) {
 	case *query.Where:
-		m := &matcher{ctx: ctx}
+		m := &matcher{ctx: ctx, fields: refFields(c.Expr, res.Rows)}
 		out := res.Rows[:0:0]
 		for i, r := range res.Rows {
 			if i%checkEvery == 0 && ctx.Err() != nil {
@@ -658,6 +658,50 @@ type matcher struct {
 	err  error
 
 	ev *evaluator // for conditions written as expressions
+
+	// fields, when set, are the names that are fields for the whole
+	// command (see refFields): where user=admin compares user with the
+	// field admin, and a row without admin does not match, rather than
+	// comparing with the text "admin" on that row (SRCH-210).
+	fields map[string]bool
+}
+
+// refFields returns the names a bare right-hand side in e (where
+// user=admin) may name that hold a value on at least one of rows, or nil
+// when e has none.
+func refFields(e query.Expr, rows []Row) map[string]bool {
+	names := map[string]bool{}
+	var walk func(e query.Expr)
+	walk = func(e query.Expr) {
+		switch e := e.(type) {
+		case *query.And:
+			for _, c := range e.Children {
+				walk(c)
+			}
+		case *query.Or:
+			for _, c := range e.Children {
+				walk(c)
+			}
+		case *query.Not:
+			walk(e.Child)
+		case *query.Compare:
+			if e.Ref {
+				names[e.Value] = false
+			}
+		}
+	}
+	walk(e)
+	if len(names) == 0 {
+		return nil
+	}
+	for _, r := range rows {
+		for n := range names {
+			if !names[n] && r[n] != nil {
+				names[n] = true
+			}
+		}
+	}
+	return names
 }
 
 func (m *matcher) eval(e query.Expr, r Row) bool {
@@ -700,6 +744,9 @@ func (m *matcher) eval(e query.Expr, r Row) bool {
 		v, ok := r[e.Field]
 		if !ok || v == nil {
 			return false
+		}
+		if e.Ref && m.fields[e.Value] && r[e.Value] == nil {
+			return false // compared with a field this row has no value of
 		}
 		if list, multi := v.([]any); multi {
 			// A multivalue field matches when one of its values does,
