@@ -317,8 +317,26 @@ What gets sent:
 - The name in a failed sign-in is whatever was typed, which may be a password typed in the
   wrong box. It is sent only when it is an account Signalith knows; otherwise the message
   says "(not a known account)" and gives the address it came from.
-- The flood guard, retries and **Recent deliveries** work as for findings. A summary reads
-  "And 12 more audit alerts".
+- A failed single sign-on that names no user says only the sign-in page's code for it
+  (`denied`, `expired`, ...): the rest may be text the sender chose, and stays in the audit
+  log. Such failures are written to the audit log at most once a minute for each address
+  (the record counts those since, as `failures`), and not at all while single sign-on is off.
+- The flood guard, retries and **Recent deliveries** work as for findings, except that the
+  first message of each alert is sent on its own before a second of any, and a summary names
+  the alerts it stands for: "And 12 more audit alerts: Sign-ins locked out (10), Tokens made
+  or revoked (2)".
+- **Turning alerts off is itself announced.** When a save turns an audit alert off, takes a
+  channel off it, removes the channel or changes the address the channel sends to, that
+  channel gets one last critical message first, at its old address: what was taken away, who
+  did it and from where. The save goes on even when that message cannot be delivered.
+- The most urgent alerts are read first, each on its own, so many failed sign-ins never hold
+  up or push out a record another alert is about. When more audit records arrive than
+  Signalith can look at (more than 2,000 for one alert in a pass, or more than 5,000 waiting
+  on a server of its own, where the least urgent are let go first), the server log, the
+  **Health** page and `GET /api/notify` (`audit_warning`) say so.
+- A record that reaches a cluster's audit indices late (its server could not reach OpenSearch
+  for a while) is still sent, within about ten minutes of arriving, if it was logged in the
+  last 24 hours.
 - Audit alerts never become findings, so audit records stay out of the Findings page, of
   search, and of everyone but admins. A tenant's admins do not see the Audit alerts card:
   the audit records are the provider's. Records about a tenant carry its ID.

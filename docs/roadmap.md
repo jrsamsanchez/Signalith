@@ -56,7 +56,7 @@ command.
 
 **Proof**
 
-- [ ] A seven-day lab run, at small-team size and with three servers, that loses no
+- [x] A seven-day lab run, at small-team size and with three servers, that loses no
   accepted event, raises no late detection, and keeps disk and memory flat.
 - [ ] Five installs outside the lab running for 30 days, two of them with real Windows
   computers, listed by name with their permission.

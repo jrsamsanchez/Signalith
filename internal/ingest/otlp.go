@@ -57,13 +57,76 @@ const (
 	// list: a resource's, a record's or a map value's. The rest are
 	// dropped; an event keeps at most maxFieldsPerEvent fields anyway.
 	maxOTLPAttributes = 256
-	// maxOTLPExpandedBytes caps a request's size counting its resource
-	// once for each of its records, which is about what writing it costs:
-	// every record's event carries a copy of its resource's attributes, so
-	// a small request with a large resource and many records could
-	// otherwise make the server build and write gigabytes.
+	// maxOTLPExpandedBytes caps a request's size counting everything it
+	// says once as often as it is written: its resource and its scope's
+	// name once for each of their records, and the resource's host name
+	// once more for each further event a record is split into. That is
+	// about what writing it costs, so a small request with a large
+	// resource and many records can't make the server build and write
+	// gigabytes.
 	maxOTLPExpandedBytes = 4 * MaxBodyBytes
+	// maxOTLPNameLen is the longest scope name and service.name kept, and
+	// maxHostLen the longest host.name: each is said once and written on
+	// every event of its records.
+	maxOTLPNameLen = 256
 )
+
+// otlpScope is a scope's name as its records' events carry it.
+func otlpScope(name string) string { return truncateUTF8(name, maxOTLPNameLen) }
+
+// otlpHost and otlpService are the resource's host.name and service.name
+// as its records' events carry them.
+func otlpHost(resource map[string]any) string {
+	s, _ := resource["host.name"].(string)
+	return truncateUTF8(s, maxHostLen)
+}
+
+func otlpService(resource map[string]any) string {
+	s, _ := resource["service.name"].(string)
+	return truncateUTF8(s, maxOTLPNameLen)
+}
+
+// builtBytes is about how large an event is when written: its fields'
+// names and text.
+func builtBytes(ev *Event) int {
+	n := 0
+	for k, v := range ev.Fields {
+		n += len(k) + valueBytes(v)
+	}
+	return n
+}
+
+func valueBytes(v any) int {
+	switch x := v.(type) {
+	case string:
+		return len(x)
+	case []string:
+		n := 0
+		for _, s := range x {
+			n += len(s) + 3
+		}
+		return n
+	case []any:
+		n := 0
+		for _, e := range x {
+			n += valueBytes(e) + 3
+		}
+		return n
+	case map[string]any:
+		n := 0
+		for k, e := range x {
+			n += len(k) + valueBytes(e) + 6
+		}
+		return n
+	case map[string]string:
+		n := 0
+		for k, e := range x {
+			n += len(k) + len(e) + 6
+		}
+		return n
+	}
+	return 8
+}
 
 // putAttribute sets m[k] = v unless m already holds maxOTLPAttributes
 // other keys.
@@ -79,6 +142,11 @@ func putAttribute(m map[string]any, k string, v any) {
 // that is too large, nests too deeply or doesn't decode is rejected on its
 // own (Result.Rejected, which the handler reports as OTLP partialSuccess),
 // so it doesn't make the sender drop the rest of its batch.
+//
+// One refusal can come after part of the request is written: how many
+// events a record is split into (an Event Hub message's records) is only
+// known once it is read, so their copies of the host name are counted
+// towards maxOTLPExpandedBytes as they are made.
 func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*Result, error) {
 	walk := walkOTLPProto
 	if isJSON {
@@ -91,7 +159,7 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 			return tooLarge("the request has more than %d log records; send smaller batches (send_batch_max_size in the Collector's batch processor)", MaxRecords)
 		}
 		if expanded += size; expanded > maxOTLPExpandedBytes {
-			return tooLarge("the request's log records with their resource attributes, which each record carries, come to more than %d MB; send smaller batches or fewer resource attributes", maxOTLPExpandedBytes>>20)
+			return otlpTooExpanded()
 		}
 		return nil
 	}); err != nil {
@@ -141,16 +209,23 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 			n += extra
 			total.Received += extra
 			p.stats.Received.Add(int64(extra))
+			// The first pass counted the resource once for the record;
+			// each further event carries the host name again.
+			if expanded += extra * len(otlpHost(l.resource)); expanded > maxOTLPExpandedBytes {
+				return otlpTooExpanded()
+			}
 		}
-		// Each event takes its share of the record's size, and the batch
-		// is written as soon as it is full, so a message split into many
-		// records can't make an oversized bulk request.
+		// Each event counts as what was built for it, or its share of the
+		// record's size when that is more, and the batch is written as
+		// soon as it is full, so neither a message split into many records
+		// nor a long value every event carries can make an oversized bulk
+		// request.
 		share := max(rawSize/max(len(evs), 1), 1)
 		for i, ev := range evs {
 			batch = append(batch, ev)
 			ids = append(ids, subRecordID(seed, pos-1, i))
 			total.noteHost(&batch[len(batch)-1])
-			size += share
+			size += max(share, builtBytes(&batch[len(batch)-1]))
 			if len(batch) >= batchEvents || size >= batchBytes {
 				if err := flush(); err != nil {
 					return err
@@ -172,6 +247,11 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 		}
 	}
 	return total, nil
+}
+
+// otlpTooExpanded refuses a request over maxOTLPExpandedBytes.
+func otlpTooExpanded() *BodyError {
+	return tooLarge("the request is too large once written: its log records, with the resource attributes, scope name and host name that each event carries, come to more than %d MB; send smaller batches or fewer resource attributes", maxOTLPExpandedBytes>>20)
 }
 
 // otlpEvents maps one OTLP log record to its events: one, each record of
@@ -204,7 +284,7 @@ func otlpEvents(l *otlpLog, now time.Time) []Event {
 	if recs == nil {
 		return []Event{otlpEvent(l, now)}
 	}
-	host, _ := l.resource["host.name"].(string)
+	host := otlpHost(l.resource)
 	out := make([]Event, 0, len(recs))
 	for _, r := range recs {
 		ev := parse(r)
@@ -229,8 +309,8 @@ func otlpEvents(l *otlpLog, now time.Time) []Event {
 
 // otlpEvent maps one OTLP log record to an event.
 func otlpEvent(l *otlpLog, now time.Time) Event {
-	host, _ := l.resource["host.name"].(string)
-	service, _ := l.resource["service.name"].(string)
+	host := otlpHost(l.resource)
+	service := otlpService(l.resource)
 	bodyMap, _ := l.body.(map[string]any)
 	bodyText, _ := l.body.(string)
 

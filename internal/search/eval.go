@@ -39,6 +39,13 @@ const maxEvalTotal = 256 << 20
 // rex max_match=0).
 const maxMultiValues = 10000
 
+// valueOverhead is what the budget counts for each value of a multivalue
+// field besides its text: its place in the list and the value's own
+// header, which the server holds for every value on every row however
+// short the text is. With it maxEvalTotal bounds rows times values: about
+// five million one-letter values in one search.
+const valueOverhead = 48
+
 // maxCachedRegexes caps the compiled regular expressions one search keeps.
 const maxCachedRegexes = 256
 
@@ -59,6 +66,8 @@ type evaluator struct {
 	jsonText string
 	jsonDoc  any
 	jsonOK   bool
+	// sub holds the marks of the subsearches among the search's terms.
+	sub subMarks
 }
 
 func newEvaluator(ctx context.Context) *evaluator {
@@ -283,13 +292,34 @@ func (ev *evaluator) list(vs []any) any {
 	for _, v := range vs {
 		n += valueSize(v) + 1
 	}
-	if !ev.fits(n) || !ev.charge(n) {
+	if !ev.fits(n) || !ev.chargeValues(len(vs), n-len(vs)) {
 		return nil
 	}
 	return mvOut(vs)
 }
 
-// valueSize is about how many bytes v takes once written out as text.
+// chargeValues counts a multivalue field of count values and n bytes of
+// text against the search's budget. The same list on many rows is counted
+// on each, so rows times values stays within the budget whatever the
+// values' length.
+func (ev *evaluator) chargeValues(count, n int) bool {
+	if ev.err != nil {
+		return false
+	}
+	size := count*valueOverhead + n
+	// When the values' number, not their text, is what fills the budget,
+	// the error says so.
+	if count*valueOverhead > n && ev.produced+size > maxEvalTotal {
+		ev.produced += size
+		ev.fail("the search's multivalue fields hold more than a search may build (%d MB over all rows, counting %d bytes for each value besides its text); keep fewer rows or fewer values in each", maxEvalTotal>>20, valueOverhead)
+		return false
+	}
+	return ev.charge(size)
+}
+
+// valueSize is about how many bytes v takes in the server's memory and
+// once written out: its text, and valueOverhead for each value of a
+// multivalue field.
 func valueSize(v any) int {
 	switch x := v.(type) {
 	case string:
@@ -297,7 +327,7 @@ func valueSize(v any) int {
 	case []any:
 		n := 0
 		for _, e := range x {
-			n += valueSize(e) + 1
+			n += valueSize(e) + valueOverhead
 		}
 		return n
 	case nil:
@@ -1538,6 +1568,10 @@ func applyRex(ctx context.Context, res *Result, c *query.Rex) error {
 			if c.MaxMatch == 1 {
 				r[name] = vals[0]
 			} else {
+				// The values share the text's memory; the list is new.
+				if !ev.chargeValues(len(vals), 0) {
+					return ev.err
+				}
 				r[name] = mvOut(vals)
 			}
 		}

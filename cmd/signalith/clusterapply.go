@@ -79,7 +79,7 @@ func (x *clusterCLI) apply(ctx context.Context, file string, yes bool) error {
 		}
 	}
 	if name := plan.AdminUser(); name != "" {
-		fmt.Fprintf(x.out, "The built-in admin is renamed to %s: its sessions end, and it signs in under the new name with the same password.\n", printable(name))
+		fmt.Fprintf(x.out, "The built-in admin is renamed to %s: its sessions end, and it signs in under the new name with the same password and the same two-step sign-in. One that is turned off stays off.\n", printable(name))
 	}
 	if err := x.confirm("Apply these changes to every server?", yes); err != nil {
 		return err
