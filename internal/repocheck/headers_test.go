@@ -15,8 +15,10 @@ import (
 // .github/scripts/add-license-headers.py adds them.
 var sourceExts = map[string]bool{".go": true, ".js": true, ".css": true, ".sh": true, ".ps1": true, ".py": true, ".tf": true}
 
-// skipDirs are folders that are not this project's source.
-var skipDirs = map[string]bool{".git": true, ".claude": true, "testdata": true, "node_modules": true, "dist": true}
+// skipDirs are folders that are not this project's source. vendor holds
+// third-party files kept byte for byte as published, each with its own
+// licence notice next to it (see TestSiteScriptsAreSameOrigin).
+var skipDirs = map[string]bool{".git": true, ".claude": true, "testdata": true, "node_modules": true, "dist": true, "vendor": true}
 
 func TestEverySourceFileHasALicenseHeader(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
