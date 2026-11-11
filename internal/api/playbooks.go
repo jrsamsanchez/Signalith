@@ -35,9 +35,11 @@ func (s *Server) routePlaybooks(api *router) {
 	// What a playbook does decides what Signalith changes by itself.
 	api.admin("GET /api/playbooks", s.handlePlaybooks)
 	api.sensitive("PUT /api/playbooks", s.handlePlaybooksSave)
-	// Approving is analyst work, like running an action by hand.
+	// Approving is analyst work, like running an action by hand, and
+	// asks for the password or code again like it. Rejecting changes
+	// nothing elsewhere, so it does not.
 	api.analyst("GET /api/playbooks/runs", s.handlePlaybookRuns)
-	api.analyst("POST /api/playbooks/runs/{id}/approve", s.handlePlaybookApprove)
+	api.analystSensitive("POST /api/playbooks/runs/{id}/approve", s.handlePlaybookApprove)
 	api.analyst("POST /api/playbooks/runs/{id}/reject", s.handlePlaybookReject)
 }
 

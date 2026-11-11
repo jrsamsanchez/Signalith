@@ -276,7 +276,7 @@ but someone guessing your password cannot keep you out:
 | Counted | Limit | Then |
 | --- | --- | --- |
 | One address, one account | 10 in 15 minutes | That account is refused from that address for 15 minutes, even with the right password |
-| One address, any accounts | 30 in 15 minutes | That address is refused for 15 minutes |
+| One address, any accounts | 30 in 15 minutes | That address is refused for 15 minutes, except to browsers and addresses that signed in to the account before (below) |
 | One account, from browsers and addresses that never signed in to it | 30 in an hour | Their next tries at that account wait: 1 second, then twice as long after each wrong password, up to 15 minutes. The account itself is never locked |
 
 A successful sign-in clears only the count for its own address and account, so
@@ -295,8 +295,9 @@ sent only over HTTPS, cannot be read by scripts on the page, and lasts a year fr
 your last sign-in. While someone elsewhere guesses your password, that browser is
 not slowed down, and it keeps working even when its address is paused for wrong
 passwords to other accounts. An address you signed in from in the last 30 days is not
-slowed down either, which keeps scripts using HTTP Basic auth working (they keep no
-cookies). Your own wrong passwords count against that browser or address only: 10 in
+slowed down either, and it keeps working for your account while it is paused for wrong
+passwords to other accounts, which keeps scripts using HTTP Basic auth working (they
+keep no cookies). Your own wrong passwords count against that browser or address only: 10 in
 15 minutes pause it for 15 minutes. Browsers that signed in before share 30 wrong
 passwords an hour per account, and addresses that did share another 30; past that
 they wait like everyone else, so the guesses an account can take stay limited.
@@ -317,8 +318,9 @@ key, so a browser recognized by one server is recognized by every one.
 **Many people behind one address.** When people reach Signalith through one address,
 such as a reverse proxy, a load balancer, a NAT gateway or Docker Desktop's port
 forwarding, Signalith sees that address for all of them, and 30 wrong passwords
-from anyone behind it would pause sign-ins for everyone. To avoid that, list the
-address on the **Settings** page:
+from anyone behind it would pause sign-ins for everyone who has not signed in from it
+before, in that browser or with their current password in the last 30 days. To avoid
+that, list the address on the **Settings** page:
 
 - **A reverse proxy** (nginx, Caddy, IIS, most load balancers): add it under
   **Trusted reverse proxies** (`server.trusted_proxies`). If the proxy sets
@@ -509,6 +511,10 @@ Some changes ask for your password again when you have not entered it in the las
   that a Teams app channel moves to another Teams channel;
 - saving the networks to scan for vulnerabilities, and adding, changing or removing a
   scan login;
+- running a [response action](response-actions.md) and approving a
+  [playbook](playbooks.md) step that waits, which change other systems at once. These
+  ask when you have not entered the password in the last **5 minutes**, not 15.
+  Rejecting a step does not ask;
 - saving a setting that affects sign-in, encryption or where data goes: **Sign out
   after**, **Require two-step sign-in**, single sign-on and the other `auth.*`
   settings, HTTPS and the certificate files (`server.tls*`), **Listen address**,
@@ -520,10 +526,14 @@ Some changes ask for your password again when you have not entered it in the las
   scheduled snapshots (`backup.*`), or **Reset all**.
 
 With two-step sign-in on, a passkey, a code from your app or a recovery code works
-instead of the password. Signing in counts, so for 15 minutes after you sign in nothing is asked.
+instead of the password. Signing in counts, so for 15 minutes after you sign in nothing is asked
+(5 minutes for response actions and playbook approvals). People who sign in with single
+sign-on are asked to sign in again instead.
 Wrong passwords and codes count toward the failed sign-in limits. Turning off your own
 authenticator app and making new recovery codes always take a code or a passkey. Scripts that use
-HTTP Basic auth send the password with every request, so they are never asked.
+HTTP Basic auth send the password with every request, so they are never asked. API
+tokens are never asked either: they can only read, so they cannot run a response action
+or approve a step (see [API tokens](ai-tools.md#api-tokens)).
 
 ## Sign in with Active Directory or LDAP
 
@@ -1385,7 +1395,9 @@ answers `403`:
 account signs in elsewhere, so sign in again); `"passkey": true` when a passkey works
 here. `POST /api/me/recheck` with `{"password": "..."}`, `{"code": "123456"}` or
 `{"passkey": {"token", "credential"}}` (from `POST /api/me/passkeys/challenge`) sets a cookie for this sign-in session
-that lasts 15 minutes; then send the change again. A wrong password answers `400` with
+that lasts 15 minutes; then send the change again. `POST /api/respond/run` and
+`POST /api/playbooks/runs/{id}/approve` take only a password, code or sign-in from the
+last 5 minutes, and say `"minutes": 5`. A wrong password answers `400` with
 `"code": "wrong_password"`, a wrong code `"code": "mfa_wrong"`.
 
 ### Users (admin)

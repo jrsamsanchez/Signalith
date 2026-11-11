@@ -151,6 +151,7 @@ Each arrow is a boundary where data from the other side is not trusted:
 | A page admin running any program | Scripts run only from a folder set on the server's disk, with no shell and a small environment without Signalith's secrets ([Run a script](response-actions.md#run-a-script)) |
 | Target values injecting into webhooks | Each value is escaped for where it stands and the template is read once; values can't change the scheme, host or port ([Send a webhook](response-actions.md#send-a-webhook)) |
 | Actions run without a person | Analyst role and a per-user rate limit; playbook steps can wait for approval ([Approvals](playbooks.md#approvals)) |
+| A stolen session or an unlocked desk running actions | Running an action and approving a step ask for the password, a two-step code or a passkey entered in the last 5 minutes (single sign-on users sign in again), and wrong ones count toward the sign-in limits; API tokens cannot do either ([Confirming it's you](users.md#confirming-its-you)) |
 
 ### AI features
 

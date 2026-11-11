@@ -145,28 +145,49 @@ func TestSearchRefusesOtherTenants(t *testing.T) {
 	}
 }
 
-// indexPackages are the packages that name OpenSearch indices; fieldPaths
-// are their files that join field names, not index names, with ".".
-var (
-	indexPackages = []string{
-		"agentinv", "agenttokens", "assets", "audit", "cases", "cluster", "clusterarchive", "clusterauth", "clustercfg",
-		"datamodel", "endpoint", "findings", "intel", "notify", "playbooks", "respond", "retention", "risk",
-		"sample", "security", "sensortune", "shared", "vulnscan",
-	}
-	extraFiles = []string{"../search/engine.go", "../ingest/template.go", "../ingest/ingest.go", "../api/cluster_opensearch.go"}
-	fieldPaths = map[string]bool{"../search/engine.go:prefix+\".\"": true}
-)
+// fieldPaths are the joins of a variable named prefix with "." or "{}"
+// that make field paths (flattened JSON, mappings), not index names.
+var fieldPaths = map[string]bool{
+	"ingest/azure.go:prefix+\".\"":      true,
+	"ingest/azure.go:prefix+\"{}\"":     true,
+	"ingest/cloudtrail.go:prefix+\".\"": true,
+	"ingest/gcp.go:prefix+\".\"":        true,
+	"ingest/gcp.go:prefix+\"{}\"":       true,
+	"ingest/github.go:prefix+\".\"":     true,
+	"ingest/github.go:prefix+\"{}\"":    true,
+	"ingest/o365.go:prefix+\".\"":       true,
+	"ingest/o365.go:prefix+\"{}\"":      true,
+	"onboard/parser.go:prefix+\".\"":    true,
+	"search/chart.go:prefix+\".\"":      true,
+	"search/chart.go:prefix+\"{}\"":     true,
+	"search/engine.go:prefix+\".\"":     true,
+	"store/opensearch.go:prefix+\".\"":  true,
+}
 
-// TestIndexNamesKeepTheirPrefix scans the code that names indices: an
+// TestIndexNamesKeepTheirPrefix scans every package under internal/: an
 // index prefix may only be followed by "-" or "_" (or Infix, in
 // tenants.Prefix), so no index name or pattern can run into a tenant's.
+// The files are found by walking the tree, so a new package that names
+// indices is checked without being listed here.
 func TestIndexNamesKeepTheirPrefix(t *testing.T) {
+	root := ".."
 	var files []string
-	for _, pkg := range indexPackages {
-		m, _ := filepath.Glob(filepath.Join("..", pkg, "*.go"))
-		files = append(files, m...)
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() && d.Name() == "testdata" {
+			return filepath.SkipDir
+		}
+		if !d.IsDir() && strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
-	files = append(files, extraFiles...)
+	pkgs, used := map[string]bool{}, map[string]bool{}
 	checked := 0
 	fset := token.NewFileSet()
 	for _, name := range files {
@@ -192,10 +213,13 @@ func TestIndexNamesKeepTheirPrefix(t *testing.T) {
 			}
 			v, _ := strconv.Unquote(lit.Value)
 			checked++
+			pkgs[filepath.Dir(name)] = true
 			if strings.HasPrefix(v, "-") || strings.HasPrefix(v, "_") {
 				return true
 			}
-			key := filepath.ToSlash(name) + ":prefix+" + lit.Value
+			rel, _ := filepath.Rel(root, name)
+			key := filepath.ToSlash(rel) + ":prefix+" + lit.Value
+			used[key] = true
 			if !fieldPaths[key] {
 				t.Errorf("%s: an index prefix is followed by %s; index names must go on with \"-\" or \"_\"", fset.Position(b.Pos()), lit.Value)
 			}
@@ -204,6 +228,18 @@ func TestIndexNamesKeepTheirPrefix(t *testing.T) {
 	}
 	if checked < 25 {
 		t.Errorf("checked only %d prefix joins; is the scan still working?", checked)
+	}
+	for key := range fieldPaths {
+		if !used[key] {
+			t.Errorf("fieldPaths lists %s, which no longer appears; take it off", key)
+		}
+	}
+	// Packages that build index names and were missed by the hand-kept
+	// list this scan replaced.
+	for _, pkg := range []string{"baselines", "casefiles", "compliancehist", "notebooks", "snapshots", "summary", "ticketing"} {
+		if !pkgs[filepath.Join(root, pkg)] {
+			t.Errorf("internal/%s joins no index prefix; is the scan still working?", pkg)
+		}
 	}
 }
 
