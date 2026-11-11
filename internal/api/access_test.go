@@ -113,7 +113,10 @@ func TestEveryRouteHasARole(t *testing.T) {
 
 // notForTokens are viewer or analyst GET routes checked and kept from API
 // tokens (see tokenRoutes).
-var notForTokens = []string{}
+var notForTokens = []string{
+	// A person's own browser sessions; an API token has none.
+	"GET /api/me/sessions",
+}
 
 // TestTokenRoutesOnlyRead fails when a GET route a viewer or an analyst
 // may use is neither in tokenRoutes nor in notForTokens. Such a route is
