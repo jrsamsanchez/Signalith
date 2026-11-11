@@ -345,12 +345,24 @@ The web UI keeps you signed in with a session cookie. Sessions end after
 hour by default) unless you tick **Keep me signed in**, and always after
 `auth.session_max_age` from sign-in (**Sign in again after**, 24 hours by default,
 from 1 hour to 30 days), with **Keep me signed in** too. The defaults are the NIST SP
-800-63B limits for AAL2, and the Security page flags longer ones. Sessions also end
+800-63B limits for AAL2, and the Security page flags longer ones. An admin can take
+**Keep me signed in** away with **Offer Keep me signed in** (`auth.keep_signed_in`,
+on by default) on the Settings page: the box is then hidden, every new session ends
+after **Sign out after** without use, and sessions kept signed in before stay so until
+they end. Sessions also end
 when you sign out, when your password is changed, or when an
-admin disables, deletes or resets your account. Servers that share the users file end
+admin disables, deletes or resets your account, or signs you out everywhere. Servers that share the users file end
 them too, within a second or so. Servers that share their users in OpenSearch keep the
 sessions there, so a session works on every server at once (see
 [Sessions on every server](#sessions-on-every-server)).
+
+**Signed-in sessions** in the account menu lists the browsers signed in as you, this
+one first: the address each signed in from, when, when it was last used, and whether
+it was kept signed in. End any you don't recognize with its sign-out button, or all
+but this one with **Sign out other sessions**, then change your password. To end
+your current session, sign out. An admin can sign another user out of every browser
+with **Sign out everywhere** in the user's row on the Users page, without disabling
+them: they can sign in again. Each is in the [audit log](#audit-log).
 
 Scripts and API clients can use HTTP Basic auth with the same username and password.
 Signalith remembers a correct username and password briefly so it does not check
@@ -1048,6 +1060,9 @@ the Settings page and restarts are logged the same way; see
 | `sign-in failed` | `user`, `client`, `method`, `reason` (for example `wrong password`, `account disabled`, `directory: in no group mapped to a role`), `locked_out` (further tries are refused or slowed down for a while) |
 | `sign-ins from this address are paused …` | `client`, `minutes` |
 | `signed out` | `user`, `client` |
+| `session ended` | `by`, `user`, `session` (its ID in `GET /api/me/sessions`), `pending` (`true` when OpenSearch could not be written, so it ends once it can) |
+| `other sessions ended` | `by`, `user`, `sessions_ended` |
+| `user's sessions ended` | `by` (the admin), `user`, `sessions_ended` |
 | `user created` | `by`, `user`, `role`, `must_change_password` |
 | `user changed` | `by`, `user`, `fields` |
 | `user role changed` | `by`, `user`, `from`, `to` |
@@ -1156,7 +1171,8 @@ request, so a server that has not yet read that change reads it first (see
 `POST /api/me/password`, `GET /api/me/mfa`, `POST /api/me/mfa/setup`,
 `POST /api/me/mfa/confirm`, `POST /api/me/mfa/recovery`, `POST /api/me/mfa/off`,
 `POST /api/me/recheck`, `POST /api/me/passkeys/options`, `POST /api/me/passkeys`,
-`DELETE /api/me/passkeys/{id}`, `POST /api/me/passkeys/challenge`.
+`DELETE /api/me/passkeys/{id}`, `POST /api/me/passkeys/challenge`,
+`GET /api/me/sessions`, `DELETE /api/me/sessions`, `DELETE /api/me/sessions/{id}`.
 
 **Viewer:** `GET /api/me/setup`, `PUT /api/me/setup` (your own answers to the [setup guide](getting-started.md#the-setup-guide)), `GET /api/me/finding-views`, `PUT /api/me/finding-views` (your own [saved views](detections.md#the-findings-queue) of the findings queue), `GET /api/health` (with `?scope=cluster`, totals for every server), `POST /api/search`, `POST /api/explain`,
 `POST /api/build`, `POST /api/parse`, `GET /api/datamodels`, `GET /api/fields`,
@@ -1322,6 +1338,15 @@ A refused request:
 
 `source` is `builtin`, `local` or `directory`; `auth` is `session` or `basic`.
 
+`GET /api/me/sessions` lists your sessions that have not ended, this one first:
+`{"sessions": [{"id", "created", "last_seen", "client", "method", "remember", "current"}]}`.
+`id` is a hash that names the session in this list, never its cookie; `client` is the
+address it signed in from, when known. On servers that share their users, a session
+another server keeps only in memory while it cannot write to OpenSearch is not
+listed. `DELETE /api/me/sessions/{id}` ends one (`404` when it has ended already,
+`409` for the one you are using: sign out instead), and `DELETE /api/me/sessions`
+ends all but the one you are using, answering `{"ended": 2}`.
+
 `POST /api/me/password` with `{"current_password": "...", "new_password": "..."}`
 returns the same object. Errors are `400` with a `code`: `wrong_password` (field
 `current_password`), `same_password`, `invalid_password` (field `new_password`),
@@ -1402,7 +1427,7 @@ that lasts 15 minutes; then send the change again. A wrong password answers `400
      "role": "admin", "source": "directory", "disabled": false, "must_change_password": false,
      "dn": "CN=Alice Admin,OU=Staff,DC=corp,DC=example,DC=com",
      "created": "2026-10-12T15:35:11Z", "updated": "2026-10-12T15:35:11Z",
-     "last_sign_in": "2026-10-12T15:35:11Z", "you": false, "actions": ["disable", "delete"]}
+     "last_sign_in": "2026-10-12T15:35:11Z", "you": false, "actions": ["disable", "delete", "end_sessions"]}
   ],
   "roles": [{"id": "viewer", "label": "Viewer", "description": "..."}, ...],
   "directory": {"enabled": true, "from_config": false},
@@ -1420,7 +1445,8 @@ the users wait to be brought in (see
 [When the users become shared](#when-the-users-become-shared)).
 
 `actions` lists what the signed-in admin may do to that user: `edit` (name and
-email), `role`, `reset_password`, `reset_mfa`, `disable` or `enable`, and `delete`; and, on the
+email), `role`, `reset_password`, `reset_mfa`, `disable` or `enable`, `delete`, and
+`end_sessions` (on every enabled user's row but your own); and, on the
 built-in admin's own row when the users are shared, `change_password` (with
 `POST /api/me/password`). On the built-in admin's row, other admins get `disable` or
 `enable`, and `"disabled": true` means it is turned off. A directory
@@ -1433,6 +1459,7 @@ example `"in no group mapped to a role"`.
 | `PUT /api/users/{username}` | Any of `{"name", "email", "role", "disabled"}`; for the built-in admin only `{"disabled"}`, which turns it off or on (see [Turning the built-in admin off](#turning-the-built-in-admin-off)) | `{"user": {...}}` |
 | `POST /api/users/{username}/password` | Optional `{"password"}` | `{"user": {...}, "temporary_password": "..."}` |
 | `DELETE /api/users/{username}` | | `{"deleted": "priya"}` |
+| `DELETE /api/users/{username}/sessions` | | `{"username", "ended"}`: ends every session of the user, who can sign in again; `409` for your own account |
 
 Errors are `{"error": "..."}`, with `"field"` naming the form field when one value is
 the problem (`username`, `name`, `email`, `role`, `password`): `400` for a bad value,

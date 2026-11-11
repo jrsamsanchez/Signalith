@@ -25,6 +25,7 @@ func (s *Server) routeUsers(api *router) {
 	s.routeMFA(api)
 	s.routePasskeys(api)
 	s.routeRecheck(api)
+	s.routeSessions(api)
 
 	api.admin("GET /api/users", s.handleListUsers)
 	api.sensitive("POST /api/users", s.handleCreateUser)
@@ -317,6 +318,9 @@ func (s *Server) viewUser(u users.User, me string) userView {
 	if v.MFA && !v.You {
 		v.Actions = append(v.Actions, "reset_mfa")
 	}
+	if !v.You && !v.Disabled {
+		v.Actions = append(v.Actions, "end_sessions")
+	}
 	return v
 }
 
@@ -348,6 +352,9 @@ func (s *Server) builtinView(me string) userView {
 	v.MFA = s.userStore().MFAOn(name)
 	if v.MFA && !v.You {
 		v.Actions = append(v.Actions, "reset_mfa")
+	}
+	if !v.You && !v.Disabled {
+		v.Actions = append(v.Actions, "end_sessions")
 	}
 	return v
 }

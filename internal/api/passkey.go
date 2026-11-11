@@ -600,6 +600,7 @@ func (s *Server) handlePasskeyLogin(w http.ResponseWriter, r *http.Request) {
 		writeSignInError(w, err)
 		return
 	}
+	req.Remember = req.Remember && s.conf().KeepSignedInOn()
 	token, err := s.startSession(r, p, req.Remember)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err)

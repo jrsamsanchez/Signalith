@@ -277,7 +277,7 @@ func TestAdminsCannotLockThemselvesOut(t *testing.T) {
 				t.Errorf("ann = %v", u)
 			}
 		case "ben":
-			if string(actions) != `["edit","role","reset_password","disable","delete"]` {
+			if string(actions) != `["edit","role","reset_password","disable","delete","end_sessions"]` {
 				t.Errorf("ben actions = %s", actions)
 			}
 		}
@@ -417,7 +417,7 @@ func TestDirectorySignIn(t *testing.T) {
 	if alice == nil || alice["source"] != "directory" || alice["dn"] != ldaptest.ADAliceDN || alice["last_sign_in"] == nil {
 		t.Fatalf("alice in list = %v", alice)
 	}
-	if a, _ := json.Marshal(alice["actions"]); string(a) != `["disable","delete"]` {
+	if a, _ := json.Marshal(alice["actions"]); string(a) != `["disable","delete","end_sessions"]` {
 		t.Errorf("alice actions = %s", a)
 	}
 	if code, _, _ := admin("PUT", "/api/users/alice", `{"role":"viewer"}`); code != 409 {

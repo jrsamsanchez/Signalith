@@ -314,6 +314,7 @@
     if (has('change_password')) items.push({ icon: 'key-round', label: 'Change password', run: () => openChangePassword() });
     if (has('reset_password')) items.push({ icon: 'key-round', label: 'Reset password', run: () => openResetPassword(u) });
     if (has('reset_mfa')) items.push({ icon: 'shield-off', label: 'Reset two-step sign-in', run: () => resetMFA(u) });
+    if (has('end_sessions')) items.push({ icon: 'log-out', label: 'Sign out everywhere', run: () => endUserSessions(u) });
     const builtin = u.source === 'builtin';
     if (has('disable')) items.push({ icon: 'user-x', label: builtin ? 'Turn off' : 'Disable', run: () => setDisabled(u, true) });
     if (has('enable')) items.push({ icon: 'user-check', label: builtin ? 'Turn on' : 'Enable', run: () => setDisabled(u, false) });
@@ -567,6 +568,27 @@
     }
     toast(`${u.username} can sign in with their password and set up two-step sign-in again.`, null, { title: 'Two-step sign-in reset' });
     loadUsers({ quiet: true }).then(() => focusRow(u.username));
+  }
+
+  // endUserSessions signs a user out of every browser, for a stolen
+  // cookie or a shared computer; they can sign in again.
+  async function endUserSessions(u) {
+    const ok = await caseConfirm({
+      title: `Sign ${u.username} out everywhere?`,
+      text: 'Every browser signed in as them is signed out now. They can sign in again; to keep them out, disable them instead.',
+      confirm: 'Sign out everywhere',
+    });
+    if (!ok) { focusRow(u.username); return; }
+    let res;
+    try {
+      res = await api('api/users/' + encodeURIComponent(u.username) + '/sessions', undefined, 'DELETE');
+    } catch (e) {
+      toastChangeFailed(u, e, 'Couldn’t sign ' + u.username + ' out');
+      focusRow(u.username);
+      return;
+    }
+    toast(res.ended === 1 ? `${u.username} was signed out of one browser.` : `${u.username} was signed out of ${res.ended} browsers.`, null, { title: 'Signed out everywhere' });
+    focusRow(u.username);
   }
 
   async function setDisabled(u, off) {
@@ -1332,6 +1354,79 @@
     d.showModal();
     cur.focus();
   }
+  // ---------- Signed-in sessions (account menu) ----------
+  // The browsers signed in as you, this one first, each named by the
+  // server with a hash (never its cookie), to end any but this one, or
+  // all the others at once.
+  $('sessions-open').addEventListener('click', () => {
+    $('user-menu').removeAttribute('open');
+    openSessions();
+  });
+
+  async function openSessions() {
+    const d = modalDialog('u-sessions-dialog');
+    d.classList.add('u-dialog', 'u-mfa-dialog');
+    const close = () => d.close();
+    const desc = 'Browsers signed in as you. End any you don’t recognize, then change your password.';
+    if (!d.open) {
+      fill(d, modalHead('u-sessions-dialog', 'Signed-in sessions', desc, close),
+        el('div', { class: 'modal__body' }, el('div', { class: 'u-skel-gap' }), dxSkel('100%'), el('div', { class: 'u-skel-gap' }), dxSkel('60%')));
+      d.showModal();
+    }
+    let list;
+    try {
+      list = (await api('api/me/sessions')).sessions || [];
+    } catch (e) {
+      fill(d, modalHead('u-sessions-dialog', 'Signed-in sessions', '', close),
+        el('div', { class: 'modal__body' }, dxEmpty({ tone: 'danger', icon: 'circle-alert', title: 'Couldn’t load your sessions', text: sentence(e.message), action: dxRetry(openSessions) })));
+      return;
+    }
+    const fmtWhen = (t) => new Date(t).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+    const others = list.filter((x) => !x.current).length;
+    const rows = list.map((x) => {
+      const what = [`Signed in ${fmtWhen(x.created)}`, `last used ${ago(x.last_seen)}`, x.remember ? 'kept signed in' : ''].filter(Boolean).join(' · ');
+      let end = null;
+      if (!x.current) {
+        end = el('button', { type: 'button', class: 'btn btn--ghost btn--icon btn--sm', 'aria-label': `End the session from ${x.client || 'an unknown address'}`, title: 'End session' }, icon('log-out'));
+        end.addEventListener('click', () => endSession(x));
+      }
+      return el('li', {},
+        el('div', { class: 'mfa-key__text' }, el('b', { class: 'mono' }, x.client || 'Unknown address'), el('span', { title: new Date(x.last_seen).toLocaleString() }, what)),
+        x.current ? el('span', { class: 'mfa-key__tag' }, 'This browser') : end);
+    });
+    const endAll = el('button', { type: 'button', class: 'btn btn--secondary' }, icon('log-out'), 'Sign out other sessions');
+    endAll.addEventListener('click', endOthers);
+    fill(d,
+      modalHead('u-sessions-dialog', 'Signed-in sessions', desc, close),
+      el('div', { class: 'modal__body' },
+        rows.length ? el('ul', { class: 'mfa-keys', 'aria-label': 'Your sessions' }, ...rows) : el('p', { class: 'mfa-empty' }, 'No sessions.')),
+      footer(others ? endAll : null, el('span', { class: 'spacer' }), el('button', { type: 'button', class: 'btn btn--primary', onclick: close }, 'Done')));
+    (others ? endAll : d.querySelector('.modal__foot .btn--primary')).focus();
+  }
+
+  async function endSession(x) {
+    try {
+      await api('api/me/sessions/' + encodeURIComponent(x.id), undefined, 'DELETE');
+    } catch (e) {
+      toast(sentence(e.message), null, { tone: 'danger', title: 'The session was not ended' });
+      return;
+    }
+    toast(`The browser at ${x.client || 'an unknown address'} is signed out.`, null, { title: 'Session ended' });
+    openSessions();
+  }
+
+  async function endOthers() {
+    let res;
+    try {
+      res = await api('api/me/sessions', undefined, 'DELETE');
+    } catch (e) {
+      toast(sentence(e.message), null, { tone: 'danger', title: 'The other sessions were not ended' });
+      return;
+    }
+    toast(res.ended === 1 ? 'One other browser was signed out.' : `${res.ended} other browsers were signed out.`, null, { title: 'Other sessions ended' });
+    openSessions();
+  }
+
   // ---------- Two-step sign-in (account menu) ----------
   // A passkey, or a code from an authenticator app, after the password.
   // Setting up the app shows a QR code and checks one code from it; the

@@ -595,3 +595,73 @@ func TestTenantListAcrossServers(t *testing.T) {
 		t.Errorf("write below the tenants' level: %v", err)
 	}
 }
+
+// EndUser ends the sessions of a user whose session epoch did not move
+// on, as when the directory refused them but their record could not be
+// written: on every server, and it counts only those it ended.
+func TestEndUserEndsSessionsWithoutEpoch(t *testing.T) {
+	o, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("dora", users.Analyst)
+	b.cycle()
+	c1 := a.signIn("dora", false)
+	c2 := a.signIn("dora", true)
+	if !b.valid(c1) || !b.valid(c2) {
+		t.Fatal("the sessions do not work on B")
+	}
+	if n := a.sessions.EndUser(ctx, "dora", ""); n != 2 {
+		t.Errorf("EndUser ended %d sessions, want 2", n)
+	}
+	b.cycle()
+	if a.valid(c1) || a.valid(c2) || b.valid(c1) || b.valid(c2) {
+		t.Error("a session outlived EndUser")
+	}
+	if n := o.sessionDocs(t, "dora"); n != 0 {
+		t.Errorf("%d session documents left", n)
+	}
+	if n := a.sessions.EndUser(ctx, "dora", ""); n != 0 {
+		t.Errorf("EndUser ended %d sessions again", n)
+	}
+}
+
+// A user's list of sessions names each by a hash, marks the current one
+// and ends one on every server.
+func TestListAndEndSessions(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("erin", users.Viewer)
+	a.addUser("finn", users.Viewer)
+	b.cycle()
+	mine := a.signIn("erin", false)
+	other := b.signIn("erin", true)
+	a.signIn("finn", false)
+	b.valid(other)
+	list, err := a.sessions.List(ctx, "Erin", mine)
+	if err != nil || len(list) != 2 {
+		t.Fatalf("List = %+v, %v", list, err)
+	}
+	if !list[0].Current || list[1].Current || !list[1].Remember {
+		t.Errorf("current or remember wrong: %+v", list)
+	}
+	for _, ss := range list {
+		if ss.ID == SessionID(mine) || ss.ID == SessionID(other) || strings.Contains(mine+other, ss.ID) {
+			t.Errorf("the list gives away a cookie or its document: %+v", ss)
+		}
+	}
+	if ok, err := a.sessions.End(ctx, "finn", list[1].ID); ok || err != nil {
+		t.Errorf("ended another user's session: %v, %v", ok, err)
+	}
+	if ok, err := a.sessions.End(ctx, "erin", list[1].ID); !ok || err != nil {
+		t.Fatalf("End = %v, %v", ok, err)
+	}
+	b.cycle()
+	if b.valid(other) || a.valid(other) {
+		t.Error("the ended session still works")
+	}
+	if !a.valid(mine) {
+		t.Error("the current session ended")
+	}
+	if list, _ := a.sessions.List(ctx, "erin", mine); len(list) != 1 || !list[0].Current {
+		t.Errorf("after End: %+v", list)
+	}
+}

@@ -1013,6 +1013,7 @@ dialog.modal::backdrop { background: var(--scrim); backdrop-filter: blur(3px); }
 /* the public demo's one-click sign-in, above the password form */
 .auth__demo { display: grid; gap: 18px; }
 .auth__demo[hidden] { display: none; }
+.auth__remember[hidden] { display: none; }
 /* the sign-in notice an admin sets (Settings > Sign-in notice): plain text,
    with its line breaks, scrolling inside itself when it is long */
 .auth__notice { display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--r-md); background: var(--sunken); box-shadow: inset 0 0 0 1px var(--line-subtle); }
