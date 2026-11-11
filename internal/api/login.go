@@ -211,6 +211,9 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		writeSignInError(w, err)
 		return
 	}
+	// auth.keep_signed_in off: the box is hidden, and a request that
+	// ticks it anyway gets a session that ends when idle.
+	req.Remember = req.Remember && s.conf().KeepSignedInOn()
 	token, err := s.startSession(r, p, req.Remember)
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, err)
@@ -234,6 +237,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 // users, in the user's session epoch as it is now, so a password changed
 // or an account disabled since ends it.
 func (s *Server) startSession(r *http.Request, p *principal, remember bool) (string, error) {
+	remember = remember && s.conf().KeepSignedInOn()
 	n := auth.NewSession{User: p.Username, Remember: remember, Method: p.Source, Epoch: p.epoch}
 	if a := s.client(r).Addr; a.IsValid() {
 		n.Client = a.String()
@@ -311,6 +315,10 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		page = bytes.Replace(page, []byte(`href="api/auth/saml/start" hidden`), []byte(`href="api/auth/saml/start"`), 1)
 		page = bytes.Replace(page, []byte(`<span id="saml-label">Sign in with SAML single sign-on</span>`),
 			[]byte(`<span id="saml-label">`+html.EscapeString(c.SAMLSettings().ButtonLabel)+`</span>`), 1)
+	}
+	if !c.KeepSignedInOn() {
+		// No Keep me signed in.
+		page = bytes.Replace(page, []byte(`id="remember-row"`), []byte(`id="remember-row" hidden`), 1)
 	}
 	if c.DemoOn() {
 		// The public demo's one-click sign-in, hidden otherwise.
