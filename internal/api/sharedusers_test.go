@@ -536,6 +536,7 @@ func TestLockoutsAcrossServers(t *testing.T) {
 	admin, _ := c.a.signIn("admin", "s3cret-pass")
 	c.a.addUser(admin, "jlee", "first-password-1", users.Analyst)
 	c.a.addUser(admin, "kim", "k-password-one", users.Analyst)
+	c.a.addUser(admin, "pat", "p-password-one", users.Analyst)
 	c.b.cycle()
 	for i := 1; i <= 5; i++ {
 		if _, code := c.a.signIn("jlee", "wrong"); code != http.StatusUnauthorized {
@@ -566,11 +567,22 @@ func TestLockoutsAcrossServers(t *testing.T) {
 	if _, code := c.a.signIn("kim", "k-password-one"); code != http.StatusTooManyRequests {
 		t.Fatalf("kim on A after the address was locked: %d", code)
 	}
-	waitFor(t, "B refuses the address", func() bool {
+	// Polled without signing in: a sign-in that got through would make
+	// the address known for that account, and so let it in.
+	waitFor(t, "B learns the address is locked", func() bool {
 		c.b.cycle()
-		_, code := c.b.signIn("kim", "k-password-one")
-		return code == http.StatusTooManyRequests
+		a, err := c.b.srv.limiter().Begin(auth.Client{Address: "127.0.0.1"}, "pat")
+		a.Done()
+		return err != nil
 	})
+	if _, code := c.b.signIn("pat", "p-password-one"); code != http.StatusTooManyRequests {
+		t.Errorf("pat on B after the address was locked on A: %d", code)
+	}
+	// kim signed in on B from this address before, so B still lets her
+	// in: a locked address keeps out only those it does not know.
+	if ck, code := c.b.signIn("kim", "k-password-one"); ck == nil {
+		t.Errorf("kim on B, where she signed in from the address before: %d", code)
+	}
 	c.clk.Advance(16 * time.Minute)
 	for _, m := range []*member{c.a, c.b} {
 		if ck, code := m.signIn("jlee", "first-password-1"); ck == nil {

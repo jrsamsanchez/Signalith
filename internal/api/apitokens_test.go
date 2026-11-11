@@ -61,6 +61,12 @@ func TestAPITokensAcrossServers(t *testing.T) {
 	if code, out, _ := c.b.call("POST", "/api/parse", `{"query":"index=main"}`, nil, bearer); out["code"] == "token_read_only" {
 		t.Errorf("parse is a read: %d %v", code, out)
 	}
+	// A GET route not in tokenRoutes is refused too, and so is a HEAD of it.
+	for _, m := range []string{"GET", "HEAD"} {
+		if code, out, _ := c.b.call(m, "/api/settings/export", "", nil, bearer); code != http.StatusForbidden || (m == "GET" && out["code"] != "token_read_only") {
+			t.Errorf("%s of a route not listed for tokens: %d %v", m, code, out)
+		}
+	}
 	// Its role: a viewer's.
 	if code, _, _ := c.b.call("GET", "/api/agent-tokens", "", nil, bearer); code != http.StatusForbidden {
 		t.Errorf("an analyst route with a viewer token: %d", code)

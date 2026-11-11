@@ -17,6 +17,11 @@ import (
 // counts before a sensitive change asks for one once more.
 const RecheckAge = 15 * time.Minute
 
+// ActionRecheckAge is the shorter time a password or code entered again
+// counts for before running a response action or approving a playbook
+// step, which change other systems at once.
+const ActionRecheckAge = 5 * time.Minute
+
 const (
 	recheckPrefix = "1."
 	recheckValue  = 8 + sha256.Size
@@ -34,6 +39,13 @@ func (k *BrowserKey) IssueRecheck(account, session string, now time.Time) string
 // CheckRecheck reports whether value is one IssueRecheck made for account
 // and session less than RecheckAge before now.
 func (k *BrowserKey) CheckRecheck(account, session, value string, now time.Time) bool {
+	return k.CheckRecheckWithin(account, session, value, now, RecheckAge)
+}
+
+// CheckRecheckWithin is CheckRecheck for a value made less than within
+// before now; within is never longer than RecheckAge.
+func (k *BrowserKey) CheckRecheckWithin(account, session, value string, now time.Time, within time.Duration) bool {
+	within = min(within, RecheckAge)
 	enc, ok := strings.CutPrefix(value, recheckPrefix)
 	if !ok || session == "" || len(enc) != base64.RawURLEncoding.EncodedLen(recheckValue) {
 		return false
@@ -46,7 +58,7 @@ func (k *BrowserKey) CheckRecheck(account, session, value string, now time.Time)
 		return false
 	}
 	age := now.Sub(time.Unix(int64(binary.BigEndian.Uint64(b)), 0))
-	return age < RecheckAge && age > -time.Minute
+	return age < within && age > -time.Minute
 }
 
 // signRecheck appends the MAC of head (the time), account and session to

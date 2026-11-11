@@ -120,7 +120,9 @@ Slack and Teams messages can carry buttons, so analysts act without opening Sign
   the **Approvals** page.
 - **Approve** runs the step. It is only offered when the channel has **Allow approving
   playbook steps from chat** on. Off, analysts approve in Signalith, and chat offers only
-  Reject and Acknowledge.
+  Reject and Acknowledge. Approving in Signalith asks for the password again when it was
+  not entered in the last 5 minutes; a chat button cannot, so with this on, the chat
+  app's own sign-in and the checks below stand in for it.
 
 After a click, the message changes to say who did what, such as "Approved by andy in
 Slack", and the buttons go away. A link button that opens Signalith is always there too.

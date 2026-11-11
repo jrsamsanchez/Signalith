@@ -30,6 +30,12 @@ type SessionStore interface {
 	// EndUser ends every session of a user except the one with token keep
 	// ("" keeps none), and reports how many there were.
 	EndUser(ctx context.Context, user, keep string) int
+	// List lists the sessions of a user that have not ended, the one with
+	// token current marked (auth.Info.Current).
+	List(ctx context.Context, user, current string) ([]auth.Info, error)
+	// End ends the session of a user with the list ID id (auth.Info.ID),
+	// and reports whether there was one.
+	End(ctx context.Context, user, id string) (bool, error)
 	// Users lists the users with a session, each once, in lower case.
 	Users(ctx context.Context) []string
 	// SetIdle changes how long a session lasts without a request.
@@ -73,6 +79,14 @@ func (m memorySessions) Delete(_ context.Context, token string) { m.s.Delete(tok
 
 func (m memorySessions) EndUser(_ context.Context, user, keep string) int {
 	return m.s.EndUser(user, keep)
+}
+
+func (m memorySessions) List(_ context.Context, user, current string) ([]auth.Info, error) {
+	return m.s.List(user, current), nil
+}
+
+func (m memorySessions) End(_ context.Context, user, id string) (bool, error) {
+	return m.s.End(user, id), nil
 }
 
 func (m memorySessions) Users(context.Context) []string { return m.s.Users() }
