@@ -33,6 +33,10 @@ type Notify struct {
 	// every server writes to, "server" for this server's own. It is nil on
 	// a tenant's server: the audit records are the provider's.
 	AuditFrom func() string
+	// AuditWarning, when set, says that audit alerts may be missing or
+	// late, or "" (notify.Dispatcher.AuditWarning), for this page and the
+	// Health page.
+	AuditWarning func() string
 
 	testMu sync.Mutex // one test at a time
 
@@ -239,6 +243,9 @@ func (s *Server) notifyView(ctx context.Context, set notify.Settings, fileErr er
 		out["audit_alerts"] = alerts
 		out["audit_from"] = s.Notify.AuditFrom()
 		out["audit_link"] = notify.AuditLink(strings.TrimSpace(s.conf().Server.PublicURL))
+		if w := s.auditAlertWarning(); w != "" {
+			out["audit_warning"] = w
+		}
 	}
 	out["revision"] = s.Notify.Settings.Revision()
 	out["file"] = s.Notify.Settings.File
@@ -289,7 +296,21 @@ func (s *Server) handleNotifySave(w http.ResponseWriter, r *http.Request) {
 		// Kept as they are where they are not offered.
 		in.AuditAlerts = nil
 	}
-	set, err := s.Notify.Settings.Save(in)
+	// A channel that audit alerts go to hears of a change that takes
+	// them from it (alerts turned off, the channel removed or sent
+	// elsewhere) in one last message, sent as the settings were before
+	// the save: otherwise turning the alerts off would be the one change
+	// nobody is told about.
+	var losses []notify.AuditLoss
+	lossFailed := 0
+	set, err := s.Notify.Settings.SaveAfter(in, func(cur, next notify.Settings) {
+		if losses = notify.AuditLosses(cur, next); len(losses) == 0 || s.Notify.Sender == nil {
+			return
+		}
+		c := s.conf()
+		lossFailed = notify.SendAuditLosses(r.Context(), s.Notify.Sender, s.Notify.Deliveries, losses, userOf(r), s.client(r).Addr.String(),
+			s.Notify.Server, notify.AuditLink(strings.TrimSpace(c.Server.PublicURL)), nil)
+	})
 	var ie *notify.InputError
 	var fe *notify.FileError
 	switch {
@@ -316,8 +337,15 @@ func (s *Server) handleNotifySave(w http.ResponseWriter, r *http.Request) {
 			auditOn = append(auditOn, a.ID)
 		}
 	}
-	s.audit(r, "notification settings changed", "channels", len(set.Channels), "rules", len(set.Rules), "rules_on", on,
-		"audit_alerts_on", strings.Join(auditOn, ","))
+	args := []any{"channels", len(set.Channels), "rules", len(set.Rules), "rules_on", on, "audit_alerts_on", strings.Join(auditOn, ",")}
+	if len(losses) > 0 {
+		names := make([]string, len(losses))
+		for i, l := range losses {
+			names[i] = l.Channel.Name
+		}
+		args = append(args, "audit_alerts_taken_from", strings.Join(names, ", "), "last_messages_failed", lossFailed)
+	}
+	s.audit(r, "notification settings changed", args...)
 	s.Notify.clearHealth()
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()
@@ -467,19 +495,22 @@ func (s *Server) notifyWarnings(ctx context.Context) []string {
 		return n.healthWarn
 	}
 	n.healthAt, n.healthWarn = now, nil
+	if w := s.auditAlertWarning(); w != "" {
+		n.healthWarn = []string{w}
+	}
 	set, err := n.Settings.Settings()
 	if err != nil {
 		if s.notifyElsewhere() == nil {
-			n.healthWarn = []string{sentence(err.Error()) + " Until then no notifications are sent."}
+			n.healthWarn = append(n.healthWarn, sentence(err.Error())+" Until then no notifications are sent.")
 		}
 		return n.healthWarn
 	}
 	if len(set.Channels) == 0 {
-		return nil
+		return n.healthWarn
 	}
 	list, err := n.Deliveries.Recent(ctx, 300)
 	if err != nil {
-		return nil
+		return n.healthWarn
 	}
 	last := notify.LastStatus(list)
 	for i, c := range notify.Failing(set, list, now.Add(-24*time.Hour)) {
@@ -490,6 +521,14 @@ func (s *Server) notifyWarnings(ctx context.Context) []string {
 		n.healthWarn = append(n.healthWarn, fmt.Sprintf("Notifications to %s are failing. %s Check the channel on the Notifications page.", c.Label(), sentence(last[c.ID].Error)))
 	}
 	return n.healthWarn
+}
+
+// auditAlertWarning says that audit alerts may be missing or late, or "".
+func (s *Server) auditAlertWarning() string {
+	if s.Notify == nil || s.Notify.AuditWarning == nil || !s.auditAlertsHere() || s.notifyElsewhere() != nil {
+		return ""
+	}
+	return s.Notify.AuditWarning()
 }
 
 // clearHealth makes the next Health page read the deliveries again.
