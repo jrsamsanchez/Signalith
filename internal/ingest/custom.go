@@ -50,14 +50,14 @@ func (p *Pipeline) parseCustom(name string, r map[string]any, now time.Time) (ev
 
 // finishCustom fills what a custom parser left out, as Normalize does.
 func finishCustom(ev Event, r map[string]any, now time.Time) Event {
-	if ev.Time.IsZero() {
-		ev.Time = recordTime(r, now)
-	}
 	if ev.Model == "" {
 		ev.Model = "Other"
 	}
 	if ev.Fields == nil {
 		ev.Fields = map[string]any{}
+	}
+	if ev.Time.IsZero() {
+		ev.Time = recordTime(r, now, ev.Fields)
 	}
 	if _, ok := ev.Fields["message"]; !ok {
 		raw, _ := json.Marshal(r)

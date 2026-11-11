@@ -76,6 +76,9 @@ func parseWindowsWith(r map[string]any, named map[string]string) Event {
 	ev := Event{Model: "Other", Fields: f}
 	if t, ok := parseTime(str(r, "TimeCreated", "TimeGenerated")); ok {
 		ev.Time = t
+	} else if t, ok := zonelessTime(str(r, "TimeCreated", "TimeGenerated")); ok {
+		// No zone: the collector's time instead, as for a syslog line.
+		f[DeviceClockField] = FormatDeviceClock(t)
 	}
 	in := inserts(r)
 
