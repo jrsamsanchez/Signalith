@@ -17,8 +17,13 @@ deleted between sessions.
 - Port 443 through Caddy, only from `admin_ip` until `public=true`; port 80,
   which only redirects and answers Let's Encrypt, from anyone. Caddy refuses the token routes
   agents and senders use (`/api/ingest`, OTLP and `/v1/`, HEC, osquery, sensor, agent,
-  join, syslog, SCIM, chat and `/metrics`), so the lab takes no data from outside.
-- SSH from `admin_ip` only, with keys only.
+  join, syslog, SCIM, chat and `/metrics`), so the lab takes no data from outside,
+  and the single sign-on links, which the lab does not use. Those prefixes
+  also hold a few signed-in admin pages (agent and sensor install lines,
+  adding a server, chat linking), which answer 404 on the lab. Caddy's own
+  admin API is off, so a change to the Caddyfile needs `systemctl restart caddy`.
+- SSH from `admin_ip` only, with keys only. The server's own firewall
+  also refuses everything but SSH, 80 and 443.
 - Signalith (9000), its agent port (7779) and OpenSearch (9200) listen on
   127.0.0.1. Signalith trusts Caddy's `X-Forwarded-For` only from
   loopback, and Caddy sets it to the client's own address.
@@ -53,7 +58,8 @@ the setup with the `watch_setup` output. It ends with "Test lab ready".
 Backups: a nightly OpenSearch snapshot (14 kept) and Signalith backup on
 the data volume, and a copy of the Signalith backup on the root disk (7
 kept, master keys in a separate folder), which Hetzner's server backups
-cover. Snapshots stay on the volume: the lab holds only sample and
+cover. A failed backup is said at the next SSH sign-in, since the lab
+sends no mail. Snapshots stay on the volume: the lab holds only sample and
 recorded data, and may be reset.
 
 ## Testers

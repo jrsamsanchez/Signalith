@@ -126,7 +126,8 @@ opensearch_setup() {
   # Upgraded on purpose with Signalith, never by unattended-upgrades.
   apt-mark hold opensearch >/dev/null
   systemctl stop opensearch 2>/dev/null || true
-  install -d -o opensearch -g opensearch "$DATA/opensearch" "$DATA/snapshots"
+  # Closed to the server's other accounts, as the package keeps its own.
+  install -d -m 0750 -o opensearch -g opensearch "$DATA/opensearch" "$DATA/snapshots"
   # The package's demo certificates stop the security plugin from starting.
   rm -f /etc/opensearch/*.pem
   rm -rf /etc/opensearch/certs
@@ -157,10 +158,15 @@ YML
   systemctl enable -q opensearch
   systemctl restart opensearch
   retry 60 os_admin /_cluster/health >/dev/null || fail "OpenSearch did not start. See: journalctl -u opensearch -n 50"
-  # The admin certificate stays with root, for snapshots.
+  # The admin certificate stays with root, for snapshots, in one place
+  # only. The CA's key is not needed once the certificates are made, and
+  # Hetzner's server backups would otherwise keep it.
   install -d -m 700 "$LAB/os-admin"
-  cp "$LAB/pki/opensearch/certs/root-ca.pem" "$LAB/pki/opensearch/certs/admin.pem" "$LAB/pki/opensearch/certs/admin-key.pem" "$LAB/os-admin/"
-  rm -f /etc/opensearch/certs/admin.pem /etc/opensearch/certs/admin-key.pem
+  if [ -e "$LAB/pki/opensearch/certs/admin-key.pem" ]; then
+    cp "$LAB/pki/opensearch/certs/root-ca.pem" "$LAB/pki/opensearch/certs/admin.pem" "$LAB/pki/opensearch/certs/admin-key.pem" "$LAB/os-admin/"
+  fi
+  rm -f /etc/opensearch/certs/admin.pem /etc/opensearch/certs/admin-key.pem \
+    "$LAB/pki/opensearch/certs/admin-key.pem" "$LAB/pki/ca/root-ca-key.pem"
   os_admin /_snapshot/testlab -X PUT -H 'Content-Type: application/json' \
     -d "{\"type\": \"fs\", \"settings\": {\"location\": \"$DATA/snapshots\"}}" >/dev/null
 }
@@ -254,13 +260,16 @@ caddy_setup() {
 EOF
   chmod 644 /usr/share/testlab/about.html
   install -d -o caddy -g caddy /var/log/caddy
-  local global=""
-  [ -z "$EMAIL" ] || global="{
-	email $EMAIL
-}
-"
+  # No admin API: anything on this server could otherwise rewrite the
+  # Caddyfile's rules through localhost:2019. Changes need a restart.
+  local email=""
+  [ -z "$EMAIL" ] || email="email $EMAIL"
   cat >/etc/caddy/Caddyfile <<EOF
-$global
+{
+	admin off
+	$email
+}
+
 $DOMAIN {
 	log {
 		output file /var/log/caddy/access.log {
@@ -272,8 +281,9 @@ $DOMAIN {
 	encode zstd gzip
 
 	# Agents, senders and joining servers use tokens rather than a
-	# sign-in: the test lab takes no data from outside.
-	@closed path /api/ingest* /api/otlp/* /v1 /v1/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics*
+	# sign-in: the test lab takes no data from outside. It has no single
+	# sign-on either, so its links are closed too.
+	@closed path /api/ingest* /api/otlp/* /v1 /v1/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics* /api/auth/oidc/* /api/auth/saml/*
 	respond @closed 404
 
 	# What testers agree to, readable without signing in.
@@ -290,8 +300,6 @@ $DOMAIN {
 		# The lab's own name, which Signalith's origin check and passkeys
 		# compare against, rather than 127.0.0.1:9000.
 		header_up Host {host}
-		# Visitors who have not signed in need not learn the version.
-		header_down -X-Signalith-Version
 		transport http {
 			tls_trust_pool file /etc/caddy/signalith-ca.pem
 			tls_server_name localhost
@@ -303,7 +311,7 @@ EOF
   chown -R caddy:caddy /var/log/caddy
   runuser -u caddy -- caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile >/dev/null
   systemctl enable -q caddy
-  systemctl reload-or-restart caddy
+  systemctl restart caddy
 }
 
 # ---- 6. this server's own audit log ----
@@ -376,6 +384,11 @@ live_feed() {
   # by LoadCredential.
   install -d -m 755 /etc/signalith-feed
   install -m 600 /dev/null /etc/signalith-feed/token.txt
+  # A run again replaces the feed's token: the old one stops working.
+  local old
+  for old in $(sg tokens list -json | jq -r '.tokens[] | select(.name | startswith("Test lab live feed")) | .id'); do
+    sg tokens revoke -yes "$old" >/dev/null
+  done
   sg tokens create -purpose windows "Test lab live feed $(date +%m%d-%H%M%S)" >/etc/signalith-feed/token.txt
   install -m 644 "$CA" /etc/signalith-feed/ca.pem
   # One recorded event every ten seconds, sent as recorded: enough for the
@@ -407,6 +420,9 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+# It sends only to Signalith on this server.
+IPAddressDeny=any
+IPAddressAllow=localhost
 
 [Install]
 WantedBy=multi-user.target
@@ -425,7 +441,7 @@ backups() {
 set -eu
 c=$LAB/os-admin
 os() { curl -fsS --cacert "\$c/root-ca.pem" --cert "\$c/admin.pem" --key "\$c/admin-key.pem" "\$@"; }
-os -X PUT "https://localhost:9200/_snapshot/testlab/nightly-\$(date -u +%Y%m%d)?wait_for_completion=true" >/dev/null
+os -X PUT "https://localhost:9200/_snapshot/testlab/nightly-\$(date -u +%Y%m%d-%H%M%S)?wait_for_completion=true" >/dev/null
 for s in \$(os https://localhost:9200/_snapshot/testlab/_all | jq -r '.snapshots[].snapshot' | sort | head -n -14); do
   os -X DELETE "https://localhost:9200/_snapshot/testlab/\$s" >/dev/null
 done
@@ -439,6 +455,7 @@ EOF
 [Unit]
 Description=Signalith test lab: nightly snapshot and backup
 OnSuccess=testlab-backup-copy.service
+OnFailure=testlab-backup-failed.service
 
 [Service]
 Type=oneshot
@@ -474,6 +491,7 @@ copy() { # newest file matching \$1 into \$2, keeping \$3
 }
 copy 'signalith-[0-9]*[0-9].zip' /var/backups/testlab 7
 copy '*.master-key.zip' /var/backups/testlab-keys 3
+rm -f /etc/motd.d/testlab-backup
 EOF
   chmod 700 /usr/local/sbin/testlab-backup-copy
   cat >/etc/systemd/system/testlab-backup-copy.service <<'EOF'
@@ -485,12 +503,25 @@ Type=oneshot
 UMask=0077
 ExecStart=/usr/local/sbin/testlab-backup-copy
 EOF
+  # The lab sends no mail: a failed backup is said at the next SSH sign-in
+  # until a backup works again.
+  install -d -m 755 /etc/motd.d
+  cat >/etc/systemd/system/testlab-backup-failed.service <<'EOF'
+[Unit]
+Description=Signalith test lab: say that the nightly backup failed
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c 'echo "The test lab backup failed at $(date -u). See: journalctl -u testlab-backup" >/etc/motd.d/testlab-backup'
+EOF
   systemctl daemon-reload
   systemctl enable -q --now testlab-backup.timer
 }
 
-# Nothing on this server needs the cloud's metadata service after the
-# first boot, and no service may reach it. OpenSearch talks to this server
+# In: only SSH and the web, so a service that listens on more than
+# loopback by mistake is still closed (Hetzner's firewall also limits SSH
+# to the admin's address). Out: nothing on this server needs the cloud's
+# metadata service after the first boot, and no service may reach it. OpenSearch talks to this server
 # only. Signalith may reach the internet over HTTPS only (feeds, content,
 # vulnerability data), never a private or link-local address. The lab sends
 # no mail.
@@ -499,9 +530,21 @@ outbound() {
 #!/usr/sbin/nft -f
 flush ruleset
 table inet testlab {
+	chain input {
+		type filter hook input priority 0; policy drop;
+		iif lo accept
+		ct state established,related accept
+		ct state invalid drop
+		meta l4proto { icmp, ipv6-icmp } accept
+		udp dport 68 accept
+		udp dport 546 accept
+		tcp dport { 22, 80, 443 } accept
+	}
 	chain output {
 		type filter hook output priority 0; policy accept;
 		ip daddr 169.254.169.254 drop
+		# Caddy's admin API is off; nothing but root reaches its port.
+		oif lo tcp dport 2019 meta skuid != 0 drop
 		oif lo accept
 		meta skuid "opensearch" drop
 		meta skuid "signalith" ip daddr { 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, 100.64.0.0/10, 169.254.0.0/16 } drop
