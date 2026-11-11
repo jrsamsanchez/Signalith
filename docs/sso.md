@@ -399,9 +399,10 @@ provider did ask. Both checks are off by default; turn one on only once the prov
 what it looks for, or nobody gets in with single sign-on:
 
 - **OpenID Connect: Check two-step sign-in** (`auth.oidc.require_mfa: true`). The ID
-  token's `amr` claim must name `mfa`, or two or more second-factor methods from RFC 8176
-  (such as `hwk` and `user`). A password plus one other value (`pwd` and `otp`, or `pwd`
-  and `fed`) is not enough on its own, so the provider must send `mfa` in that case. Entra ID and Okta send `amr`; Keycloak does with its AMR mapper on the
+  token's `amr` claim must name `mfa`, or a password with a strong second factor (such
+  as `pwd` and `otp`, or `pwd` and `hwk`), or two second-factor methods from RFC 8176.
+  `fed`, `wia` and `kba` never count, and a password with only `sms`, `tel`, `pin`,
+  `rsa` or `user` is not enough. Entra ID and Okta send `amr`; Keycloak does with its AMR mapper on the
   client's scope; Google does not, so leave it off with Google. Only the signed ID token
   counts, not userinfo.
 - **SAML: Two-step sign-in context** (`auth.saml.mfa_context`). Signalith asks for this

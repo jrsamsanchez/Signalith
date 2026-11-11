@@ -546,6 +546,7 @@ func TestSSORequiresSecondFactorFromProvider(t *testing.T) {
 		{name: "no amr", mode: "everyone", check: true, want: "mfa"},
 		{name: "password only", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd"}}, want: "mfa"},
 		{name: "mfa", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd", "mfa"}}},
+		{name: "password and code", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd", "otp"}}},
 		{name: "key and fingerprint", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"hwk", "fpt"}}},
 		{name: "password and federation", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd", "fed"}}, want: "mfa"},
 		// Only the signed ID token counts, not what userinfo adds.

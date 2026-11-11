@@ -528,23 +528,27 @@ func (c Claims) Strings(name string) []string {
 func (c Claims) Has(name string) bool { return c.lookup(name) != nil }
 
 // MFA reports whether the amr claim (RFC 8176) shows a second factor: it
-// names mfa, or two or more of the factor values in amrFactors, such as
-// otp and hwk. A password with a federation, Windows sign-in or knowledge
-// question (pwd with fed, wia or kba) is not two factors, and neither is a
-// password with a channel some providers list without a second step, so
-// pwd itself does not count.
+// names mfa, or two or more of the factor values in amrFactors (such as hwk
+// and fpt), or a password together with one strong factor in amrStrong
+// (pwd and otp, as Keycloak's AMR mapper sends). Federation, Windows
+// sign-in and knowledge questions (fed, wia, kba) never count, and a
+// password with a weaker value such as sms is not enough on its own.
 func (c Claims) MFA() bool {
 	seen := map[string]bool{}
+	pwd, strong := false, false
 	for _, m := range c.Strings("amr") {
 		m = strings.ToLower(m)
-		if m == "mfa" {
+		switch {
+		case m == "mfa":
 			return true
-		}
-		if amrFactors[m] {
+		case m == "pwd":
+			pwd = true
+		case amrFactors[m]:
 			seen[m] = true
+			strong = strong || amrStrong[m]
 		}
 	}
-	return len(seen) >= 2
+	return len(seen) >= 2 || (pwd && strong)
 }
 
 // amrFactors are the RFC 8176 values that count towards two factors.
@@ -552,6 +556,12 @@ var amrFactors = map[string]bool{
 	"otp": true, "hwk": true, "swk": true, "sms": true, "tel": true,
 	"face": true, "fpt": true, "iris": true, "retina": true, "vbm": true,
 	"pop": true, "sc": true, "pin": true, "rsa": true, "user": true, "mca": true,
+}
+
+// amrStrong are the factors that make a second factor with a password.
+var amrStrong = map[string]bool{
+	"otp": true, "hwk": true, "swk": true, "sc": true, "pop": true,
+	"face": true, "fpt": true, "iris": true, "retina": true, "vbm": true, "mca": true,
 }
 
 func (c Claims) lookup(name string) any {
