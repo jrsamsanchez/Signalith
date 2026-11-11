@@ -50,7 +50,9 @@ func (e *Engine) mapSearch(ctx context.Context, res *Result, c *query.Map, outer
 		if err != nil {
 			return err
 		}
-		p, err := e.compile(sq)
+		// As a subsearch of join or append does, each search takes up
+		// to search.max_events events, marked Sampled when more match.
+		p, err := e.compileSub(sq)
 		if err != nil {
 			return err
 		}
@@ -61,8 +63,10 @@ func (e *Engine) mapSearch(ctx context.Context, res *Result, c *query.Map, outer
 		appendRows(out, sub.Rows, sub.Columns, sub.Kind)
 		out.Matched += sub.Matched
 		out.Truncated = out.Truncated || sub.Truncated
+		noteSampled(out, sub)
 	}
 	res.Kind, res.Columns, res.Rows, res.Matched = out.Kind, out.Columns, out.Rows, out.Matched
+	noteSampled(res, out)
 	res.Truncated = res.Truncated || out.Truncated
 	return nil
 }

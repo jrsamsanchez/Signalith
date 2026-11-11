@@ -99,18 +99,45 @@ func (e *Engine) resolveExpr(ctx context.Context, x query.Expr, outer *query.Que
 		if err != nil {
 			return nil, err
 		}
+		// The terms are only as complete as the subsearch's rows: the
+		// search that uses them carries its marks (see subMarks).
+		evaluatorFor(ctx).sub.note(res)
 		return subsearchTerms(res)
 	}
 	return x, nil
 }
 
-// runSubsearch runs a subsearch, its own subsearch terms first.
+// subMarks keeps, for one search, the Sampled and Truncated marks of the
+// subsearches among its terms, at any depth. Their rows become terms, not
+// rows, so the marks have no result to travel in until the search ends.
+type subMarks struct {
+	sampled   int
+	truncated bool
+}
+
+func (m *subMarks) note(sub *Result) {
+	if sub.Sampled > 0 && (m.sampled == 0 || sub.Sampled < m.sampled) {
+		m.sampled = sub.Sampled
+	}
+	m.truncated = m.truncated || sub.Truncated
+}
+
+// mark puts the marks on the search's result.
+func (m *subMarks) mark(res *Result) {
+	noteSampled(res, &Result{Sampled: m.sampled})
+	res.Truncated = res.Truncated || m.truncated
+}
+
+// runSubsearch runs a subsearch, its own subsearch terms first. Like the
+// subsearches of join and append (see compileSub), a plain event search
+// takes up to search.max_events events and is marked Sampled when more
+// match.
 func (e *Engine) runSubsearch(ctx context.Context, sq *query.Query) (*Result, error) {
 	sq, err := e.resolveSubsearches(ctx, sq)
 	if err != nil {
 		return nil, err
 	}
-	p, err := e.compile(sq)
+	p, err := e.compileSub(sq)
 	if err != nil {
 		return nil, err
 	}
@@ -133,6 +160,9 @@ func subsearchTerms(res *Result) (query.Expr, error) {
 		return nil
 	}
 	out := &query.Or{}
+	// Rows that say the same thing make one term: many events often hold
+	// few distinct values.
+	seen := map[string]bool{}
 	for _, r := range res.Rows {
 		var keys []string
 		for k := range r {
@@ -141,6 +171,15 @@ func subsearchTerms(res *Result) (query.Expr, error) {
 			}
 		}
 		sort.Strings(keys)
+		var same strings.Builder
+		for _, k := range keys {
+			fmt.Fprintf(&same, "%q=", k)
+			valueKey(&same, r[k])
+		}
+		if seen[same.String()] {
+			continue
+		}
+		seen[same.String()] = true
 		row := &query.And{}
 		for _, k := range keys {
 			var vals []string
