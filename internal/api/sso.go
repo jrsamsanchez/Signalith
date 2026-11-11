@@ -103,6 +103,8 @@ type ssoState struct {
 	Next     string `json:"x,omitempty"`
 	Issuer   string `json:"i"`
 	Expires  int64  `json:"e"`
+	// Agreed is set when the sign-in notice was agreed to at the start.
+	Agreed bool `json:"a,omitempty"`
 }
 
 // localPath returns next when it is a path on this server (with its query
@@ -145,8 +147,9 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "off", "", "single sign-on is off")
 		return
 	}
-	if c.NoticeAgree() && r.URL.Query().Get("agreed") != "1" {
-		s.ssoFail(w, r, "notice", "", "the sign-in notice was not agreed to")
+	agreed := c.NoticeAgree()
+	if agreed && !s.ssoNoticeAgreed(r) {
+		s.ssoFail(w, r, "notice", "", "the sign-in notice was not agreed to on the sign-in page")
 		return
 	}
 	next := localPath(r.URL.Query().Get("next"))
@@ -155,8 +158,9 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 	// address first, once.
 	if pu, err := url.Parse(c.Server.PublicURL); err == nil && pu.Host != "" && !strings.EqualFold(pu.Host, r.Host) && r.URL.Query().Get("hop") == "" {
 		q := url.Values{"next": {next}, "hop": {"1"}}
-		if a := r.URL.Query().Get("agreed"); a != "" {
-			q.Set("agreed", a)
+		if agreed {
+			q.Set("agreed", "1")
+			q.Set("notice", s.noticeHop(time.Now()))
 		}
 		http.Redirect(w, r, strings.TrimRight(c.Server.PublicURL, "/")+ssoStartPath+"?"+q.Encode(), http.StatusSeeOther)
 		return
@@ -171,7 +175,7 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 	}
 	req := oidc.NewRequest()
 	st := ssoState{State: req.State, Nonce: req.Nonce, Verifier: req.Verifier, Next: next, Issuer: set.Issuer,
-		Expires: time.Now().Add(ssoWait).Unix()}
+		Expires: time.Now().Add(ssoWait).Unix(), Agreed: agreed}
 	data, _ := json.Marshal(st)
 	http.SetCookie(w, &http.Cookie{Name: s.ssoCookieName(r), Value: base64.RawURLEncoding.EncodeToString(data), Path: "/",
 		MaxAge: int(ssoWait.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookie(r)})
@@ -258,7 +262,7 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.finishSSO(w, r, set, claims, st.Next, note)
+	s.finishSSO(w, r, set, claims, st.Next, note, st.Agreed)
 }
 
 // oidcText is text from the provider, made safe for the log.
@@ -344,7 +348,7 @@ func ssoIdentityOf(set config.OIDCSettings, claims oidc.Claims) (ssoIdentity, st
 
 // finishSSO signs in the person the checked claims describe, and sends the
 // browser on to next.
-func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OIDCSettings, claims oidc.Claims, next, note string) {
+func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OIDCSettings, claims oidc.Claims, next, note string, agreed bool) {
 	id, code, reason := ssoIdentityOf(set, claims)
 	if code != "" {
 		if note != "" {
@@ -353,7 +357,8 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OI
 		s.ssoFail(w, r, code, claims.String(set.UsernameClaim), reason)
 		return
 	}
-	s.signInSSO(w, r, id.user, set.NewUsers(), next, []any{"issuer", set.Issuer, "groups_matched", strings.Join(id.matched, ",")})
+	s.signInSSO(w, r, id.user, set.NewUsers(), next, append([]any{"issuer", set.Issuer, "groups_matched", strings.Join(id.matched, ",")},
+		ssoNoticeLog(agreed)...))
 }
 
 // signInSSO signs in u, whom an identity provider vouched for, adding
@@ -396,7 +401,7 @@ func (s *Server) signInSSO(w http.ResponseWriter, r *http.Request, u users.SSOUs
 	}
 	s.setSessionCookie(w, r, token, false)
 	s.Log.Info("signed in", slices.Concat([]any{"audit", true, "user", p.Username, "role", p.Role, "source", p.Source}, s.client(r).logAttrs(),
-		[]any{"method", "sso"}, s.noticeLog(), logAttrs)...)
+		[]any{"method", "sso"}, logAttrs)...)
 	// The session cookie is SameSite=Strict, and this answer ends a
 	// navigation that came from the provider's site, so a redirect would
 	// arrive without it. A page that moves on by itself starts a new,

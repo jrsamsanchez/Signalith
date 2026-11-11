@@ -6,11 +6,14 @@ package api
 import (
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/oidc/oidctest"
 )
@@ -164,15 +167,16 @@ func TestSignInNoticeSSO(t *testing.T) {
 	if loc := resp.Header.Get("Location"); loc != "/login?sso_error=notice" {
 		t.Errorf("start without agreeing went to %q", loc)
 	}
-	// With it, it goes to the provider, and through the hop to the public
-	// address too.
-	resp = send(t, "GET", ts.URL+"/api/auth/oidc/start?agreed=1", "", nil)
+	// With it, from the sign-in page, it goes to the provider, and
+	// through the hop to the public address too.
+	fromPage := map[string]string{"Sec-Fetch-Site": "same-origin"}
+	resp = send(t, "GET", ts.URL+"/api/auth/oidc/start?agreed=1", "", fromPage)
 	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, p.Issuer) {
 		t.Errorf("start after agreeing went to %q", loc)
 	}
 	s.Config.Server.PublicURL = "https://siem.example.com:8443"
-	resp = send(t, "GET", ts.URL+"/api/auth/oidc/start?agreed=1&next=/", "", nil)
-	if loc := resp.Header.Get("Location"); loc != "https://siem.example.com:8443/api/auth/oidc/start?agreed=1&hop=1&next=%2F" {
+	resp = send(t, "GET", ts.URL+"/api/auth/oidc/start?agreed=1&next=/", "", fromPage)
+	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, "https://siem.example.com:8443/api/auth/oidc/start?agreed=1&hop=1&next=%2F&notice=") {
 		t.Errorf("hop went to %q", loc)
 	}
 	// SAML checks it when the sign-in starts too (here before it finds
@@ -180,5 +184,79 @@ func TestSignInNoticeSSO(t *testing.T) {
 	resp = send(t, "GET", ts.URL+"/api/auth/saml/start", "", nil)
 	if loc := resp.Header.Get("Location"); loc != "/login?sso_error=off" {
 		t.Errorf("SAML start = %q", loc)
+	}
+}
+
+// TestSSONoticeAgreedOnlyOnTheSignInPage checks that agreed=1 on a single
+// sign-on start counts only from the sign-in page: a link to the start
+// from elsewhere (an identity provider's tile, a bookmark, a link someone
+// sent) is refused, as is a made-up hop, and the sign-in is logged with
+// notice=agreed only when the start checked it.
+func TestSSONoticeAgreedOnlyOnTheSignInPage(t *testing.T) {
+	p := oidctest.New(t)
+	p.Set(func(p *oidctest.Provider) {
+		p.Claims = map[string]any{"preferred_username": "alice", "groups": []any{"/soc"}}
+	})
+	ts, s := newSSOServer(t, p, nil)
+	logs := &logBuffer{}
+	s.Log = slog.New(slog.NewTextHandler(logs, nil))
+	s.Config.Auth.Notice.Text = "Authorized use only."
+	s.Config.Auth.Notice.Agree = true
+
+	start := ts.URL + "/api/auth/oidc/start?agreed=1"
+	for _, site := range []string{"cross-site", "same-site", "none"} {
+		resp := send(t, "GET", start, "", map[string]string{"Sec-Fetch-Site": site})
+		if loc := resp.Header.Get("Location"); loc != "/login?sso_error=notice" {
+			t.Errorf("start with agreed=1 from %s went to %q", site, loc)
+		}
+	}
+	for _, hop := range []string{"&hop=1", "&hop=1&notice=", "&hop=1&notice=9999999999.AAAA",
+		"&hop=1&notice=" + url.QueryEscape(s.noticeHop(time.Now().Add(-noticeHopWait-time.Second)))} {
+		resp := send(t, "GET", start+hop, "", map[string]string{"Sec-Fetch-Site": "cross-site"})
+		if loc := resp.Header.Get("Location"); loc != "/login?sso_error=notice" {
+			t.Errorf("start with %s went to %q", hop, loc)
+		}
+	}
+	// The hop the server makes itself goes on.
+	resp := send(t, "GET", start+"&hop=1&notice="+url.QueryEscape(s.noticeHop(time.Now())), "", map[string]string{"Sec-Fetch-Site": "cross-site"})
+	if loc := resp.Header.Get("Location"); !strings.HasPrefix(loc, p.Issuer) {
+		t.Errorf("start after the hop went to %q", loc)
+	}
+
+	// From the sign-in page, the sign-in is logged with notice=agreed.
+	b := browser(t, p)
+	resp, err := b.Do(func() *http.Request {
+		req, _ := http.NewRequest("GET", start, nil)
+		req.Header.Set("Sec-Fetch-Site", "same-origin")
+		return req
+	}())
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if code, who := me(t, b, ts); code != 200 || who["username"] != "alice" {
+		t.Fatalf("after single sign-on: %d %v", code, who)
+	}
+	if l := logs.String(); !strings.Contains(l, `msg="signed in"`) || !strings.Contains(l, "method=sso") || !strings.Contains(l, "notice=agreed") {
+		t.Errorf("single sign-on not logged with the notice:\n%s", l)
+	}
+
+	// The log says what the start checked, not the setting at the end:
+	// here agreement is turned on while the person is at the provider.
+	s.Config.Auth.Notice.Agree = false
+	before := len(logs.String())
+	b = browser(t, p)
+	b.CheckRedirect = func(req *http.Request, _ []*http.Request) error {
+		if req.URL.Path == "/api/auth/oidc/callback" {
+			s.Config.Auth.Notice.Agree = true
+		}
+		return nil
+	}
+	ssoSignIn(t, b, ts, "")
+	if code, who := me(t, b, ts); code != 200 || who["username"] != "alice" {
+		t.Fatalf("after single sign-on: %d %v", code, who)
+	}
+	if l := logs.String()[before:]; !strings.Contains(l, `msg="signed in"`) || strings.Contains(l, "notice=") {
+		t.Errorf("single sign-on started without the notice logged as agreed:\n%s", l)
 	}
 }
