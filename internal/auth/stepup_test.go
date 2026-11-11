@@ -29,3 +29,23 @@ func TestRecheckCookie(t *testing.T) {
 		}
 	}
 }
+
+// A response action asks for a recheck made within ActionRecheckAge, and
+// no route can ask for a longer one than RecheckAge.
+func TestRecheckWithin(t *testing.T) {
+	k := NewBrowserKey()
+	now := time.Unix(1_800_000_000, 0)
+	v := k.IssueRecheck("ann", "tok-1", now)
+	if !k.CheckRecheckWithin("ann", "tok-1", v, now.Add(ActionRecheckAge-time.Second), ActionRecheckAge) {
+		t.Error("a recheck inside the window was refused")
+	}
+	if k.CheckRecheckWithin("ann", "tok-1", v, now.Add(ActionRecheckAge), ActionRecheckAge) {
+		t.Error("a recheck older than ActionRecheckAge was accepted")
+	}
+	if !k.CheckRecheck("ann", "tok-1", v, now.Add(ActionRecheckAge)) {
+		t.Error("the same recheck was refused for other sensitive changes")
+	}
+	if k.CheckRecheckWithin("ann", "tok-1", v, now.Add(RecheckAge), time.Hour) {
+		t.Error("a window longer than RecheckAge was honoured")
+	}
+}

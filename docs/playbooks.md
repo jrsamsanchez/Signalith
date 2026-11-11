@@ -72,7 +72,9 @@ approval channel, if it has one, gets a message with a link to the page.
 
 - **Approve** runs the action, then the rest of the playbook, within a few seconds. The
   analyst who approved is recorded on the action run, in the audit log, on the finding
-  and on the case.
+  and on the case. Like running an action by hand, it asks for the password (or a
+  two-step code or passkey) when it was not entered in the last 5 minutes (see
+  [Confirming it's you](users.md#confirming-its-you)).
 - **Reject** stops the playbook for this finding. The steps after it do not run.
 - Either can take a **note**, such as a ticket number. It is kept with the decision and
   shown on the finding.
@@ -182,7 +184,7 @@ shows in the SOAR, not in Signalith.
 | `GET /api/playbooks` | admins | The playbooks, each with its `summary`, and the page's details: `revision`, `file`, `file_error`, `manage` (whether this server can change them) and `runs_on`, the `channels` and `actions` a step can use, and `approval_hours` |
 | `PUT /api/playbooks` | admins | Replaces the playbooks with the body (`revision`, `playbooks`). A body with problems is refused with 400 and `problems` (`where`, `field`, `message`). A stale `revision`, or another server running the jobs, gives 409. |
 | `GET /api/playbooks/runs?status=&finding_id=&playbook_id=&limit=` | analysts | Runs, newest first, with `total` and `waiting` (how many wait for approval). `status` takes one status or a comma list: `running`, `waiting_approval`, `approved`, `queued`, `succeeded`, `failed`, `rejected`, `expired`, `interrupted`. |
-| `POST /api/playbooks/runs/{id}/approve` | analysts | Approves the step a run waits on. Body: `{"note": "..."}`, optional, up to 1,000 characters. Answers with the run. |
+| `POST /api/playbooks/runs/{id}/approve` | analysts | Approves the step a run waits on. Body: `{"note": "..."}`, optional, up to 1,000 characters. Answers with the run, or `403` `recheck_required` when the password was not entered in the last 5 minutes ([Confirming it's you](users.md#confirming-its-you)). |
 | `POST /api/playbooks/runs/{id}/reject` | analysts | Rejects it, with the same body. |
 
 Approving or rejecting a run that no longer waits gives 409 with `"code": "decided"`, a

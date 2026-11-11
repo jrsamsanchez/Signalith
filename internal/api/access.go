@@ -32,8 +32,10 @@ type route struct {
 	Pattern string
 	Role    users.Role
 	// Recheck routes make sensitive changes, which ask for the password
-	// or two-step code again (see recheckNeeded).
-	Recheck bool
+	// or two-step code again (see recheckNeeded), entered within
+	// RecheckAge when set, else auth.RecheckAge.
+	Recheck    bool
+	RecheckAge time.Duration
 	// Unclassified routes were registered without a role. They are
 	// admin-only, and TestEveryRouteHasARole fails until they get one.
 	Unclassified bool
@@ -216,7 +218,7 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 				"error": "Set up two-step sign-in before you continue.", "code": "mfa_setup_required"})
 			return
 		}
-		if p.Method == "token" && !tokenMayUse(r) {
+		if p.Method == "token" && !tokenMayUse(rt) {
 			writeJSON(w, http.StatusForbidden, map[string]any{
 				"error": "API tokens can only read. Sign in as a user to change anything.", "code": "token_read_only"})
 			return
@@ -244,7 +246,7 @@ func (s *Server) allow(rt route, next http.Handler) http.Handler {
 			})
 			return
 		}
-		if rt.Recheck && s.recheckNeeded(w, r, p) {
+		if rt.Recheck && s.recheckNeededWithin(w, r, p, rt.RecheckAge) {
 			return
 		}
 		if t, other := s.dispatchTo(rt, p); other {

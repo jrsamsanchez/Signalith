@@ -25,10 +25,11 @@ func (s *Server) routeRespond(api *router) {
 		s.Respond.Record = actionRecorder{s}
 	}
 	// The Respond menu lists the actions (without their settings) and
-	// past runs; running one is analyst work.
+	// past runs; running one is analyst work, and changes another system
+	// at once, so it asks for the password or code again first.
 	api.analyst("GET /api/respond/actions", s.handleRespondActions)
 	api.analyst("GET /api/respond/runs", s.handleRespondRuns)
-	api.analyst("POST /api/respond/run", s.handleRespondRun)
+	api.analystSensitive("POST /api/respond/run", s.handleRespondRun)
 	// Setting actions up decides what Signalith can change elsewhere.
 	api.admin("GET /api/respond/config", s.handleRespondConfig)
 	api.sensitive("PUT /api/respond/config", s.handleRespondSave)

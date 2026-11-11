@@ -134,6 +134,83 @@ func TestRecheckBeforeSensitiveChanges(t *testing.T) {
 	}
 }
 
+// Running a response action and approving a playbook step ask for the
+// password or code entered within auth.ActionRecheckAge, shorter than
+// other sensitive changes; rejecting a step does not ask.
+func TestRecheckBeforeResponseActions(t *testing.T) {
+	var back atomic.Int64
+	ts, s := newUsersServer(t, func(s *Server) {
+		s.Sessions = auth.NewSessions(12 * time.Hour)
+		s.Sessions.Now = func() time.Time { return time.Now().Add(-time.Duration(back.Load())) }
+	})
+	ctx := context.Background()
+	for _, u := range []users.NewUser{{Username: "ann", Role: users.Admin, Password: "Harbor-maple-63"},
+		{Username: "sam", Role: users.Analyst, Password: "Copper-lantern-47"}} {
+		if _, err := s.Users.Create(ctx, u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	actions := []struct{ method, path, body string }{
+		{"POST", "/api/respond/run", `{"action":"x","target":"10.0.0.1","reason":"test"}`},
+		{"POST", "/api/playbooks/runs/r1/approve", `{}`},
+	}
+	asks := func(c ...*http.Cookie) []string {
+		var asked []string
+		for _, a := range actions {
+			if code, out, _ := callWith(t, ts.URL, a.method, a.path, a.body, c...); code == 403 && out["code"] == "recheck_required" {
+				if out["minutes"] != float64(auth.ActionRecheckAge.Minutes()) {
+					t.Errorf("%s %s asks within %v minutes", a.method, a.path, out["minutes"])
+				}
+				asked = append(asked, a.path)
+			}
+		}
+		return asked
+	}
+
+	// Signed in four minutes ago: no need to enter it again.
+	back.Store(int64(4 * time.Minute))
+	_, _, fresh := login(t, ts, "sam", "Copper-lantern-47")
+	back.Store(int64(6 * time.Minute))
+	_, _, old := login(t, ts, "sam", "Copper-lantern-47")
+	_, _, oldAdmin := login(t, ts, "ann", "Harbor-maple-63")
+	back.Store(0)
+	if asked := asks(fresh); len(asked) != 0 {
+		t.Errorf("a four-minute-old session was asked for %v", asked)
+	}
+	// Six minutes: asked, though other sensitive changes are not.
+	if asked := asks(old); len(asked) != len(actions) {
+		t.Errorf("a six-minute-old session was asked only for %v", asked)
+	}
+	if code, out, _ := callWith(t, ts.URL, "POST", "/api/users", `{"username":"bob"}`, oldAdmin); code != 201 {
+		t.Errorf("other sensitive change in a six-minute-old session = %d %v", code, out)
+	}
+	if code, out, _ := callWith(t, ts.URL, "POST", "/api/playbooks/runs/r1/reject", `{}`, old); out["code"] == "recheck_required" {
+		t.Errorf("reject = %d %v", code, out)
+	}
+	// A password entered again six minutes ago is too old here.
+	stale := &http.Cookie{Name: recheckCookie, Value: s.browserKey().IssueRecheck("sam", old.Value, time.Now().Add(-6*time.Minute))}
+	if asked := asks(old, stale); len(asked) != len(actions) {
+		t.Errorf("a six-minute-old recheck was taken for %v", actions)
+	}
+	// Entered now, it is taken. A wrong one counts toward the limits.
+	if code, out, _ := callWith(t, ts.URL, "POST", "/api/me/recheck", `{"password":"nope"}`, old); code != 400 || out["code"] != "wrong_password" {
+		t.Errorf("wrong password = %d %v", code, out)
+	}
+	code, out, set := callWith(t, ts.URL, "POST", "/api/me/recheck", `{"password":"Copper-lantern-47"}`, old)
+	if code != 200 || len(set) != 1 {
+		t.Fatalf("recheck = %d %v %v", code, out, set)
+	}
+	if asked := asks(old, set[0]); len(asked) != 0 {
+		t.Errorf("still asked after the recheck: %v", asked)
+	}
+	// API tokens can only read, so they never run an action.
+	for _, p := range []string{"POST /api/respond/run", "POST /api/playbooks/runs/{id}/approve"} {
+		if tokenMayUse(route{Pattern: p}) {
+			t.Errorf("an API token may use %s", p)
+		}
+	}
+}
+
 func TestProtectedSettings(t *testing.T) {
 	for key, want := range map[string]bool{
 		"auth.mfa_required": true, "auth.session_timeout": true, "server.tls.mode": true, "server.tls.plaintext_ingest": true,
