@@ -44,7 +44,9 @@ func TestManyValuesOnManyRowsAreRefused(t *testing.T) {
 			}
 			// Everything the search allocated, kept or not: a few times
 			// the budget at most, where it used to be several GB.
-			if mb := (after.TotalAlloc - before.TotalAlloc) >> 20; mb > 6*(maxEvalTotal>>20) {
+			// (Not under the race detector, where the regexp package
+			// allocates a matcher for every call.)
+			if mb := (after.TotalAlloc - before.TotalAlloc) >> 20; mb > 6*(maxEvalTotal>>20) && !raceOn {
 				t.Errorf("the search allocated %d MB before it was refused", mb)
 			}
 			t.Logf("%v (allocated %d MB)", err, (after.TotalAlloc-before.TotalAlloc)>>20)
