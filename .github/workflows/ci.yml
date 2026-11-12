@@ -416,6 +416,41 @@ jobs:
           name: coverage
           path: coverage.out
 
+  # Reports branch coverage (both outcomes of every if, for and switch
+  # case) with gobco, one package at a time. Runs on main only, reports and
+  # never fails: Go's own tool measures statements, not branches.
+  branch-coverage:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install gobco
+        run: go install github.com/rillig/gobco@v1.3.4
+      - name: Branch coverage
+        run: |
+          covered=0; total=0; : > branch-coverage.txt
+          for pkg in $(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Dir}}{{end}}' ./...); do
+            rel=./${pkg#"$PWD"/}
+            line=$(cd "$pkg" && gobco -branch -test=-short . 2>/dev/null | grep '^Branch coverage:' || true)
+            c=$(echo "$line" | sed -n 's#^Branch coverage: \([0-9]*\)/\([0-9]*\)#\1#p')
+            t=$(echo "$line" | sed -n 's#^Branch coverage: \([0-9]*\)/\([0-9]*\)#\2#p')
+            if [ -z "$t" ]; then echo "$rel: not measured" >> branch-coverage.txt; continue; fi
+            echo "$rel: $c/$t" >> branch-coverage.txt
+            covered=$((covered + c)); total=$((total + t))
+          done
+          cat branch-coverage.txt
+          pct=$(awk -v c="$covered" -v t="$total" 'BEGIN { if (t) printf "%.1f", 100 * c / t; else print "0" }')
+          echo "Branch coverage: $pct% ($covered of $total branch outcomes)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: branch-coverage
+          path: branch-coverage.txt
+
   # Builds the release binaries twice, from two checkouts of the commit in
   # different folders with an empty build cache the second time, and fails
   # when the files differ. Not a required check.
