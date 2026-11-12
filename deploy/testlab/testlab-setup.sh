@@ -430,7 +430,10 @@ IPAddressAllow=localhost
 WantedBy=multi-user.target
 EOF
   systemctl daemon-reload
-  systemctl enable -q --now testlab-feed
+  systemctl enable -q testlab-feed
+  # Restarted, not just started: a feed already running would keep the
+  # token revoked above.
+  systemctl restart testlab-feed
 }
 
 # ---- 8. backups, outbound limits, updates ----
