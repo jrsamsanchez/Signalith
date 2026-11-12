@@ -53,6 +53,9 @@ type OIDC struct {
 	// ButtonLabel is the sign-in page's button; empty is "Sign in with"
 	// and the provider's name.
 	ButtonLabel string `yaml:"button_label,omitempty"`
+	// RequireMFA, with auth.mfa_required set to everyone, refuses an ID
+	// token whose amr claim does not show a second factor (AUTH-209).
+	RequireMFA bool `yaml:"require_mfa,omitempty"`
 }
 
 // OIDCOn reports whether single sign-on is set up and on: never in demo

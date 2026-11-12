@@ -52,6 +52,13 @@ search: |
 	if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, anomaly); err != nil || !d.Risk.Only || d.Severity != "low" {
 		t.Errorf("anomaly = %v %+v", err, d)
 	}
+	// Anomalies give their score under intermediate_findings (SRCH-212).
+	anomaly = []byte(strings.Replace(strings.Replace(string(src), "type: TTP", "type: Anomaly", 1),
+		"finding:\n  entity:\n    field: user\n    score: 70\n",
+		"intermediate_findings:\n  entities:\n    - field: user\n      type: user\n      score: 10\n    - field: dest\n      type: system\n      score: 40\n", 1))
+	if d, err := PackDetection(p, PackRule{ID: "splunk-x"}, anomaly); err != nil || !d.Risk.Only || d.Risk.Score != 40 || d.Severity != "low" {
+		t.Errorf("anomaly with intermediate findings = %v %+v", err, d)
+	}
 	// A ? is literal in Splunk, so it is searched as a regular
 	// expression.
 	q := []byte(strings.Replace(string(src), "reg.exe", "re?.exe", 1))
