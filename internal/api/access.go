@@ -809,7 +809,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 		if s.builtinOff() {
 			// Answered as a wrong password, in the same time, so the
 			// well-known name never confirms a guessed password.
-			users.WasteTime(password)
+			store.WasteTime(name, password)
 			return nil, "built-in admin turned off", errWrongCredentials
 		}
 		ok, local := s.checkBuiltinPassword(password, true)
@@ -840,7 +840,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	}
 	d := s.dir()
 	if !d.Enabled() {
-		users.WasteTime(password)
+		store.WasteTime(name, password)
 		return nil, "no such user", errWrongCredentials
 	}
 	// DOMAIN\name is looked up as name, so a local or built-in name with a
@@ -848,7 +848,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	login := users.LoginName(name)
 	if !strings.EqualFold(login, name) {
 		if u, ok := store.Get(login); s.isBuiltin(login) || (ok && u.Source == users.SourceLocal) {
-			users.WasteTime(password)
+			store.WasteTime(name, password)
 			return nil, "a domain in front of a local user's or the built-in admin's name", errWrongCredentials
 		}
 	}
@@ -858,7 +858,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	hashed := make(chan struct{})
 	go func() {
 		defer close(hashed)
-		users.WasteTime(password)
+		store.WasteTime(name, password)
 	}()
 	defer func() { <-hashed }()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)

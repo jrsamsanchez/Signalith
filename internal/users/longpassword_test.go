@@ -5,6 +5,7 @@ package users
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -109,5 +110,51 @@ func TestCheckPasswordRehashes(t *testing.T) {
 	}
 	if u, _ := st.Get("olga"); u.SessionEpoch != 0 && u.SessionEpoch != 1 {
 		t.Errorf("session epoch %d moved on", u.SessionEpoch)
+	}
+}
+
+// AUTHRT-12: a name that is no user is checked at a cost the stored
+// hashes have, in their proportions, so users whose hashes are of an
+// older, lower cost are not told apart from unknown names by how quickly
+// they are refused. Each name always gets the same cost.
+func TestWasteTimeMatchesStoredCosts(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemory()
+	if _, ok := st.dummyCost("nobody"); ok {
+		t.Error("a dummy cost with no stored hashes")
+	}
+	for _, u := range []struct {
+		name string
+		cost int
+	}{{"old1", bcrypt.MinCost}, {"old2", bcrypt.MinCost}, {"new1", bcrypt.MinCost + 1}} {
+		h, err := bcrypt.GenerateFromPassword([]byte("correct horse battery"), u.cost)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.Create(ctx, NewUser{Username: u.name, Role: Viewer, Password: "correct horse battery"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.b.Change(ctx, "test", u.name, "", func(r *Record) error { r.Hash = string(h); return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seen := map[int]int{}
+	for i := range 300 {
+		name := fmt.Sprintf("nobody%d", i)
+		c, ok := st.dummyCost(name)
+		if !ok || c != bcrypt.MinCost && c != bcrypt.MinCost+1 {
+			t.Fatalf("%s: dummy cost %d %v", name, c, ok)
+		}
+		if again, _ := st.dummyCost(name); again != c {
+			t.Fatalf("%s: dummy cost %d then %d", name, c, again)
+		}
+		seen[c]++
+	}
+	if seen[bcrypt.MinCost] < 150 || seen[bcrypt.MinCost+1] < 50 {
+		t.Errorf("dummy costs %v, want about two in three at the lower cost", seen)
+	}
+	st.WasteTime("nobody", "a password")
+	if st.CheckPassword("nobody", "correct horse battery") {
+		t.Error("an unknown name signed in")
 	}
 }
