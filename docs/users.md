@@ -371,8 +371,7 @@ The web UI keeps you signed in with a session cookie. Sessions end after
 hour by default) unless you tick **Keep me signed in**, and always after
 `auth.session_max_age` from sign-in (**Sign in again after**, 24 hours by default,
 from 1 hour to 30 days), with **Keep me signed in** too. The defaults are the NIST SP
-800-63B limits for AAL2, and the Security page flags longer ones. From the release after
-0.4.0, an admin can take
+800-63B limits for AAL2, and the Security page flags longer ones. An admin can take
 **Keep me signed in** away with **Offer Keep me signed in** (`auth.keep_signed_in`,
 on by default) on the Settings page: the box is then hidden, every new session ends
 after **Sign out after** without use, and sessions kept signed in before stay so until
@@ -383,7 +382,7 @@ them too, within a second or so. Servers that share their users in OpenSearch ke
 sessions there, so a session works on every server at once (see
 [Sessions on every server](#sessions-on-every-server)).
 
-From the release after 0.4.0, **Signed-in sessions** in the account menu lists the browsers signed in as you, this
+**Signed-in sessions** in the account menu lists the browsers signed in as you, this
 one first: the address each signed in from, when, when it was last used, and whether
 it was kept signed in. End any you don't recognize with its sign-out button, or all
 but this one with **Sign out other sessions**, then change your password. To end
@@ -562,7 +561,7 @@ Some changes ask for your password again when you have not entered it in the las
   that a Teams app channel moves to another Teams channel;
 - saving the networks to scan for vulnerabilities, and adding, changing or removing a
   scan login;
-- (from the release after 0.4.0) running a [response action](response-actions.md) and approving a
+- running a [response action](response-actions.md) and approving a
   [playbook](playbooks.md) step that waits, which change other systems at once. These
   ask when you have not entered the password in the last **5 minutes**, not 15.
   Rejecting a step does not ask;
