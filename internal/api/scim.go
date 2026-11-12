@@ -459,6 +459,7 @@ func (s *Server) scimChange(w http.ResponseWriter, r *http.Request, cur users.Us
 		if u.Disabled {
 			ended := s.sessions().EndUser(r.Context(), u.Username, "")
 			s.scimAudit(r, "user disabled", "user", u.Username, "sessions_ended", ended)
+			s.noteTokensKept(r, u.Username, nil)
 		} else {
 			s.scimAudit(r, "user enabled", "user", u.Username)
 		}
@@ -478,6 +479,7 @@ func (s *Server) handleSCIMDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.scimAudit(r, "user deleted", "user", u.Username, "source", u.Source, "sessions_ended", ended)
+	s.noteTokensKept(r, u.Username, nil)
 	s.releaseNotebooks(r.Context(), u.Username, scimActor, u.Tenant == "")
 	w.WriteHeader(http.StatusNoContent)
 }

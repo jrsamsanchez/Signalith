@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -233,6 +234,28 @@ func TestDeletedAdminsTokensAreNamed(t *testing.T) {
 	}
 	if !strings.Contains(c.a.logs.String(), "api_token.kept") {
 		t.Errorf("no audit record of the tokens kept:\n%s", c.a.logs.String())
+	}
+}
+
+// AUTHRT-09: provisioning (SCIM) and the directory turning a user off
+// name the API tokens the user made that keep working, as the Users page
+// does.
+func TestTokensKeptAreNamedWithoutAnAdmin(t *testing.T) {
+	c := newMemberCluster(t, nil)
+	if _, _, err := c.a.docs.CreateAPIToken(context.Background(), "ada", "Ada's script", users.Viewer, 30, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	c.a.cycle()
+	r := httptest.NewRequest("PATCH", "/scim/v2/Users/x", nil)
+	c.a.srv.noteTokensKept(r, "ada", nil)
+	c.a.srv.noteTokensKeptBy("directory", "ada")
+	logs := c.a.logs.String()
+	if n := strings.Count(logs, "api_token.kept"); n != 2 || !strings.Contains(logs, "Ada's script") || !strings.Contains(logs, "by=directory") {
+		t.Errorf("%d records of the tokens kept:\n%s", n, logs)
+	}
+	c.a.srv.noteTokensKeptBy("directory", "bob")
+	if n := strings.Count(c.a.logs.String(), "api_token.kept"); n != 2 {
+		t.Error("a user with no tokens was named")
 	}
 }
 

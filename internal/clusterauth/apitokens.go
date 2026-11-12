@@ -224,6 +224,35 @@ func (d *Docs) APITokens() []APITokenBody {
 	return out
 }
 
+// TokensMadeBy lists the API tokens user made that still work at now. A
+// token is an account of its own and keeps working when the user who
+// made it is turned off, deleted or refused by the directory (AUTHRT-09).
+func (d *Docs) TokensMadeBy(user string, now time.Time) []APITokenBody {
+	if d == nil || user == "" {
+		return nil
+	}
+	var out []APITokenBody
+	for _, b := range d.APITokens() {
+		if b.Active(now) && strings.EqualFold(b.CreatedBy, user) {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// TokensKeptMsg is the audit message that names the API tokens a user
+// made that keep working after the user lost access.
+const TokensKeptMsg = "api_token.kept: API tokens this user made keep working; revoke them on the API tokens tab if they should stop"
+
+// TokensKeptAttrs are TokensKeptMsg's log fields for user's tokens.
+func TokensKeptAttrs(user string, list []APITokenBody) []any {
+	names := make([]string, 0, len(list))
+	for _, t := range list {
+		names = append(names, t.Name)
+	}
+	return []any{"user", user, "tokens", strings.Join(names, ","), "count", len(list)}
+}
+
 // CreateAPIToken makes a token named name with role, lasting days (0 for
 // one that never expires), for the user by, and returns it with its
 // secret, which is shown once and kept nowhere.

@@ -1056,6 +1056,9 @@ func (s *Server) revokeDirectoryUser(ctx context.Context, name, reason string) {
 	if changed || ended > 0 {
 		s.Log.Warn("directory user lost access", "audit", true, "user", u.Username, "reason", reason, "sessions_ended", ended, "by", "directory")
 	}
+	if changed {
+		s.noteTokensKeptBy("directory", u.Username)
+	}
 }
 
 // How long checked Basic credentials are remembered. Keys include the

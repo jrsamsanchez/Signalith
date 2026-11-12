@@ -165,34 +165,42 @@ func (s *Server) apiTokenPrincipal(r *http.Request, tok string) *principal {
 // an account of its own and keeps working when the admin who made it is
 // turned off or deleted (AUTHRT-09): the audit record and the answer of
 // that change name them, so another admin can revoke them.
-func (s *Server) tokensMadeBy(user string) []map[string]any {
+func (s *Server) tokensMadeBy(user string) []clusterauth.APITokenBody {
 	if s.SharedUsers == nil || s.SharedUsers.Docs == nil || user == "" {
 		return nil
 	}
-	now := time.Now()
-	var out []map[string]any
-	for _, b := range s.SharedUsers.Docs.APITokens() {
-		if b.Active(now) && strings.EqualFold(b.CreatedBy, user) {
-			out = append(out, map[string]any{"id": b.ID, "name": b.Name, "role": b.Role})
-		}
-	}
-	return out
+	return s.SharedUsers.Docs.TokensMadeBy(user, time.Now())
 }
 
 // noteTokensKept adds to a "user disabled" or "user deleted" answer, and
 // writes in the audit log, the API tokens user made that keep working.
+// out may be nil (SCIM answers in a format of its own).
 func (s *Server) noteTokensKept(r *http.Request, user string, out map[string]any) {
 	list := s.tokensMadeBy(user)
 	if len(list) == 0 {
 		return
 	}
-	names := make([]string, 0, len(list))
-	for _, t := range list {
-		names = append(names, t["name"].(string))
+	if principalOf(r) == nil {
+		// Provisioning (SCIM) acts as no signed-in user.
+		s.scimAudit(r, clusterauth.TokensKeptMsg, clusterauth.TokensKeptAttrs(user, list)...)
+	} else {
+		s.audit(r, clusterauth.TokensKeptMsg, clusterauth.TokensKeptAttrs(user, list)...)
 	}
-	s.audit(r, "api_token.kept: API tokens this user made keep working; revoke them on the API tokens tab if they should stop",
-		"user", user, "tokens", strings.Join(names, ","), "count", len(list))
-	out["api_tokens"] = list
+	if out != nil {
+		kept := make([]map[string]any, 0, len(list))
+		for _, b := range list {
+			kept = append(kept, map[string]any{"id": b.ID, "name": b.Name, "role": b.Role})
+		}
+		out["api_tokens"] = kept
+	}
+}
+
+// noteTokensKeptBy is noteTokensKept for a change no request made, such
+// as the directory refusing a user; by names who made it.
+func (s *Server) noteTokensKeptBy(by, user string) {
+	if list := s.tokensMadeBy(user); len(list) > 0 {
+		s.Log.Warn(clusterauth.TokensKeptMsg, append([]any{"audit", true, "by", by}, clusterauth.TokensKeptAttrs(user, list)...)...)
+	}
 }
 
 // tokenRefused logs that the revoked or expired token b was sent.
