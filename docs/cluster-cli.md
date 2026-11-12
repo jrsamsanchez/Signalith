@@ -659,8 +659,12 @@ same as JSON, without the CA's key.
 server gets its own OpenSearch certificate (see
 [Each server's own OpenSearch certificate](servers.md#each-servers-own-opensearch-certificate)).
 Give it the CA's key; its certificate is `root-ca.pem` next to it unless `-cert` names
-another file. It refuses a CA that is not the one in `opensearch.ca_file`, and one other
-than the cluster keeps already. In Docker, use `bootstrap-docker -export-ca-key` instead.
+another file. It refuses a CA that is not the one in `opensearch.ca_file`. A CA other
+than the one the cluster keeps replaces it only once `opensearch.ca_file` no longer
+trusts the old one, as after a compromised server was removed and OpenSearch's
+certificates were made again under a new CA (see
+[Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once));
+until then it is refused. In Docker, use `bootstrap-docker -export-ca-key` instead.
 
 `opensearch-ca revoke` ends a server's OpenSearch access at once: every certificate the
 cluster issued it that has not expired goes on the revocation list, and it gets no new

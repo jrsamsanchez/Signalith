@@ -482,6 +482,7 @@ func (x *clusterCLI) removeCLI(ctx context.Context, which string, noRotate, yes 
 	x.audit("cluster.remove: removed a server from the cluster", "server", rec.Name, "node_id", id, "warnings", warnings)
 	fmt.Fprintf(x.out, "Removed %s from the cluster.\n", rec.Name)
 	x.caKeptNote(rec.Name)
+	x.osCAKeptNote(rec.Name)
 	rotErr := x.rotateAfterRemove(ctx, rt, []string{id}, rec.Name, noRotate)
 	return errors.Join(removeWarnings(warnings), rotErr)
 }
@@ -538,6 +539,7 @@ func (x *clusterCLI) leave(ctx context.Context, noRotate, yes bool) error {
 		fmt.Fprintf(x.out, "%s left the cluster and deleted its copy of the cluster key. Uninstall it, or give it a new identity (signalith cluster new-identity) before you add it again.\n", rec.Name)
 		x.leafNote()
 		x.caKeptNote(rec.Name)
+		x.osCAKeptNote(rec.Name)
 		return rotErr
 	})
 }
@@ -572,6 +574,26 @@ func (x *clusterCLI) caKeptNote(name string) {
 	fmt.Fprintf(x.out, "%s may still hold the cluster's HTTPS certificate authority key (%s), in a backup of its state folder or a copy of its shared settings, "+
 		"and with it could make certificates that agents, browsers and syslog devices trust. "+
 		"That stays true until the cluster's certificate authority is replaced: %s (docs/servers.md, When a server leaves).\n", name, b.CASHA256, caReplaceAdvice(b))
+}
+
+// osCAKeptNote says that the server name, removed, may still hold
+// OpenSearch's certificate authority key, which every server of the
+// cluster can open: revoking its certificates does not stop it from
+// signing new ones, the admin's included (CRYPTO-02).
+func (x *clusterCLI) osCAKeptNote(name string) {
+	if x.osca == nil {
+		return
+	}
+	b, ok := x.osca.Get()
+	if !ok {
+		return
+	}
+	fmt.Fprintf(x.out, "%s's OpenSearch certificates are revoked, but it may still hold OpenSearch's certificate authority key (%s), "+
+		"in a backup of its state folder or a copy of its shared settings, and with it could sign new certificates OpenSearch trusts, the admin's included. "+
+		"If it was compromised or stolen, make a new OpenSearch certificate authority: in Docker, bootstrap-docker -new-ca and then -export-ca-key; "+
+		"without Docker, make OpenSearch's certificates again under a new one, point opensearch.ca_file at it, then signalith cluster opensearch-ca import <new-root-ca-key.pem>. "+
+		"Do that once the cluster key rotation has finished (signalith cluster rotate-key, if it was not rotated), so the new CA's key is sealed under a key that server never had "+
+		"(docs/servers.md, Ending a server's OpenSearch access at once).\n", name, b.CASHA256)
 }
 
 // caReplaceAdvice says how to replace b, the cluster's certificate
