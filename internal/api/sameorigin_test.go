@@ -45,6 +45,15 @@ func TestSameOriginComparesSchemeAndHost(t *testing.T) {
 		{"HTTPS public_url pins the scheme", "POST", "siem.example", false, "https://siem.example/", "", "http://siem.example", false},
 		{"HTTPS public_url, https page", "POST", "siem.example", false, "https://siem.example/", "", "https://siem.example", true},
 		{"public_url does not lock out the server's own address", "POST", "10.0.0.5:8443", true, "https://siem.example", "", "https://10.0.0.5:8443", true},
+		// A proxy that rewrites Host: nginx's $host drops the port, and a
+		// proxy with no Host line sends its upstream address.
+		{"proxy dropped the port", "POST", "siem.example", true, "https://siem.example:8443", "", "https://siem.example:8443", true},
+		{"proxy sent its upstream address", "POST", "127.0.0.1:9000", true, "https://siem.example", "same-origin", "https://siem.example", true},
+		{"public_url origin over untrusted proxy", "POST", "127.0.0.1:9000", false, "https://siem.example", "", "https://siem.example", true},
+		{"rewritten Host, another port than public_url", "POST", "siem.example", true, "https://siem.example:8443", "", "https://siem.example:9443", false},
+		{"rewritten Host, another site", "POST", "127.0.0.1:9000", true, "https://siem.example", "", "https://evil.example", false},
+		{"rewritten Host, http page of an HTTPS public_url", "POST", "127.0.0.1:9000", false, "https://siem.example", "", "http://siem.example", false},
+		{"rewritten Host, https request, http public_url", "POST", "127.0.0.1:9000", true, "http://siem.example", "", "http://siem.example", false},
 	} {
 		r := httptest.NewRequest(c.method, "/api/login", nil)
 		r.Host = c.host

@@ -92,6 +92,12 @@ type requestOrigin struct {
 //     wrong must not lock everyone out of signing in, and a page of
 //     another host (DNS rebinding) never has the session cookie, which
 //     is bound to the host it was set by.
+//   - An Origin equal to server.public_url's origin (scheme, host and
+//     port) passes whatever the Host header says, so a proxy that
+//     rewrites Host (nginx's $host drops the port; a proxy with no Host
+//     line sends its upstream's 127.0.0.1:9000) does not refuse every
+//     sign-in. public_url is the operator's own statement of the site's
+//     address, so this lets in no other site.
 //
 // Requests with neither header pass. They come from API clients, and
 // from no browser that keeps cookies to one site: the session cookie is
@@ -126,6 +132,9 @@ func sameOrigin(r *http.Request) bool {
 	scheme, _, _ := strings.Cut(got, "://")
 	if ro.https && scheme != "https" {
 		return false
+	}
+	if ro.public != "" && got == ro.public {
+		return true
 	}
 	return sameHost(hostOfOrigin(got), r.Host, got)
 }
