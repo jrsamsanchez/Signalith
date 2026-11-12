@@ -1347,6 +1347,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	ret := newRetention(c, cl, log)
 	archiveCrypto(ret.Archive, c, r.clusterKey)
+	if err := recordLegacyArchives(ret.Archive, c); err != nil {
+		log.Warn("could not list the archives written before manifests had MACs; encrypted ones among them will need retention.allow_unauthenticated_archives to restore", "err", err)
+	}
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
 	} else {

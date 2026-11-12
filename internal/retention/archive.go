@@ -62,10 +62,19 @@ type Archive struct {
 	// no key of this server authenticates, unless AllowUnauthenticated:
 	// set when archives are encrypted, so a forged plain file with a
 	// manifest that says "not encrypted" cannot stand in for an encrypted
-	// one. Encrypted archives need no MAC: decrypting them authenticates
-	// their content, so ones written before manifests had MACs still read.
+	// one.
+	//
+	// Encrypted archives need a MAC too once Authenticate is set:
+	// decrypting proves the content is Signalith's, but the file's
+	// encryption does not name its index or day, so without a MAC one
+	// day's file and manifest could be put in place of another's
+	// (CRYPTO-01). Legacy, when set, accepts an encrypted manifest
+	// without a MAC that is known from before manifests had MACs (see
+	// cmd/signalith's legacy archive list); AllowUnauthenticated accepts
+	// any.
 	RequireAuthenticated bool
 	AllowUnauthenticated bool
+	Legacy               func(Manifest) bool
 	// Server names this server in the manifests it writes, when servers
 	// share one archive folder.
 	Server string
@@ -168,6 +177,11 @@ func (m Manifest) MACMessage() []byte {
 // authenticated by any key of this server while archives are encrypted.
 var ErrUnauthenticated = errors.New("the archive is not encrypted and no key of this server authenticates its manifest")
 
+// ErrUnauthenticatedEncrypted means an encrypted archive's manifest is
+// not authenticated by any key of this server, and is not one known from
+// before manifests had MACs.
+var ErrUnauthenticatedEncrypted = errors.New("no key of this server authenticates the encrypted archive's manifest")
+
 // checkManifest refuses a manifest that was changed, and a plain archive
 // whose manifest is not authenticated when that is required.
 func (a *Archive) checkManifest(m Manifest) error {
@@ -177,6 +191,12 @@ func (a *Archive) checkManifest(m Manifest) error {
 		if ok, err = a.Authenticate(m.MACMessage(), m.MAC); err != nil {
 			return fmt.Errorf("its manifest was changed after it was written (%v); restore %s and %s from a backup", err, m.ID+manifestExt, m.File)
 		}
+	}
+	if !ok && m.Encryption != "" && a.Authenticate != nil && !a.AllowUnauthenticated && (a.Legacy == nil || !a.Legacy(m)) {
+		return fmt.Errorf("%w, so it may name another day than the file holds (or it was written by a server whose keys this one does not have). "+
+			"If you know this archive is genuine (written before this version, and copied in after the upgrade), "+
+			"set retention.allow_unauthenticated_archives: true in signalith.yaml for as long as you restore it "+
+			"(signalith archive takes -allow-unauthenticated)", ErrUnauthenticatedEncrypted)
 	}
 	if !ok && m.Encryption == "" && a.RequireAuthenticated && !a.AllowUnauthenticated {
 		return fmt.Errorf("%w. Archives are encrypted here, so a plain one may have been put in place of an encrypted one. "+

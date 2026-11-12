@@ -291,13 +291,24 @@ The manifest is what says whether a file is encrypted, so while archives are
 encrypted (`retention.encrypt_archives`, on by default) a **plain** archive whose
 manifest no key of this server authenticates is refused too: it could be a forged
 file put in place of an encrypted one, with a manifest rewritten to say "not
-encrypted". Encrypted archives whose manifests have no MAC (written by versions
-before manifests had one) still read: decrypting them proves they were written with
-your keys.
+encrypted". An **encrypted** archive needs a MAC too: decrypting it proves your keys
+wrote it, but not which day it holds, so without a MAC one day's file and manifest
+could be copied over another's.
+
+Encrypted archives written by 0.3.0 to 0.4.1, before manifests had MACs, keep reading
+after the upgrade without any setting: the first time this version starts, each
+server lists the encrypted archives without a MAC that are in the archive folder then
+(their IDs and SHA-256 checksums), in its state folder
+(`archive-legacy-<id>.json`), which the archive folder's owner can't write. Such an
+archive reads only while it still has the checksum it had then. An encrypted archive
+without a MAC that was not in the folder at the upgrade (copied back in from a backup
+later, say, or with the folder not mounted when the server first started) needs the
+setting below to restore.
 
 Plain archives written before encryption was turned on, or by a version before
-manifests had MACs, are therefore refused while encryption is on. If you know where
-such an archive came from, let this server read them for as long as you restore them:
+manifests had MACs, are therefore refused while encryption is on, and so are the
+encrypted ones above that were not listed at the upgrade. If you know where such an
+archive came from, let this server read them for as long as you restore them:
 
 ```yaml
 retention:
@@ -462,7 +473,7 @@ retention:
 | `retention.interval` | `1h` | How often policies are enforced (5m to 24h) |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Archive folder; relative paths are relative to signalith.yaml. `SIGNALITH_ARCHIVE_DIR` overrides it |
 | `retention.encrypt_archives` | `true` | Encrypt archive files ([Encryption](#encryption)); only signalith.yaml can turn it off |
-| `retention.allow_unauthenticated_archives` | `false` | Read plain archives whose manifest no key authenticates while archives are encrypted ([Authenticated manifests](#authenticated-manifests)); only signalith.yaml can set it |
+| `retention.allow_unauthenticated_archives` | `false` | Read plain archives whose manifest no key authenticates while archives are encrypted, and encrypted ones without a MAC not listed at the upgrade ([Authenticated manifests](#authenticated-manifests)); only signalith.yaml can set it |
 | `retention.default` | none | Default event policy: `keep_days`, `max_size_gb`, `compact_after_days`, `cold_after_days`, `archive` |
 | `retention.policies.<id>` | none | Policy for one category (IDs above). Findings and cases accept only `keep_days` |
 | `retention.guard.enabled` | `true` | Disk guard on or off |

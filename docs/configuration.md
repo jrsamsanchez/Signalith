@@ -47,7 +47,7 @@ environment variable wins over the page, which wins over `signalith.yaml`. See
 | `retention.days` | `90` | Days of events to keep (`0` keeps everything) until a default policy is saved on the Data retention page |
 | `retention.interval` | `1h` | How often retention policies are enforced |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Folder for archived days |
-| `retention.allow_unauthenticated_archives` | `false` | Restore plain archives whose manifest no key authenticates while archives are encrypted (only signalith.yaml); see [Authenticated manifests](retention.md#authenticated-manifests) |
+| `retention.allow_unauthenticated_archives` | `false` | Restore plain archives whose manifest no key authenticates while archives are encrypted, and encrypted ones without a MAC that were not listed at the upgrade (only signalith.yaml); see [Authenticated manifests](retention.md#authenticated-manifests) |
 | `retention.default`, `retention.policies.<category>` | none | Policies that override the page; see [Data retention](retention.md) |
 | `retention.guard` | on, 85%, 7 days | Disk guard: `enabled`, `max_disk_percent`, `min_days` |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalithadmin` on a new install (`admin` on one made before 0.3.1, which keeps it) | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |

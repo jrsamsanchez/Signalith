@@ -168,12 +168,52 @@ func TestArchiveManifestForgery(t *testing.T) {
 	}
 	t.Setenv("SIGNALITH_STATE_DIR", filepath.Join(dir, "state"))
 
-	// An encrypted archive whose manifest has no MAC, as written before,
-	// still reads: decrypting it authenticates it.
+	// An encrypted archive whose manifest has no MAC is refused: the
+	// file's encryption does not name its day, so it could be another
+	// day's archive (CRYPTO-01).
 	old := *m
 	old.MAC = nil
-	if err := a.Verify(old); err != nil {
+	if err := a.Verify(old); !errors.Is(err, retention.ErrUnauthenticatedEncrypted) {
 		t.Errorf("an encrypted archive without a MAC: %v", err)
+	}
+	// One written before manifests had MACs, found when this version
+	// first started, reads.
+	manifestFile := filepath.Join(folder, m.ID+".json")
+	saved, err := os.ReadFile(manifestFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, err := json.Marshal(old); err != nil {
+		t.Fatal(err)
+	} else if err := os.WriteFile(manifestFile, b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := recordLegacyArchives(a, config.Default()); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Verify(old); err != nil {
+		t.Errorf("an encrypted archive from before MACs, listed at the upgrade: %v", err)
+	}
+	// The list is made once: a later run keeps it.
+	if err := recordLegacyArchives(a, config.Default()); err != nil {
+		t.Fatal(err)
+	}
+	// Another archive put in its place (another checksum) is refused, and
+	// reads with the override.
+	swapped := old
+	swapped.SHA256 = strings.Repeat("0", 64)
+	if err := a.Verify(swapped); !errors.Is(err, retention.ErrUnauthenticatedEncrypted) {
+		t.Errorf("another archive under a listed archive's name: %v", err)
+	}
+	overEnc := config.Default()
+	overEnc.Retention.AllowUnauthenticatedArchives = true
+	aoe := &retention.Archive{Dir: folder}
+	archiveCrypto(aoe, overEnc, cluster)
+	if err := aoe.Verify(swapped); errors.Is(err, retention.ErrUnauthenticatedEncrypted) {
+		t.Errorf("with the override: %v", err)
+	}
+	if err := os.WriteFile(manifestFile, saved, 0o600); err != nil {
+		t.Fatal(err)
 	}
 
 	// Forge: a plain gzip of other events and a manifest that matches it.
