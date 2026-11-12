@@ -148,6 +148,49 @@ Signalith helps with that:
   investigations on purpose, to keep AI away from the findings an attacker cares about,
   so treat that finding as one to investigate by hand.
 
+## AI first pass on new findings
+
+The **AI first pass** looks at new findings without anyone clicking, so an analyst opening
+the queue already sees what the model made of each one. It is **off by default**, and it is
+a suggestion only: it never closes, assigns or changes a finding, and its note is not part
+of the finding's history.
+
+When it is on, once a minute the server running background jobs takes the new findings of
+the last 24 hours that it has not looked at, most urgent first, and investigates each one
+as **Investigate with AI** does, with the same masking, but with one round of searches
+instead of three. The model's verdict, confidence and summary are kept on the finding:
+
+- the queue tags it **AI: likely real**, **AI: likely benign** or **AI: unsure**, and a
+  filter keeps only the findings with one verdict, or those it has not looked at;
+- the finding's Overview shows the note, with the model and when it looked, for everyone
+  who can see the finding.
+
+It skips findings from sample data, findings no longer **New**, and findings
+older than a day, so turning it on does not send the backlog. A finding is looked at once;
+if the model fails, the finding says why and the first pass waits 15 minutes before it
+tries the next one.
+
+To turn it on, an admin sets up a model as above, then in **Settings → Server → AI
+assistant** turns on **AI first pass on new findings** (the page asks to confirm, since
+event data is sent without anyone asking each time) and picks:
+
+- **First pass from urgency**: the least urgent findings it looks at (Medium and up by
+  default);
+- **First pass: findings a day**: the most it looks at in a UTC day (50 by default, at
+  most 2,000). This keeps the model bill predictable: past the limit, findings are left for
+  people as they are.
+
+```yaml
+assistant:
+  first_pass: true
+  first_pass_urgency: high   # critical, high, medium (default) or low
+  first_pass_daily: 50
+```
+
+Each finding it looks at is written to the audit log (`finding looked at by the AI first
+pass`, by `ai-first-pass`) with the model, where the data went and how much was sent. A
+tenant's server never runs it.
+
 ## Good to know
 
 - An investigation takes from a few seconds to a few minutes, depending on the model. Up to
@@ -170,5 +213,9 @@ Signalith helps with that:
 | `GET /api/investigate` | analyst | Whether it is on, the model, where data is sent, whether that is on your network, and the masked fields |
 | `POST /api/findings/{id}/investigate/preview` | analyst | Gathers the evidence and returns the first message exactly as it would be sent, without sending it |
 | `POST /api/findings/{id}/investigate` | analyst | Runs the investigation, streaming one JSON object per line: `status` and `step` events, then a `result` or an `error` |
+
+`GET /api/findings?ai=real` (or `benign`, `unsure`, or `none` for not looked at) filters the
+queue on the first pass's verdict; each finding it looked at has `ai_triage` with
+`verdict`, `confidence`, `summary`, `model` and `at`, or `error`.
 
 Both `POST` routes answer `409` with `code` `no_model` or `off` when an admin has not set it up.

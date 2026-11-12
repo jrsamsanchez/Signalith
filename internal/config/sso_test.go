@@ -120,6 +120,7 @@ func TestSAMLProblems(t *testing.T) {
 			[]string{"auth.saml.provider: \"x\"", "auth.saml.metadata_url: the metadata address must start with https://, so",
 				"auth.saml.username_attribute", "auth.saml.groups_attribute", "auth.saml.default_role", "auth.saml.button_label"}},
 		{"both", SAML{Provider: saml.Okta, MetadataURL: "https://idp.example.com/m", MetadataXML: "<x/>"}, []string{"not both"}},
+		{"bad mfa context", SAML{Provider: saml.ADFS, MFAContext: "<multi auth>"}, []string{"auth.saml.mfa_context"}},
 		{"bad xml", SAML{Provider: saml.ADFS, MetadataXML: "<not metadata"}, []string{"auth.saml.metadata_xml:"}},
 		{"huge xml", SAML{Provider: saml.ADFS, MetadataXML: strings.Repeat("x", MaxSAMLMetadataXML+1)}, []string{"larger than 256 KB"}},
 		{"good", SAML{Enabled: true, Provider: saml.Entra, MetadataURL: "https://idp.example.com/m", DefaultRole: "viewer"}, nil},

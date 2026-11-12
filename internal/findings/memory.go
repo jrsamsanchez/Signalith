@@ -138,6 +138,18 @@ func Matches(f *Finding, flt Filter) bool {
 	if flt.DetectionID != "" && f.DetectionID != flt.DetectionID {
 		return false
 	}
+	if len(flt.AI) > 0 {
+		v := AINone
+		if f.AI != nil {
+			v = f.AI.Verdict
+		}
+		if !slices.Contains(flt.AI, v) {
+			return false
+		}
+	}
+	if !flt.AISince.IsZero() && (f.AI == nil || f.AI.At.Before(flt.AISince)) {
+		return false
+	}
 	if flt.Sample != nil && (*flt.Sample == "" || f.Sample != *flt.Sample) {
 		return false
 	}
