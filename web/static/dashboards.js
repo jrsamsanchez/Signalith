@@ -868,7 +868,7 @@
     let note = null;
     if (away && !h.runs_on) note = cardAlert('danger', 'No server runs detections right now.' + (can('admin') ? ' The Servers page says why.' : ' An admin needs to look.'));
     else if (!away && !h.scheduler_on) note = cardAlert('warning', 'The scheduler is off on this server, so detections only run when you click Run now.');
-    return card({ title: 'Detection health', sub, actions: [pageLink('Detections', 'detections')] },
+    return card({ title: 'Detection health', sub, actions: [pageLink('Data sources', 'sources'), pageLink('Detections', 'detections')] },
       el('div', { class: 'db-hstats' },
         stat(String(h.enabled), ` of ${h.total}`, 'detections on', null, h.not_run ? `${h.not_run} enabled detections have not run on schedule yet` : ''),
         stat(String(erroring.length), '', 'erroring', erroring.length ? 'danger' : null),
