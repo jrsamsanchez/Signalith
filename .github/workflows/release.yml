@@ -24,7 +24,41 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A tag is released only from a commit on main whose CI run on main
+  # passed, so a release never ships a commit with failing tests. A dry run
+  # (by hand) builds whatever it is given.
+  ci-green:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+      EVENT: ${{ github.event_name }}
+    steps:
+      - name: The tagged commit is on main and its CI passed
+        run: |
+          if [ "$EVENT" != push ]; then echo "Dry run: not checked."; exit 0; fi
+          status=$(gh api "repos/$GH_REPO/compare/main...$SHA" --jq .status)
+          case "$status" in
+            identical|behind) ;;
+            *) echo "::error::${SHA::7} is not on main (compare: $status). Tag a commit on main."; exit 1 ;;
+          esac
+          run=$(gh api "repos/$GH_REPO/actions/runs?head_sha=$SHA&event=push&branch=main&per_page=100" \
+            --jq '[.workflow_runs[] | select(.name == "CI")] | sort_by(.run_attempt, .created_at) | last // empty | "\(.status) \(.conclusion) \(.html_url)"')
+          if [ -z "$run" ]; then echo "::error::No CI run on main for ${SHA::7}."; exit 1; fi
+          echo "CI on main at ${SHA::7}: $run"
+          set -- $run
+          if [ "$1" != completed ] || [ "$2" != success ]; then
+            echo "::error::CI on main at ${SHA::7} is $1/$2 ($3). Wait for it to pass, or tag a green commit, then re-run this workflow."
+            exit 1
+          fi
+
   packages:
+    needs: ci-green
     uses: ./.github/workflows/packages.yml
     with:
       version: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
