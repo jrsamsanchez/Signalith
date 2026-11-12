@@ -16,7 +16,8 @@
 # This makes three changes:
 #   - OpenSearch also gets the warm role, so it can mount searchable
 #     snapshots, with SIGNALITH_COLD_CACHE (default 10gb) of its disk to
-#     cache what searches read from the folder;
+#     cache what searches read from the folder, and may keep snapshots in
+#     the folder as well as in its backups folder;
 #   - Signalith's certificates get the signalith_cold_storage role
 #     (opensearch/security/roles_mapping.cold.yml);
 #   - the cold-storage service registers the folder as the snapshot
@@ -28,7 +29,8 @@ services:
     environment:
       - node.roles=cluster_manager,data,ingest,remote_cluster_client,warm
       - node.search.cache.size=${SIGNALITH_COLD_CACHE:-10gb}
-      - path.repo=/usr/share/opensearch/cold
+      # Both the snapshots folder (backups, snapshot.sh) and cold storage.
+      - path.repo=/usr/share/opensearch/snapshots,/usr/share/opensearch/cold
     volumes:
       - ${SIGNALITH_COLD_DIR:?Set SIGNALITH_COLD_DIR to the folder that holds cold storage (see docker-compose.cold.yml)}:/usr/share/opensearch/cold
       - ./opensearch/security/roles_mapping.cold.yml:/usr/share/opensearch/config/opensearch-security/roles_mapping.yml:ro

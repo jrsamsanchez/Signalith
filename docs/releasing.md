@@ -8,34 +8,36 @@ How a Signalith release is made, for maintainers. Users want
 The **Release** workflow (`.github/workflows/release.yml`) runs when a tag such as
 `v0.1.0` is pushed. It:
 
-1. Builds the programs for Linux (amd64, arm64) and Windows (amd64), the `.deb` and
+1. Checks that the tagged commit is on `main` and that its CI run on `main` passed, and
+   stops otherwise: tag a green commit, or wait for CI and re-run the workflow.
+2. Builds the programs for Linux (amd64, arm64) and Windows (amd64), the `.deb` and
    `.rpm` packages (`deploy/packages`, built with [nFPM](https://nfpm.goreleaser.com)) and
    the `.msi` (`deploy/windows/msi`, built with the [WiX Toolset](https://wixtoolset.org) v5).
-2. Tests each package: installs the latest earlier release, upgrades it to the new one,
+3. Tests each package: installs the latest earlier release, upgrades it to the new one,
    signs in, removes it and installs it again, on Ubuntu with systemd, in Rocky Linux 9
    and Fedora containers, and on Windows Server. CI runs the same tests on every pull
    request (the **Packages** workflow), upgrading from the latest release.
-3. Builds the container image for amd64 and arm64, pushes it to
+4. Builds the container image for amd64 and arm64, pushes it to
    `ghcr.io/jrsamsanchez/signalith:<version>` (and `:latest` unless the version has a
    `-` suffix such as `-rc.1`), signs it with Sigstore and attaches its SBOM and
    provenance. (Between releases, the **Image (main)** workflow publishes the same kind
    of signed image as `:main` on every push to `main`; the public demo runs it.)
-4. Packages the Helm chart (`deploy/helm/signalith`) with the release's version, which
+5. Packages the Helm chart (`deploy/helm/signalith`) with the release's version, which
    also picks the image it runs, pushes it to `oci://ghcr.io/jrsamsanchez/charts/signalith`
    and signs it with Sigstore. Its `.tgz` goes on the release page with the other files.
    (The **Helm chart** workflow installs the chart on kind for pull requests that change
    it, and weekly; see [Kubernetes](kubernetes.md).)
-5. Writes the SBOM (SPDX and CycloneDX, made by [Syft](https://github.com/anchore/syft)
+6. Writes the SBOM (SPDX and CycloneDX, made by [Syft](https://github.com/anchore/syft)
    from the Linux program), `SHA256SUMS`, its Sigstore signature, its GPG signature when
    the key is set up (below), and GitHub build provenance for every file. Before the
    checksums it makes `signalith-<version>-docker.tar.gz`, the Docker quick start with
    the image locked to the digest pushed in step 3 (`.github/scripts/docker-release.sh`).
-6. Publishes it all on the [Releases page](https://github.com/jrsamsanchez/Signalith/releases),
+7. Publishes it all on the [Releases page](https://github.com/jrsamsanchez/Signalith/releases),
    with the version's own notes (`.github/releases/<version>.md`, such as `0.3.0.md`,
    when there is one), install and verify steps (`.github/release-notes.md`) and the
    generated list of changes. A version with a `-` suffix is marked as a pre-release
    and uses the notes of the version it leads to.
-7. Once it has published, the **Website** workflow adds the new packages to the apt and
+8. Once it has published, the **Website** workflow adds the new packages to the apt and
    dnf repositories on signalith.io (below), so `apt upgrade` and `dnf upgrade` find them.
 
 **Run workflow** on the Release workflow's page (Actions > Release) is a dry run: it
