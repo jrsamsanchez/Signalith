@@ -29,8 +29,10 @@ const AuditdProduct = "Linux auditd"
 //
 // Each record is one event; the records of one system call share its
 // serial number (auditd_id). auditd's ENRICHED format adds the names of
-// numbers (UID="root", SYSCALL=execve) after a 0x1d byte.
-var auditdHeader = regexp.MustCompile(`^(?:node=(\S+)\s+)?type=([A-Z0-9_]+)\s+msg=audit\(([^)]*)\)\s*:\s*`)
+// numbers (UID="root", SYSCALL=execve) after a 0x1d byte. The kernel's
+// record types are short names (the longest has under 40 characters); a
+// line with a longer one is not an audit record.
+var auditdHeader = regexp.MustCompile(`^(?:node=(\S+)\s+)?type=([A-Z0-9_]{1,64})\s+msg=audit\(([^)]*)\)\s*:\s*`)
 
 // IsAuditdLine reports whether a line is an audit record.
 func IsAuditdLine(line string) bool {

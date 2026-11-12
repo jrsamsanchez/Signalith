@@ -953,6 +953,8 @@ function showUser(m) {
   // Single sign-on users get the second step from where they sign in.
   $('mfa-open').classList.toggle('hidden', !['local', 'builtin', 'directory'].includes(m.source) || m.auth === 'token');
   $('mfa-hint').textContent = m.mfa ? 'On' : 'Off';
+  // The browsers signed in as this user, for a session's own user.
+  $('sessions-open').classList.toggle('hidden', m.auth !== 'session');
   // A browser that signed in with HTTP Basic auth keeps sending the
   // password, so signing out would not stick.
   const basic = m.auth === 'basic';

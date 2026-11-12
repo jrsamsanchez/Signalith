@@ -491,14 +491,18 @@ cd signalith</code></pre><button class="copy" type="button" aria-label="Copy"><s
 
       <div class="start__panel" role="tabpanel" id="sp-linux" aria-labelledby="s-linux" hidden>
         <ol class="steps">
-          <li><p>Install <a href="https://opensearch.org/docs/latest/install-and-configure/install-opensearch/index/">OpenSearch</a> (2.17 or newer, 3.x included), then add Signalith&rsquo;s package repository so updates arrive with the rest of the system. On Debian or Ubuntu:</p>
+          <li><p>Add Signalith&rsquo;s package repository, so updates arrive with the rest of the system, and install. On Debian or Ubuntu:</p>
 <div class="code"><pre><code>sudo install -d -m 0755 /etc/apt/keyrings
 sudo curl -fsSL -o /etc/apt/keyrings/signalith.asc https://signalith.io/apt/signalith.asc
+gpg --show-keys --with-fingerprint /etc/apt/keyrings/signalith.asc
 echo "deb [signed-by=/etc/apt/keyrings/signalith.asc] https://signalith.io/apt stable main" | sudo tee /etc/apt/sources.list.d/signalith.list
-sudo apt update &amp;&amp; sudo apt install signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
-          <li><p>Or on Red Hat, Rocky, Alma or Fedora. Either way Signalith starts as a systemd service:</p>
+sudo apt update &amp;&amp; sudo apt install signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div>
+<p>The <code>gpg</code> line must print the fingerprint in <a href="docs/install-packages/#the-release-keys-fingerprint">The release key&rsquo;s fingerprint</a>; go on only if it does.</p></li>
+          <li><p>Or on Red Hat, Rocky, Alma or Fedora (<code>dnf</code> asks you to accept the Signalith key the first time; accept it only if the fingerprint it shows is that same one). Either way Signalith starts as a systemd service:</p>
 <div class="code"><pre><code>sudo curl -fsSL -o /etc/yum.repos.d/signalith.repo https://signalith.io/rpm/signalith.repo
 sudo dnf install signalith</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
+          <li><p>Set up OpenSearch (where Signalith keeps its events) on the same server with one command, or <a href="docs/install-packages/#opensearch-on-linux">use an OpenSearch you run yourself</a> (2.17 or newer, 3.x included):</p>
+<div class="code"><pre><code>sudo signalith opensearch install</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
           <li><p>Show the admin password, then open <code>https://&lt;server&gt;:9000</code> and sign in as <code>signalithadmin</code>.</p>
 <div class="code"><pre><code>sudo signalith initial-password</code></pre><button class="copy" type="button" aria-label="Copy"><svg class="icon" aria-hidden="true"><use href="#i-copy"/></svg></button></div></li>
         </ol>
@@ -582,7 +586,8 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
 </footer>
 
 <script src="assets/site.js" defer></script>
-<!-- Visit counts with GoatCounter: no cookies, no personal data. -->
-<script data-goatcounter="https://signalith.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+<!-- Visit counts with GoatCounter: no cookies, no personal data. The counting
+     script is a pinned copy served from this site (assets/vendor/goatcounter-LICENSE.txt). -->
+<script data-goatcounter="https://signalith.goatcounter.com/count" async src="assets/vendor/goatcounter-count.js"></script>
 </body>
 </html>

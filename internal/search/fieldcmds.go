@@ -77,7 +77,7 @@ func applyMVCombine(ctx context.Context, res *Result, c *query.MVCombine) error 
 			if g.seen[vb.String()] || len(g.vals) >= maxMultiValues {
 				continue
 			}
-			if !ev.charge(valueSize(v) + 1) {
+			if !ev.charge(valueSize(v) + valueOverhead) {
 				return ev.err
 			}
 			g.seen[vb.String()] = true

@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/endpoint"
@@ -51,6 +52,20 @@ func (s *Server) routeOsquery(mux *http.ServeMux) {
 // is: an active agent token, or an accepted shared one (see EnrollToken).
 func (s *Server) enrollToken(secret string) (string, bool) {
 	return s.EnrollToken(secret)
+}
+
+// isHostKeyID reports whether id is the ID of a computer's own key, as an
+// osquery host enrolled with one records it.
+func (s *Server) isHostKeyID(id string) bool {
+	if id == "" {
+		return false
+	}
+	for _, h := range s.tokens().Hosts() {
+		if h.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 // readSmall reads a request that carries no results.
@@ -132,7 +147,8 @@ func (s *Server) handleOsqueryEnroll(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"node_invalid": true, "error": "the enrollment request is not valid JSON"})
 		return
 	}
-	if id, res := s.tokens().Check(strings.TrimSpace(req.Secret)); res == agenttokens.Valid && id.Purpose == agenttokens.PurposeSensor {
+	who, res := s.tokens().Check(strings.TrimSpace(req.Secret))
+	if id := who; res == agenttokens.Valid && id.Purpose == agenttokens.PurposeSensor {
 		s.Pipeline.NoteRefused(from, ingest.RefusedToken)
 		s.Log.Warn("osquery enrollment refused: a network sensor's token", "client", from.String(), "token", id.Name)
 		writeJSON(w, http.StatusUnauthorized, map[string]any{"node_invalid": true, "error": "the enroll secret is a network sensor's token, which cannot enroll osquery hosts; make a token for osquery on Add data"})
@@ -147,6 +163,17 @@ func (s *Server) handleOsqueryEnroll(w http.ResponseWriter, r *http.Request) {
 	}
 	d := req.HostDetails
 	host := cut(firstNonEmpty(d.System.Hostname, d.System.ComputerName, req.HostIdentifier), 255)
+	// A computer with a key of its own enrolls its osquery with that key
+	// (the Signalith Agent does): a line's token, or another computer's
+	// key, can't enroll a host in its name.
+	if name := agentinv.CleanName(host); name != "" && name != who.Host && s.tokens().Enrolled(name) {
+		if s.blockedLog.due("enrolled:"+name, time.Hour) {
+			s.Log.Warn("osquery enrollment refused: the computer has its own key and the request came without it (logged once an hour per host)",
+				"audit", true, "host", host, "client", from.String(), "token", who.Name)
+		}
+		writeJSON(w, http.StatusForbidden, map[string]any{"node_invalid": true, "error": "a computer with this name has its own key, so its osquery must enroll with that key; if the computer was installed again, release its name on the Agents page"})
+		return
+	}
 	key, id := endpoint.NewNodeKey()
 	now := time.Now().UTC()
 	n := &endpoint.Node{
@@ -169,7 +196,18 @@ func (s *Server) handleOsqueryEnroll(w http.ResponseWriter, r *http.Request) {
 	if m, ok := parseInt(d.System.PhysicalMemory); ok {
 		n.MemoryBytes = m
 	}
-	if err := s.Endpoints.Enroll(r.Context(), n); err != nil {
+	// Nor can they replace the record of a host enrolled with a computer's
+	// key by sending its identifier under another name.
+	keep := func(old *endpoint.Node) bool { return old.TokenID != tokenID && s.isHostKeyID(old.TokenID) }
+	if err := s.Endpoints.EnrollUnless(r.Context(), n, keep); err != nil {
+		if errors.Is(err, endpoint.ErrKept) {
+			if s.blockedLog.due("kept:"+n.HostIdentifier, time.Hour) {
+				s.Log.Warn("osquery enrollment refused: it would replace a host enrolled with its computer's own key (logged once an hour per host)",
+					"audit", true, "host", host, "client", from.String(), "token", who.Name)
+			}
+			writeJSON(w, http.StatusForbidden, map[string]any{"node_invalid": true, "error": err.Error()})
+			return
+		}
 		if errors.Is(err, endpoint.ErrBlocked) {
 			// A blocked host keeps trying every few seconds: say so once an hour.
 			if s.blockedLog.due(n.HostIdentifier, time.Hour) {

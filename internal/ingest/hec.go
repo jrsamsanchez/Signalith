@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -310,11 +311,18 @@ func hecFieldValue(v any) bool {
 }
 
 // hecTime reads an event's time: epoch seconds, as a number or a string,
-// with a fraction for sub-second times. Anything else is no time.
+// with a fraction for sub-second times, up to the year 2286. A number
+// from 1e11 to 1e13 is taken as epoch milliseconds, a common mistake that
+// would otherwise lose the event's time (ING-213). Anything else, NaN and
+// infinities among it, is no time.
 func hecTime(raw json.RawMessage) time.Time {
 	s := strings.Trim(string(bytes.TrimSpace(raw)), `"`)
 	f, err := strconv.ParseFloat(s, 64)
-	if err != nil || f <= 0 || f > 1e11 {
+	if err == nil && f >= 1e11 && f <= 1e13 {
+		ms := int64(f)
+		return time.UnixMilli(ms).Add(time.Duration((f - float64(ms)) * 1e6)).UTC()
+	}
+	if err != nil || math.IsNaN(f) || f <= 0 || f > 1e10 {
 		return time.Time{}
 	}
 	sec := int64(f)

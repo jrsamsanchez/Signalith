@@ -5,6 +5,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -168,4 +169,33 @@ func FuzzHEC(f *testing.F) {
 			}
 		}
 	})
+}
+
+// TestHECTimeBounds: epoch seconds and milliseconds are read, absurd
+// years, NaN and infinities are no time (ING-213).
+func TestHECTimeBounds(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	sec := strconv.FormatInt(now.Unix(), 10)
+	ms := strconv.FormatInt(now.UnixMilli(), 10)
+	for raw, want := range map[string]time.Time{
+		sec:              now.Truncate(time.Second),
+		`"` + sec + `"`:  now.Truncate(time.Second),
+		ms:               now,
+		`"` + ms + `"`:   now,
+		"100000000000":   time.Unix(1e8, 0).UTC(),
+		"20000000000":    {},
+		"1e300":          {},
+		"99999999999999": {},
+		`"NaN"`:          {},
+		`"nan"`:          {},
+		`"Inf"`:          {},
+		`"-Inf"`:         {},
+		"0":              {},
+		"-5":             {},
+		`"soon"`:         {},
+	} {
+		if got := hecTime(json.RawMessage(raw)); !got.Equal(want) {
+			t.Errorf("hecTime(%s) = %v, want %v", raw, got, want)
+		}
+	}
 }

@@ -132,3 +132,26 @@ func TestAuditdManyArgumentPiecesIsLinear(t *testing.T) {
 		t.Fatalf("a1 is %d bytes", len(rec.Fields["a1"]))
 	}
 }
+
+// A record type is a short name: a line with a longer one is not an audit
+// record, so auditd_type stays within the cap every value has (the input
+// the nightly fuzz found on 2026-11-01 had one of 4,112 bytes).
+func TestAuditdLongTypeIsNotARecord(t *testing.T) {
+	ok := "type=" + strings.Repeat("A", 64) + " msg=audit(1700000000.123:42): pid=1 uid=0"
+	if rec, is := ReadAuditd(ok); !is || len(rec.Type) != 64 || !IsAuditdLine(ok) {
+		t.Errorf("a 64-character type: %v %d", is, len(rec.Type))
+	}
+	for _, n := range []int{65, MaxValueLen + 16} {
+		line := "type=" + strings.Repeat("A", n) + " msg=audit(1700000000.123:42): pid=1 uid=0"
+		if _, is := ReadAuditd(line); is || IsAuditdLine(line) {
+			t.Errorf("a %d-character type is read as an audit record", n)
+		}
+		ev := Normalize("linux.audit", AuditdRecordFor(line, "db-01"), now)
+		if ev.Fields["message"] != line || ev.Fields["sourcetype"] != AuditdSourcetype {
+			t.Errorf("%d: the line is not kept as it is: %v", n, ev.Fields["sourcetype"])
+		}
+		if s, _ := ev.Fields["auditd_type"].(string); len(s) > MaxValueLen {
+			t.Errorf("auditd_type is %d bytes", len(s))
+		}
+	}
+}

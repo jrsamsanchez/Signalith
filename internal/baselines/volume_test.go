@@ -97,3 +97,60 @@ func TestVolumeHoursLearnFirst(t *testing.T) {
 		t.Errorf("usual at 05:00 = %+v", u)
 	}
 }
+
+// The hour either side of a host's bulk hour is let off as that job
+// running early or late, but not when the job also ran at its own hour
+// that day: then the extra gigabyte is more data leaving (SRCH-225).
+func TestVolumeNextToTheBulkHour(t *testing.T) {
+	r := newRig(t, only(DataVolume, Settings{LearningDays: 14, IPDatabase: "off"}))
+	r.e.history = 30 * 24 * time.Hour
+	day := func(n int) time.Time { return r.now.Truncate(24 * time.Hour).Add(time.Duration(n) * 24 * time.Hour) }
+	after, before, late, early := day(10), day(12), day(14), day(16)
+	r.runner.rows = func(by string, start time.Time) []search.Row {
+		if by != "src" {
+			return nil
+		}
+		var rows []search.Row
+		h, d := start.Hour(), start.Truncate(24*time.Hour)
+		backup := func(src string, extra bool, skipOwn time.Time, moved int) {
+			bytes := 1e6
+			switch {
+			case h == 2 && !d.Equal(skipOwn):
+				bytes = 1e9
+			case d.Equal(skipOwn) && h == moved:
+				bytes = 1e9
+			case extra && h == moved:
+				bytes = 1e9
+			}
+			rows = append(rows, row("src", src, "bytes", bytes))
+		}
+		// The job runs at 02:00, and the same day 1 GB more leaves at
+		// 03:00, or at 01:00.
+		backup("10.0.0.11", d.Equal(after), time.Time{}, 3)
+		backup("10.0.0.12", d.Equal(before), time.Time{}, 1)
+		// The job runs an hour late, or an hour early, and not at 02:00.
+		backup("10.0.0.13", false, late, 3)
+		backup("10.0.0.14", false, early, 1)
+		return rows
+	}
+	r.run()
+	for range 20 {
+		r.now = r.now.Add(24 * time.Hour)
+		r.run()
+	}
+	by := map[string][]string{}
+	for _, ev := range r.risk.of(DataVolume) {
+		by[ev.Object] = append(by[ev.Object], ev.Message)
+	}
+	for host, want := range map[string]int{"10.0.0.11": 1, "10.0.0.12": 1, "10.0.0.13": 0, "10.0.0.14": 0} {
+		if len(by[host]) != want {
+			t.Errorf("%s raised %d times, want %d: %q", host, len(by[host]), want, by[host])
+		}
+	}
+	if m := by["10.0.0.12"]; len(m) == 1 && !strings.Contains(m[0], "between 01:00 and 02:00 UTC") {
+		t.Errorf("message %q", m[0])
+	}
+	if m := by["10.0.0.11"]; len(m) == 1 && !strings.Contains(m[0], "between 03:00 and 04:00 UTC") {
+		t.Errorf("message %q", m[0])
+	}
+}

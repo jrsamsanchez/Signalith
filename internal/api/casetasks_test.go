@@ -16,7 +16,7 @@ import (
 // A case opened from a template gets its tasks; analysts tick them off
 // and add their own; admins keep their own templates.
 func TestCaseTasksAndTemplates(t *testing.T) {
-	ts, _ := newTestServer(t)
+	ts, _ := newTestServerWith(t, withUsers(t, "ana"))
 	code, out := do(t, ts, "POST", "/api/cases", `{"title":"Bob's account","template":"account-compromise"}`, true)
 	if code != http.StatusCreated {
 		t.Fatalf("create: %d %v", code, out)

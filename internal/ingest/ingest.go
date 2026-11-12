@@ -387,6 +387,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			ev.Fields = map[string]any{}
 		}
 		nReserved := p.dropReserved(ev.Fields, &reserved)
+		sender := ""
 		ApplyURLQuery(ev.Fields, urlQuery)
 		// After the drop, so only Signalith sets these. The sample data
 		// carries its own marker instead, and the origin an event of it
@@ -399,6 +400,12 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			}
 			o.stamp(ev.Fields)
 			setSource(ev.Fields, o.Intake)
+			switch {
+			case o.TokenID != "":
+				sender = "token:" + o.TokenID
+			case o.Sender != "":
+				sender = "addr:" + o.Sender
+			}
 			intakes[i] = intakeIndex(o.Intake)
 		} else {
 			intakes[i] = -1
@@ -425,7 +432,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			isFull = p.mappingFull(ctx, index)
 			full[index] = isFull
 		}
-		if n := nReserved + p.names.limitTo(index, day, oldest, ev.Fields, budget, isFull); n > 0 {
+		if n := nReserved + p.names.limitTo(index, day, oldest, sender, ev.Fields, budget, isFull); n > 0 {
 			ev.Fields["dropped_fields"] = int64(n)
 			res.FieldsDropped += n
 		}
@@ -740,14 +747,14 @@ func (e Event) Document() map[string]any {
 // says what kind of source the record came from.
 func Normalize(tag string, r map[string]any, now time.Time) Event {
 	ev := parseRecord(tag, r, now)
-	if ev.Time.IsZero() {
-		ev.Time = recordTime(r, now)
-	}
 	if ev.Model == "" {
 		ev.Model = "Other"
 	}
 	if ev.Fields == nil {
 		ev.Fields = map[string]any{}
+	}
+	if ev.Time.IsZero() {
+		ev.Time = recordTime(r, now, ev.Fields)
 	}
 	if _, ok := ev.Fields["message"]; !ok {
 		raw, _ := json.Marshal(r)
@@ -819,10 +826,25 @@ func parseGeneric(r map[string]any) Event {
 // has no usable date (JSON sent by a script or another shipper), as epoch
 // seconds or an ISO string, falling back to now. Like every event time, it
 // is then kept within ingest's window (see TimeUsable).
-func recordTime(r map[string]any, now time.Time) time.Time {
+//
+// A string with no time zone, such as "2026-10-30 12:00:00", could be in
+// any zone, so it is treated as a syslog line's is: the event takes the
+// collector's time (Fluent Bit's date) or when it arrived, and fields
+// gets the time as written in DeviceClockField (ING-214).
+func recordTime(r map[string]any, now time.Time, fields map[string]any) time.Time {
 	for _, k := range []string{"date", "@timestamp"} {
 		if t, ok := timeValue(r[k]); ok {
 			return t
+		}
+	}
+	for _, k := range []string{"date", "@timestamp"} {
+		if s, ok := r[k].(string); ok && fields != nil {
+			if t, ok := zonelessTime(s); ok {
+				if _, set := fields[DeviceClockField]; !set {
+					fields[DeviceClockField] = FormatDeviceClock(t)
+				}
+				break
+			}
 		}
 	}
 	return now.UTC()
@@ -852,8 +874,20 @@ var timeLayouts = []string{
 	"2006-01-02 15:04:05.000000000 -0700",
 	"2006-01-02 15:04:05 MST",
 	"2006-01-02T15:04:05.000000000Z",
-	"2006-01-02 15:04:05.000",
-	"2006-01-02 15:04:05",
+}
+
+// zonelessLayouts are times with no zone, which parseTime does not take.
+var zonelessLayouts = []string{"2006-01-02 15:04:05.999999999", "2006-01-02T15:04:05.999999999"}
+
+// zonelessTime reads a time with no zone, as its wall clock.
+func zonelessTime(s string) (time.Time, bool) {
+	s = strings.TrimSpace(s)
+	for _, l := range zonelessLayouts {
+		if t, err := time.Parse(l, s); err == nil {
+			return t, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func parseTime(s string) (time.Time, bool) {

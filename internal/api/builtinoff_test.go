@@ -37,7 +37,7 @@ func TestTurningOffTheBuiltinAdmin(t *testing.T) {
 		b, _ := json.Marshal(u["actions"])
 		return string(b)
 	}
-	if u := builtinRow(); u["disabled"] != false || actions(u) != `["disable"]` {
+	if u := builtinRow(); u["disabled"] != false || actions(u) != `["disable","end_sessions"]` {
 		t.Errorf("built-in admin row = %v", u)
 	}
 

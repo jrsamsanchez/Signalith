@@ -56,7 +56,10 @@ counts toward no lockout. That covers every way in from the sign-in page:
 
 - a username and password (and the two-step code after it),
 - a passkey,
-- single sign-on (OpenID Connect and SAML), checked when the sign-in starts,
+- single sign-on (OpenID Connect and SAML), checked when the sign-in starts:
+  the tick counts only when the sign-in starts from the sign-in page, so a link
+  to the start from elsewhere (an identity provider's dashboard tile, a
+  bookmark, a link someone sent) leads to the sign-in page and its notice,
 - the one-click sign-in of a [public demo](demo.md).
 
 People agree each time they sign in. Each of those sign-ins is logged with
@@ -83,4 +86,5 @@ settings `auth.notice.title`, `auth.notice.text` and `auth.notice.agree` (see
 The sign-in routes take `"agreed": true` in their body (`POST /api/login`,
 `POST /api/login/passkey` and `POST /api/demo`), and the single sign-on starts
 take `agreed=1` in their address (`GET /api/auth/oidc/start` and
-`GET /api/auth/saml/start`).
+`GET /api/auth/saml/start`), which counts only when the browser says the link
+was followed from a page of the same site (`Sec-Fetch-Site: same-origin`).
