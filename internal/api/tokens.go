@@ -157,14 +157,8 @@ func (s *Server) withOrigin(r *http.Request, intake string, id agenttokens.Ident
 	return origin(r, intake, id, s.client(r).Addr.String())
 }
 
-// withOrigin is (*Server).withOrigin with the connection's peer as the
-// sender, for the OTLP route until it moves to the method.
-func withOrigin(r *http.Request, intake string, id agenttokens.Identity) context.Context {
-	return origin(r, intake, id, clientaddr.Parse(r.RemoteAddr).String())
-}
-
 func origin(r *http.Request, intake string, id agenttokens.Identity, sender string) context.Context {
-	o := ingest.Origin{Intake: intake, TokenID: id.ID, TokenName: id.Name, Sender: sender}
+	o := ingest.Origin{Intake: intake, TokenID: id.ID, TokenName: id.Name, Sender: sender, Host: id.Host}
 	if !id.Legacy {
 		o.Purpose = id.Purpose
 	}

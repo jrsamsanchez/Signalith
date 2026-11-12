@@ -14,7 +14,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"net/netip"
 	"os"
 	"slices"
 	"sort"
@@ -651,9 +650,15 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 		t.handleIngest(w, r)
 		return
 	}
-	from := clientaddr.Parse(r.RemoteAddr)
+	// The client behind a trusted reverse proxy, not the proxy (ING-04).
+	from := s.client(r).Addr
 	who, ok := s.agentIdentity(w, r)
 	if !ok {
+		return
+	}
+	if !purposeFits(ingest.IntakeAgent, who) {
+		s.notePurposeRefused(r, ingest.IntakeAgent, who)
+		writeJSON(w, http.StatusForbidden, map[string]any{"error": purposeRefused(ingest.IntakeAgent, who), "code": codePurposeMismatch})
 		return
 	}
 	// Only agents that hold a token count: anyone can send a request.
@@ -692,7 +697,7 @@ func (s *Server) handleIngest(w http.ResponseWriter, r *http.Request) {
 	if tag == "" {
 		tag = r.URL.Query().Get("tag")
 	}
-	res, err = s.Pipeline.IngestBody(s.withOrigin(r, ingest.IntakeAgent, who), tag, body)
+	res, err = s.Pipeline.IngestBody(s.agentOrigin(r, ingest.IntakeAgent, who), tag, body)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed+res.Duplicates)
 		// Only a token made for a sensor speaks for a sensor's health:
@@ -762,11 +767,7 @@ func (s *Server) readBatch(w http.ResponseWriter, r *http.Request) (body []byte,
 	in := &batchBody{ReadCloser: r.Body, rc: rc, start: time.Now()}
 	in.deadline = in.start.Add(ingestReadTimeout)
 	_ = rc.SetReadDeadline(in.deadline)
-	sender := netip.Addr{}
-	if from := clientaddr.Parse(r.RemoteAddr); !clientaddr.Shared(from, s.Config.Server.SharedList()) {
-		sender = clientaddr.Key(from)
-	}
-	body, release, err = s.Pipeline.ReadBody(http.MaxBytesReader(w, in, ingest.MaxBodyBytes), sender, r.ContentLength)
+	body, release, err = s.Pipeline.ReadBody(http.MaxBytesReader(w, in, ingest.MaxBodyBytes), s.agentSender(r), r.ContentLength)
 	if err != nil {
 		return nil, nil, &batchError{err: err, received: in.n, took: time.Since(in.start)}
 	}
@@ -1593,7 +1594,7 @@ func refusedWarnings(refused []ingest.Sender, docker bool) []string {
 		by[x.Reason] = append(by[x.Reason], x)
 	}
 	var out []string
-	for _, reason := range []string{ingest.RefusedPlaintext, ingest.RefusedOldToken, ingest.RefusedRevoked, ingest.RefusedToken} {
+	for _, reason := range []string{ingest.RefusedPlaintext, ingest.RefusedOldToken, ingest.RefusedRevoked, ingest.RefusedPurpose, ingest.RefusedToken} {
 		list := by[reason]
 		if len(list) == 0 {
 			continue
@@ -1614,6 +1615,9 @@ func refusedWarnings(refused []ingest.Sender, docker bool) []string {
 		case ingest.RefusedOldToken:
 			msg = agent + " turned away for sending the example ingest token from an older docker-compose.yml: " + names + ". " +
 				"They keep their events and send them again. On the Add data page, get a new configuration and put it on each."
+		case ingest.RefusedPurpose:
+			msg = agent + " turned away for sending with an agent token made for another kind of agent (an OpenTelemetry Collector's token is only for OpenTelemetry, a Linux, Windows, sensor or Signalith Agent token only for Fluent Bit): " + names + ". " +
+				"Senders drop what is refused this way. On the Add data page, get a configuration for that agent, with a token made for it, and put it on each."
 		default:
 			msg = agent + " turned away for a wrong or missing agent token: " + names + ". " +
 				"Fluent Bit drops what is refused this way. On the Add data page, get a new configuration and put it on each."
