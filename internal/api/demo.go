@@ -6,6 +6,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -111,7 +112,7 @@ func (s *Server) demoSessions() *auth.Sessions {
 		s.demoSess = auth.NewSessions(demoIdle)
 		s.demoSess.MaxAge = demoMaxAge
 		s.demoSess.Limit = demoLimit
-		s.demoLimits = tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour, Fresh: 1000}
+		s.demoLimits = tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour, Fresh: 1000, FreshKey: freshDemoKey}
 	})
 	return s.demoSess
 }
@@ -211,11 +212,27 @@ func writeDemoReadOnly(w http.ResponseWriter) {
 		"error": "The public demo is read-only. Install Signalith to try this: https://signalith.io", "code": "demo_read_only"})
 }
 
+// freshDemoKey is what a visitor's key (an IPv4 address or IPv6 /64)
+// counts as for the sessions kept for new visitors: an IPv6 address's
+// /48, since one site or customer usually has a whole /48 and could
+// otherwise pass as 65,536 new visitors (AUTHRT-05).
+func freshDemoKey(key string) string {
+	a, err := netip.ParseAddr(key)
+	if err != nil || !a.Is6() || a.Is4In6() {
+		return key
+	}
+	if p, err := a.Prefix(48); err == nil {
+		return p.String()
+	}
+	return key
+}
+
 // demoRate limits how often visitors start a session: 10 a minute from
 // one address (an IPv6 /64), 3000 an hour in all, of which 1000 are kept
-// for addresses that started none in the hour, so a few addresses
-// starting sessions again and again cannot keep new visitors out
-// (AUTHRT-05).
+// for addresses that started none in the hour (an IPv6 /48 as one), so a
+// few addresses starting sessions again and again cannot keep new
+// visitors out (AUTHRT-05). Visitors through a shared address, and those
+// the server cannot tell apart, never count as new.
 func (s *Server) demoRate() *tokenRate {
 	s.demoSessions()
 	return &s.demoLimits

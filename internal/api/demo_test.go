@@ -403,6 +403,31 @@ func TestDemoSignInsKeepRoomForNewVisitors(t *testing.T) {
 	}
 }
 
+// AUTHRT-05: for what is kept for new visitors, an IPv6 /48 is one
+// visitor, so one site's many /64s cannot each pass as new.
+func TestDemoNewVisitorsAreKeyedByIPv6Slash48(t *testing.T) {
+	if got := freshDemoKey("2001:db8:1:2::"); got != "2001:db8:1::/48" {
+		t.Errorf("freshDemoKey of a /64 = %q", got)
+	}
+	if got := freshDemoKey("198.51.100.7"); got != "198.51.100.7" {
+		t.Errorf("freshDemoKey of an IPv4 address = %q", got)
+	}
+	r := tokenRate{Each: 10, Per: time.Minute, All: 3, AllPer: time.Hour, Fresh: 1, FreshKey: freshDemoKey}
+	now := time.Now()
+	for _, k := range []string{"2001:db8:1:1::", "198.51.100.1"} {
+		if wait := r.take(k, now); wait != 0 {
+			t.Fatalf("%s refused: %s", k, wait)
+		}
+	}
+	// Two of three taken: the last is kept for a new visitor.
+	if wait := r.take("2001:db8:1:2::", now); wait == 0 {
+		t.Error("another /64 of a /48 that took already passed as a new visitor")
+	}
+	if wait := r.take("2001:db8:2:1::", now); wait != 0 {
+		t.Errorf("a /64 of another /48 was refused: %s", wait)
+	}
+}
+
 // Each demo visitor's searches count against a share of the search slots
 // for the address they come from, however many sessions they start, and
 // everyone else's against their user's (SRCH-03).

@@ -408,6 +408,10 @@ type tokenRate struct {
 	// none within AllPer, so a few keys taking again and again cannot
 	// use up All and keep everyone new out.
 	Fresh int
+	// FreshKey, when set, is what a key counts as for Fresh: a wider
+	// network than the key, so one sender's many keys are one (an IPv6
+	// /48, say, where a /64 is the key).
+	FreshKey func(key string) string
 
 	mu     sync.Mutex
 	byUser map[string][]time.Time
@@ -449,7 +453,7 @@ func (t *tokenRate) take(user string, now time.Time) time.Duration {
 	if len(mine) == 0 {
 		delete(t.byUser, user)
 	}
-	limit := all
+	limit, fresh := all, ""
 	if t.Fresh > 0 {
 		if t.seen == nil {
 			t.seen = map[string]time.Time{}
@@ -462,9 +466,13 @@ func (t *tokenRate) take(user string, now time.Time) time.Duration {
 			}
 		}
 		// A key that took within AllPer, and the empty one (it stands
-		// for everyone the server cannot tell apart), may not take
-		// what is kept for fresh ones.
-		if at, ok := t.seen[user]; user == "" || (ok && now.Sub(at) < allPer) {
+		// for everyone the server cannot tell apart: shared addresses and
+		// clients without one), never count as fresh.
+		fresh = user
+		if t.FreshKey != nil && user != "" {
+			fresh = t.FreshKey(user)
+		}
+		if at, ok := t.seen[fresh]; user == "" || (ok && now.Sub(at) < allPer) {
 			limit = max(all-t.Fresh, 0)
 		}
 	}
@@ -479,7 +487,7 @@ func (t *tokenRate) take(user string, now time.Time) time.Duration {
 		return max(allPer-now.Sub(t.all[min(len(t.all)-limit, len(t.all)-1)]), time.Second)
 	}
 	if t.Fresh > 0 {
-		t.seen[user] = now
+		t.seen[fresh] = now
 	}
 	if user == "" {
 		t.all = append(t.all, now)
