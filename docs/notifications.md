@@ -296,11 +296,12 @@ the **Audit alerts** card on the Notifications page.
 | Built-in admin signs in | High | Someone signs in as the built-in admin |
 | Sign-ins locked out | High | Wrong passwords or codes lock an account, or pause sign-ins from one address |
 | Users, roles and two-step sign-in change | High | A user is added, changed, turned off or on, or deleted; a role changes; a password is reset or changed; a passkey is added or removed; recovery codes are made or used; a chat account is linked; two-step sign-in or passkeys are turned off or reset; the built-in admin is turned on again, renamed or gets a new password; the directory settings change |
-| Detections, exceptions and responses change | High | Detections are saved or turned off; an exception is added or approved; sensor rule tuning or behavior baselines change; response actions or playbooks change; an endpoint is unblocked |
+| Detections, exceptions and responses change | High | Detections are saved or turned off; a content update is uploaded or a lookup table saved; an exception is added or approved; sensor rule tuning or behavior baselines change; response actions or playbooks change; an endpoint is unblocked |
 | Tenants change | High | A tenant is added, renamed, turned off or on |
 | Tokens made or revoked | Medium | An API, agent, SCIM, metrics scrape or cluster join token is made or revoked; a server is approved to join the cluster, joins it, or is refused because it is not the one expected |
 | Settings change | Medium | Settings, notifications, retention, ticketing, agent collection, endpoint or vulnerability scan settings are saved, the cluster's key, certificate authority or web address is changed, shared settings are reset, restored or exported to files, or retention policies are confirmed |
 | Deletions | Medium | A detection, lookup table, threat intel feed or indicator, custom parser, content update, endpoint, server, notebook or case file is deleted, sample data is removed, or a retention run is started by hand |
+| Live queries run on endpoints | Medium | Someone sends a live query to endpoints, which can read their files and registry |
 | An admin signs in | Medium | Someone with the admin role signs in (other than the built-in admin) |
 | Failed sign-ins and refused tokens | Low | Every wrong password or code, failed single sign-on, and refused API, SCIM or agent token |
 

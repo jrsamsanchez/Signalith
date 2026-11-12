@@ -135,14 +135,14 @@ var AuditAlerts = []AuditAlert{
 	},
 	{
 		ID: "detection_change", Name: "Detections, exceptions and responses change", Urgency: "high",
-		Description: "Detections are saved or turned off; an exception is added or approved for one detection, many or from a finding; sensor rule tuning or behavior baselines change; response actions or playbooks change; or an endpoint is unblocked.",
+		Description: "Detections are saved or turned off; a content update is uploaded or a lookup table saved; an exception is added or approved for one detection, many or from a finding; sensor rule tuning or behavior baselines change; response actions or playbooks change; or an endpoint is unblocked.",
 		actions: []string{
 			"detection.enable", "detection.save", "detection.exception_add", "detection.scoped_exception_add",
 			"finding.suppress", "respond.change", "playbook.change",
 		},
 		messages: []string{
 			"detection exception approved", "sensor rule tuning saved", "behavior baseline settings saved",
-			"behavior baseline reset", "endpoint unblocked",
+			"behavior baseline reset", "endpoint unblocked", "content update uploaded", "lookup table saved",
 		},
 		// Turning detections on is no way to hide anything.
 		check: func(ev audit.Event) bool { return ev.Action != "detection.enable" || field(ev, "enabled") != "true" },
@@ -192,6 +192,11 @@ var AuditAlerts = []AuditAlert{
 			"sample data remove started", "hunting notebook deleted", "case file removed", "retention run started by hand",
 		},
 		actions: []string{"detection.delete", "intel.feed_delete", "intel.indicator_delete", "cluster.remove"},
+	},
+	{
+		ID: "live_query", Name: "Live queries run on endpoints", Urgency: "medium",
+		Description: "Someone sends a live query to endpoints, which can read their files and registry.",
+		messages:    []string{"live query sent"},
 	},
 	{
 		ID: "admin_signin", Name: "An admin signs in", Urgency: "medium",
