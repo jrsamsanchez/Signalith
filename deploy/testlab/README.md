@@ -55,6 +55,13 @@ the setup with the `watch_setup` output. It ends with "Test lab ready".
 5. Once the security live check signs off, open it:
    `terraform apply -var public=true`.
 
+OpenSearch's certificates last ten years. The setup deletes their CA's
+key once they are made, so renewing them means a new CA: remove
+`/root/testlab/pki`, `/root/testlab/done/opensearch` and
+`/root/testlab/done/signalith-config` (Signalith gets new client
+certificates too), then run
+`sudo testlab-setup` again.
+
 Backups: a nightly OpenSearch snapshot (14 kept) and Signalith backup on
 the data volume, and a copy of the Signalith backup on the root disk (7
 kept, master keys in a separate folder), which Hetzner's server backups
