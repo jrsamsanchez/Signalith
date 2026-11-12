@@ -107,6 +107,15 @@ type Limits struct {
 	// trusted load balancers it lists, so requests carry the client's
 	// own address. Those balancers count as Shared.
 	Proxy *proxyproto.Config
+	// ClientProxies, when set, returns the reverse proxies whose header
+	// names the client (server.trusted_proxies) and that header
+	// ("X-Forwarded-For" or "Forwarded"; "" reads none), as the settings
+	// say now. A request through one of them is counted, for the limit
+	// on requests in progress, under the client the header names rather
+	// than under the proxy (WEB-07). Connections are still counted by the
+	// address they come from: the header is not read until a request
+	// arrives.
+	ClientProxies func() (trusted []netip.Prefix, header string)
 }
 
 func (l Limits) withDefaults() Limits {
@@ -293,7 +302,7 @@ func limitRequests(next http.Handler, lim Limits, logger *slog.Logger) http.Hand
 	lim = lim.withDefaults()
 	rl := &requestLimiter{lim: lim, perClient: map[netip.Addr]int{}, log: logger}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		from := clientaddr.Parse(r.RemoteAddr)
+		from := lim.requestClient(r)
 		key, limited := lim.client(from)
 		if ok, clientFull := rl.begin(key, limited); !ok {
 			rl.refuse(w, from, key, clientFull)
@@ -355,6 +364,8 @@ func (rl *requestLimiter) refuse(w http.ResponseWriter, from, key netip.Addr, cl
 	} else {
 		warnOnceAMinute(rl.log, &rl.lastServer, "request refused: too many requests in progress (logged at most once a minute)", "limit", rl.lim.Max)
 	}
+	SecurityHeaders(w.Header())
+	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Retry-After", "5")
 	w.WriteHeader(http.StatusServiceUnavailable)

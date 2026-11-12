@@ -21,15 +21,6 @@ Ideas and requests are welcome as
 
 ## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
 
-**The next release**
-:   Finished and waiting for the next release: a [sign-in notice](sign-in-notice.md)
-    on the sign-in page, with an optional step that asks people to agree to it, and
-    [audit alerts](notifications.md#audit-alerts) that tell admins about sign-ins,
-    lockouts and changes to Signalith itself; a list of your
-    [signed-in sessions](users.md#signing-in) with a way to end them, and an admin's
-    **Sign out everywhere** for a user; and the password asked again before a
-    [response action](response-actions.md) runs.
-
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
     Splunk's answers where the two should agree.
@@ -186,7 +177,8 @@ Everything below is in Signalith now.
   [buttons](notifications.md#buttons-in-slack-and-teams) to acknowledge findings and approve
   playbook steps from chat, and
   [response actions](response-actions.md) and [playbooks](playbooks.md) with an approval
-  step.
+  step that asks for the password again. [Audit alerts](notifications.md#audit-alerts)
+  tell admins about sign-ins, lockouts and changes to Signalith itself.
 - [Jira and ServiceNow tickets](ticketing.md) for cases, kept in step both ways.
 - [Several teams or customers](multi-tenant.md) on one install, each with its own data,
   users, detections and behavior baselines, managed on **Settings > Tenants** with a
@@ -252,7 +244,9 @@ Everything below is in Signalith now.
   and archives.
 - [Users and roles](users.md), with Active Directory and LDAP sign-in,
   [single sign-on](sso.md) with OpenID Connect or SAML 2.0 and SCIM provisioning, and two-step sign-in
-  with [passkeys](users.md#passkeys) or an authenticator app.
+  with [passkeys](users.md#passkeys) or an authenticator app; a list of your signed-in
+  sessions with a way to end them, **Sign out everywhere** for admins, and a
+  [sign-in notice](sign-in-notice.md) people can be asked to agree to.
 - A separate [agent port](sending-data.md#the-agent-port), so agents never need the web
   page.
 - [Data retention](retention.md) policies with archives you can restore, and a disk guard.

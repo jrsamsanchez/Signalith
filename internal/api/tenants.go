@@ -402,7 +402,8 @@ func (s *Server) tenantsOff() string {
 func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
 	p := principalOf(r)
 	list := []tenantView{{ID: tenants.Default, Name: "Default", Default: true}}
-	if s.Tenants != nil {
+	// A public demo's anonymous visitor learns of no tenant (AUTHZ-05).
+	if s.Tenants != nil && p.Source != sourceDemo {
 		ts, err := s.Tenants.List()
 		if err != nil {
 			s.Log.Error("could not read the tenants", "file", s.Tenants.Path, "err", err)
@@ -410,9 +411,13 @@ func (s *Server) handleListTenants(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for _, t := range ts {
-			v := tenantView{ID: t.ID, Name: t.Name, Disabled: t.Disabled, CreatedBy: t.CreatedBy}
-			if !t.Created.IsZero() {
-				v.Created = &t.Created
+			v := tenantView{ID: t.ID, Name: t.Name, Disabled: t.Disabled}
+			// Who added it, and when, is for the admins who do.
+			if p.runsServer() {
+				v.CreatedBy = t.CreatedBy
+				if !t.Created.IsZero() {
+					v.Created = &t.Created
+				}
 			}
 			list = append(list, v)
 		}

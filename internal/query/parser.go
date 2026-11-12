@@ -126,7 +126,7 @@ func parseAt(src string, base, depth int) (*Query, error) {
 	if t := p.peek(); t.kind != tokEOF {
 		return nil, errorf(t.pos, "unexpected %q", t.text)
 	}
-	if depth == 0 && countSubsearches(q) > MaxSubsearches {
+	if depth == 0 && CountSubsearches(q) > MaxSubsearches {
 		return nil, errorf(base, "a query can run at most %d subsearches", MaxSubsearches)
 	}
 	if depth == 0 && countMapSearches(q) > MaxMapSearches {

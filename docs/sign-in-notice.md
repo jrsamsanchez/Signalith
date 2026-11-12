@@ -1,8 +1,5 @@
 # Sign-in notice
 
-!!! note "Arriving with the next release"
-    The sign-in notice is on `main` and comes with the release after 0.4.0.
-
 Signalith can show a notice on its sign-in page, such as who may use the system,
 that activity on it is monitored and recorded, and what signing in means. Many
 policies ask for one: it is the system use notification of NIST SP 800-53

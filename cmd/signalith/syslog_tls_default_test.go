@@ -20,9 +20,10 @@ func TestInitSyslogTLSOnlyByDefault(t *testing.T) {
 	t.Setenv("SIGNALITH_PUBLIC_URL", "")
 	t.Setenv("SIGNALITH_SYSLOG_UDP", "")
 	t.Setenv("SIGNALITH_SYSLOG_TCP", "")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "first-password")
 	path := filepath.Join(t.TempDir(), "signalith.yaml")
 	out := captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path, "-admin-password", "first-password"}); err != nil {
+		if err := cmdInit([]string{"-c", path}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -44,7 +45,7 @@ func TestInitSyslogTLSOnlyByDefault(t *testing.T) {
 	// Installers that want plain syslog still ask for it.
 	path2 := filepath.Join(t.TempDir(), "signalith.yaml")
 	out = captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path2, "-admin-password", "first-password", "-syslog-udp", "0.0.0.0:514", "-syslog-tcp=0.0.0.0:514"}); err != nil {
+		if err := cmdInit([]string{"-c", path2, "-syslog-udp", "0.0.0.0:514", "-syslog-tcp=0.0.0.0:514"}); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -61,7 +62,7 @@ func TestInitSyslogTLSOnlyByDefault(t *testing.T) {
 
 	// An existing config is never rewritten: init refuses it, and plain
 	// syslog stays as it is.
-	if err := cmdInit([]string{"-c", path2, "-admin-password", "first-password"}); err == nil {
+	if err := cmdInit([]string{"-c", path2}); err == nil {
 		t.Error("init overwrote an existing config")
 	}
 	if c3, err := config.Load(path2); err != nil || c3.Syslog.UDP != "0.0.0.0:514" || c3.Syslog.TCP != "0.0.0.0:514" {

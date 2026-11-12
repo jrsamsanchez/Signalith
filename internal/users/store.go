@@ -9,10 +9,12 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"net/mail"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -234,16 +236,21 @@ func HashPassword(pw string) (string, error) {
 	return string(h), err
 }
 
-// hashCost is the bcrypt cost of new password hashes: always
-// bcrypt.DefaultCost, except in a test binary that asks for
-// UseFastHashesInTests.
-var hashCost = bcrypt.DefaultCost
+// HashCost is the bcrypt cost of new password hashes: 12, as OWASP's
+// password storage guidance asks of bcrypt (bcrypt.DefaultCost is 10).
+// A local user's hash of a lower cost is made again at this cost the
+// next time the password is checked and right (Store.CheckPassword).
+const HashCost = 12
+
+// hashCost is the bcrypt cost of new password hashes: always HashCost,
+// except in a test binary that asks for UseFastHashesInTests.
+var hashCost = HashCost
 
 // UseFastHashesInTests makes new password hashes (and the dummy hash
 // WasteTime checks against) use bcrypt.MinCost, so a package whose tests
 // create many users finishes in time under the race detector. Call it
 // from TestMain, before m.Run. It panics outside a test binary, so a
-// production binary always hashes at bcrypt.DefaultCost.
+// production binary always hashes at HashCost.
 func UseFastHashesInTests() {
 	if !testing.Testing() {
 		panic("users: UseFastHashesInTests called outside a test binary")
@@ -305,10 +312,69 @@ func bcryptInput(pw string) []byte {
 
 // dummyHash is compared against when a user does not exist, so a wrong
 // username takes as long to refuse as a wrong password.
-var dummyHash = sync.OnceValue(func() []byte {
-	h, _ := bcrypt.GenerateFromPassword([]byte("not-a-real-password"), hashCost)
+var dummyHash = sync.OnceValue(func() []byte { return dummyHashAt(hashCost) })
+
+// dummyHashes are dummy hashes by bcrypt cost (dummyHashAt).
+var (
+	dummyMu     sync.Mutex
+	dummyHashes = map[int][]byte{}
+)
+
+// dummyHashAt returns a hash of no real password at cost, made once.
+func dummyHashAt(cost int) []byte {
+	cost = min(max(cost, bcrypt.MinCost), bcrypt.MaxCost)
+	dummyMu.Lock()
+	defer dummyMu.Unlock()
+	if h, ok := dummyHashes[cost]; ok {
+		return h
+	}
+	h, _ := bcrypt.GenerateFromPassword([]byte("not-a-real-password"), cost)
+	dummyHashes[cost] = h
 	return h
-})
+}
+
+// dummyKey picks a dummy cost for a name (Store.WasteTime). It is new
+// each time the server starts, so the cost a name gets cannot be worked
+// out ahead.
+var dummyKey = func() []byte {
+	k := make([]byte, 32)
+	_, _ = rand.Read(k)
+	return k
+}()
+
+// dummyCost is the bcrypt cost Store.WasteTime checks name at; false when
+// no hash is stored.
+func (s *Store) dummyCost(name string) (int, bool) {
+	s.mu.RLock()
+	costs := s.costs
+	s.mu.RUnlock()
+	if len(costs) == 0 {
+		return 0, false
+	}
+	m := hmac.New(sha256.New, dummyKey)
+	m.Write([]byte(NormalizeUsername(name)))
+	sum := m.Sum(nil)
+	return costs[binary.BigEndian.Uint64(sum[:8])%uint64(len(costs))], true
+}
+
+// WasteTime is the package's WasteTime for a sign-in as name, a user that
+// does not exist, at a bcrypt cost that stored hashes have: each name
+// gets one of the stored hashes' costs, picked by a keyed hash of the
+// name, so unknown names take as long as the stored users do, in the same
+// proportions. Without it, users whose hashes an older version made at a
+// lower cost (and who have not signed in since) would be told apart from
+// names that do not exist by how quickly they are refused (AUTHRT-12).
+func (s *Store) WasteTime(name, pw string) {
+	h := dummyHash
+	if cost, ok := s.dummyCost(name); ok {
+		h = func() []byte { return dummyHashAt(cost) }
+	}
+	n := NormalizePassword(pw)
+	_ = bcrypt.CompareHashAndPassword(h(), bcryptInput(n))
+	if n != pw {
+		_ = bcrypt.CompareHashAndPassword(h(), bcryptInput(pw))
+	}
+}
 
 // WasteTime does the work of checking a password without a user, so
 // sign-in failures take the same time whatever the reason.
@@ -384,8 +450,11 @@ type Store struct {
 	mu     sync.RWMutex
 	users  map[string]*User
 	hashes map[string]string // username -> bcrypt hash, local users only
-	mfa    map[string]*MFA
-	etags  map[string]string
+	// costs holds the bcrypt cost of each of hashes, in no set order
+	// (Store.WasteTime).
+	costs []int
+	mfa   map[string]*MFA
+	etags map[string]string
 
 	// recheck is how often reads look for changes to the file, checked
 	// when they last did, and reading whether one such read is under way.
@@ -442,6 +511,7 @@ func (s *Store) load() error {
 		return err
 	}
 	people, hashes, etags, mfa := make(map[string]*User, len(recs)), map[string]string{}, make(map[string]string, len(recs)), map[string]*MFA{}
+	var costs []int
 	for name, r := range recs {
 		u := r.User
 		u.SessionEpoch = r.Epoch
@@ -449,13 +519,17 @@ func (s *Store) load() error {
 		etags[name] = r.ETag
 		if r.Hash != "" && u.Source == SourceLocal {
 			hashes[name] = r.Hash
+			if c, err := bcrypt.Cost([]byte(r.Hash)); err == nil {
+				costs = append(costs, c)
+			}
 		}
 		if r.MFA != nil {
 			mfa[name] = r.MFA.clone()
 		}
 	}
 	s.mu.Lock()
-	s.users, s.hashes, s.etags, s.mfa = people, hashes, etags, mfa
+	slices.Sort(costs)
+	s.users, s.hashes, s.etags, s.mfa, s.costs = people, hashes, etags, mfa, costs
 	s.mu.Unlock()
 	s.builtinAfterLoad()
 	return nil
@@ -826,10 +900,48 @@ func (s *Store) CheckPassword(name, password string) bool {
 	hash, ok := s.hashes[NormalizeUsername(name)]
 	s.mu.RUnlock()
 	if !ok {
-		WasteTime(password)
+		s.WasteTime(name, password)
 		return false
 	}
-	return ComparePassword(hash, password)
+	if !ComparePassword(hash, password) {
+		return false
+	}
+	s.rehash(name, hash, password)
+	return true
+}
+
+// rehash makes a local user's password hash again at hashCost when it is
+// of a lower cost (made by an older version), now that the password is
+// known to be right. It is done before the caller goes on, so what it
+// records of the password (a session's, a known browser's) is the new
+// hash's. A failure only leaves the old hash in place.
+func (s *Store) rehash(name, hash, password string) {
+	if cost, err := bcrypt.Cost([]byte(hash)); err != nil || cost >= hashCost {
+		return
+	}
+	// The new hash is made before the hold is taken, as SetPassword does:
+	// the hold keeps the users file from moving into the shared settings
+	// mid-change, and bcrypt's quarter second need not hold that off.
+	// Nothing read before the hold is trusted after it: the change below
+	// replaces only the very hash that was checked.
+	h, err := HashPassword(password)
+	if err != nil {
+		return
+	}
+	release, err := s.hold()
+	if err != nil {
+		return
+	}
+	defer release()
+	_, _ = s.b.Change(context.Background(), "signalith", NormalizeUsername(name), "", func(r *Record) error {
+		// Only the hash that was checked is replaced: one changed
+		// meanwhile stays.
+		if r.Source != SourceLocal || r.Hash != hash {
+			return ErrNoChange
+		}
+		r.Hash = h
+		return nil
+	})
 }
 
 // PasswordVersion changes whenever the user's password does, so a cache

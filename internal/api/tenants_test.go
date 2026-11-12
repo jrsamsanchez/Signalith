@@ -133,10 +133,15 @@ func TestProviderSwitchesTenants(t *testing.T) {
 	if code != 200 || list["active"] != tenants.Default || list["enabled"] != true || len(list["tenants"].([]any)) != 2 {
 		t.Fatalf("tenants = %d %v", code, list)
 	}
-	// Settings > Tenants shows when each was added; only admins are told
-	// whether tenants can be added.
-	if acme := list["tenants"].([]any)[1].(map[string]any); acme["created"] == nil || acme["created_by"] != "test" {
-		t.Errorf("acme = %v", acme)
+	// Settings > Tenants shows the provider's admins when each was added
+	// and by whom; nobody else is told (AUTHZ-05), nor whether tenants
+	// can be added.
+	if acme := list["tenants"].([]any)[1].(map[string]any); acme["created"] != nil || acme["created_by"] != nil {
+		t.Errorf("acme for an analyst = %v", acme)
+	}
+	_, adminList, _ := call(t, ts, "GET", "/api/tenants", "", "admin", "s3cret-pass", nil)
+	if acme := adminList["tenants"].([]any)[1].(map[string]any); acme["created"] == nil || acme["created_by"] != "test" {
+		t.Errorf("acme for an admin = %v", acme)
 	}
 	if _, ok := list["off"]; ok {
 		t.Errorf("an analyst is told whether tenants can be added: %v", list)
@@ -353,6 +358,30 @@ func TestTenantAdminsManageOnlyTheirUsers(t *testing.T) {
 	}
 	if code, _ := doAs(t, acmeTS, "ada@acme", "role-password", "DELETE", "/api/users/bob@acme", ""); code != 200 {
 		t.Errorf("acme's admin deleting acme's user: %d", code)
+	}
+
+	// AUTHZ-01: owners of findings, cases and tasks on acme's server are
+	// acme's users only, and a name of another tenant's or the
+	// provider's gets the same answer as one nobody has.
+	for owner, want := range map[string]string{"carl@acme": "carl@acme", "eve@beta": "", "pat": "", acme.builtinName(): "", "ghost": ""} {
+		got, err := acme.ownerFor(owner, "", "ada@acme")
+		if got != want || (want == "" && err == nil) {
+			t.Errorf("owner %q from acme's admin = %q, %v; want %q", owner, got, err, want)
+		}
+		if want == "" && err.Error() != errUnknownOwner(owner).Error() {
+			t.Errorf("owner %q: %v, not the answer for an unknown name", owner, err)
+		}
+	}
+	// The provider's staff working in acme may assign each other.
+	if got, err := acme.ownerFor("pat", "", acme.builtinName()); got != "pat" || err != nil {
+		t.Errorf("pat from the built-in admin in acme = %q, %v", got, err)
+	}
+	// On the provider's server, tenants' users are not owners.
+	if got, err := def.ownerFor("carl@acme", "", "pat"); got != "" || err == nil {
+		t.Errorf("carl@acme on the provider's server = %q, %v", got, err)
+	}
+	if code, body := doAs(t, acmeTS, "ada@acme", "role-password", "POST", "/api/cases", `{"title":"x","owner":"eve@beta"}`); code != http.StatusBadRequest {
+		t.Errorf("a case for eve@beta on acme's server: %d %v", code, body)
 	}
 }
 

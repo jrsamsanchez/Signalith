@@ -104,16 +104,25 @@ func boolQuery(clause string, qs []any) map[string]any {
 func compareQuery(c *query.Compare) (map[string]any, error) {
 	if c.Field == RawField && (c.Op == "=" || c.Op == "!=") {
 		q := textQuery(c.Value)
+		if c.Exact {
+			// A phrase has no wildcards.
+			q = map[string]any{"match_phrase": map[string]any{StoredRawField: c.Value}}
+		}
 		if c.Op == "!=" {
 			return boolQuery("must_not", []any{q}), nil
 		}
 		return q, nil
 	}
 	switch c.Op {
-	case "=":
-		return equalsQuery(c.Field, c.Value), nil
-	case "!=":
-		return boolQuery("must_not", []any{equalsQuery(c.Field, c.Value)}), nil
+	case "=", "!=":
+		q := equalsQuery(c.Field, c.Value)
+		if c.Exact {
+			q = exactQuery(c.Field, c.Value)
+		}
+		if c.Op == "!=" {
+			return boolQuery("must_not", []any{q}), nil
+		}
+		return q, nil
 	case "=~":
 		if c.Field == IndexField {
 			return nil, indexOnlyEquals()
@@ -208,6 +217,21 @@ func equalsQuery(field, value string) map[string]any {
 	}
 	if _, ok := parseNumber(value); ok {
 		// Numbers match both numeric and keyword fields exactly.
+		return map[string]any{"term": map[string]any{field: map[string]any{"value": value}}}
+	}
+	return map[string]any{"term": map[string]any{field: map[string]any{"value": value, "case_insensitive": true}}}
+}
+
+// exactQuery is equalsQuery for a value taken as it is: * and ? in it
+// are not wildcards, and neither ranges nor "exists" are read into it.
+func exactQuery(field, value string) map[string]any {
+	switch field {
+	case IndexField:
+		return map[string]any{"term": map[string]any{indexMeta: map[string]any{"value": strings.ToLower(value)}}}
+	case "_time":
+		field = TimeField
+	}
+	if _, ok := parseNumber(value); ok {
 		return map[string]any{"term": map[string]any{field: map[string]any{"value": value}}}
 	}
 	return map[string]any{"term": map[string]any{field: map[string]any{"value": value, "case_insensitive": true}}}

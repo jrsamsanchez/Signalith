@@ -68,6 +68,39 @@ type otlpJSONAnyValue struct {
 // value).
 const maxJSONDepth = 4*MaxDepth + 4
 
+// maxJSONRecordNodes caps the JSON objects, arrays and list entries of one
+// log record. Decoding gives each a Go value many times its few bytes of
+// JSON ({} in an array becomes a pointer and a struct of about 100
+// bytes), so a 1 MB record of tiny values could otherwise take tens of MB
+// to read (ING-08). Attributes are capped at maxOTLPAttributes per list
+// anyway; this is far above what a real record holds.
+const maxJSONRecordNodes = 1 << 16
+
+// jsonNodes counts the objects, arrays and comma-separated entries in raw
+// outside strings: about how many values decoding it makes.
+func jsonNodes(raw []byte) int {
+	n := 0
+	inString, escaped := false, false
+	for _, c := range raw {
+		switch {
+		case inString:
+			switch {
+			case escaped:
+				escaped = false
+			case c == '\\':
+				escaped = true
+			case c == '"':
+				inString = false
+			}
+		case c == '"':
+			inString = true
+		case c == '{' || c == '[' || c == ',':
+			n++
+		}
+	}
+	return n
+}
+
 // walkOTLPJSON is walkOTLPProto for an OTLP/JSON request.
 func walkOTLPJSON(body []byte, build bool, fn func(l *otlpLog, size int, bad *BodyError) error) error {
 	if len(bytes.TrimSpace(body)) == 0 {
@@ -83,6 +116,9 @@ func walkOTLPJSON(body []byte, build bool, fn func(l *otlpLog, size int, bad *Bo
 			Attributes []otlpJSONKeyValue `json:"attributes"`
 		}
 		if len(rl.Resource) > 0 {
+			if jsonNodes(rl.Resource) > maxJSONRecordNodes || depth(rl.Resource) > maxJSONDepth {
+				return badBody("an OTLP/JSON resource holds too many values or nests them too deeply")
+			}
 			if err := json.Unmarshal(rl.Resource, &res); err != nil {
 				return badBody("invalid OTLP/JSON resource: %v", err)
 			}
@@ -120,6 +156,9 @@ func jsonLogRecord(raw json.RawMessage, n int, resource map[string]any, scope st
 	}
 	if d := depth(raw); d > maxJSONDepth {
 		return nil, badBody("log record %d nests values too deeply", n)
+	}
+	if v := jsonNodes(raw); v > maxJSONRecordNodes {
+		return nil, tooLarge("log record %d holds %d values; the limit is %d per record", n, v, maxJSONRecordNodes)
 	}
 	var rec otlpJSONLogRecord
 	if err := json.Unmarshal(raw, &rec); err != nil {

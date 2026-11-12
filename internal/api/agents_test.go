@@ -41,8 +41,10 @@ func TestAgentsAreListedWithWhyTheyNeedANewConfiguration(t *testing.T) {
 		}
 		return `{"resourceLogs":[` + strings.Join(rs, ",") + `]}`
 	}
-	_, gatewaySecret := createToken(t, ts, "Gateway")
-	for body, token := range map[string]string{otlp("DB-02"): secret, otlp("app-1", "app-2"): gatewaySecret} {
+	// Collectors send with tokens made for OpenTelemetry (ING-03).
+	_, collectorSecret := makeToken(t, ts, "Collector", "otel")
+	_, gatewaySecret := makeToken(t, ts, "Gateway", "otel")
+	for body, token := range map[string]string{otlp("DB-02"): collectorSecret, otlp("app-1", "app-2"): gatewaySecret} {
 		if code, out := agentSend(t, ts.URL, "/api/otlp/v1/logs", token, body, map[string]string{"Content-Type": "application/json"}); code != http.StatusOK {
 			t.Fatalf("otlp: %d %s", code, out)
 		}

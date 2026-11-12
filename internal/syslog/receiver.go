@@ -410,6 +410,7 @@ func (r *Receiver) Start(ctx context.Context) error {
 		protos = append(protos, l.proto)
 		r.listeners = append(r.listeners, r.listener(l.proto, l.addr, ln.Addr()))
 	}
+	r.warnOpen()
 	for i, ln := range r.lns {
 		r.readers.Add(1)
 		go r.accept(ctx, ln, protos[i])
@@ -468,6 +469,44 @@ func (r *Receiver) closeListeners() {
 	}
 	for _, ln := range r.lns {
 		ln.Close()
+	}
+}
+
+// openListeners returns the listeners, as "udp 0.0.0.0:514", that take
+// syslog from other computers with no syslog.allow to limit who: a
+// sender can then name any host and pass for any device (ING-05).
+func (r *Receiver) openListeners() []string {
+	if len(r.cfg.Allow) > 0 {
+		return nil
+	}
+	var addrs []net.Addr
+	if r.udp != nil {
+		addrs = append(addrs, r.udp.LocalAddr())
+	}
+	for _, ln := range r.lns {
+		addrs = append(addrs, ln.Addr())
+	}
+	var open []string
+	for i, a := range addrs {
+		ap, err := netip.ParseAddrPort(a.String())
+		if err == nil && ap.Addr().Unmap().IsLoopback() {
+			continue
+		}
+		open = append(open, r.listeners[i].Protocol+" "+r.listeners[i].Address)
+	}
+	return open
+}
+
+// warnOpen says, as the receiver starts, which listeners take syslog from
+// any computer that can reach them. They stay open, as before, so an
+// install that relies on that keeps its syslog; the Security page says
+// the same for plain syslog.
+func (r *Receiver) warnOpen() {
+	if open := r.openListeners(); len(open) > 0 {
+		r.log.Warn("syslog is accepted from any computer that can reach these listeners: syslog.allow is empty, so anyone could send fake events "+
+			"in any device's name. List the addresses or ranges of the devices that send syslog in syslog.allow (on the Settings page, or in signalith.yaml), "+
+			"or listen on 127.0.0.1 only, and limit the ports with a firewall",
+			"listeners", strings.Join(open, ", "))
 	}
 }
 

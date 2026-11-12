@@ -628,12 +628,12 @@ func TestUntrustedForwardedForInLocks(t *testing.T) {
 		signInWith(t, c.a.client, c.a.url, attempt{user: "jlee", pass: "wrong", xff: fmt.Sprintf("203.0.113.%d", i)})
 	}
 	cid, secret := c.a.docs.ClusterID(), c.a.docs.Hub().Keys().Active().LockKey()
-	peer := clusterauth.LockID(cid, auth.ScopeAddressAccount, auth.LockKey(secret, "p\x00127.0.0.1\x00jlee"))
+	peer := clusterauth.LockID(cid, auth.ScopeAddressAccount, auth.LockKey(secret, "p\x00127.0.0.1\x00"+auth.AccountKey("jlee")))
 	waitFor(t, "the lock of the peer's address", func() bool {
 		return c.fake.Source(memberPrefix+"_runtime", peer) != nil
 	})
 	for i := 0; i < 5; i++ {
-		named := clusterauth.LockID(cid, auth.ScopeAddressAccount, auth.LockKey(secret, fmt.Sprintf("p\x00203.0.113.%d\x00jlee", i)))
+		named := clusterauth.LockID(cid, auth.ScopeAddressAccount, auth.LockKey(secret, fmt.Sprintf("p\x00203.0.113.%d\x00%s", i, auth.AccountKey("jlee"))))
 		if c.fake.Source(memberPrefix+"_runtime", named) != nil {
 			t.Errorf("a lock for the forwarded address 203.0.113.%d", i)
 		}
@@ -691,6 +691,63 @@ func TestDegradedBuiltinSignIn(t *testing.T) {
 	}
 	if !strings.Contains(c.a.logs.String(), "signed in while OpenSearch cannot be written") {
 		t.Errorf("the degraded sign-in was not logged:\n%s", c.a.logs.String())
+	}
+}
+
+// AUTHRT-06: while the built-in admin's authenticator app can still be
+// read, the break-glass password asks for its code too, and a code is
+// taken once.
+func TestBreakGlassAsksForTheCode(t *testing.T) {
+	c := newMemberCluster(t, nil)
+	ctx := context.Background()
+	h, err := config.HashPassword("local-break-glass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.a.localHash.Store(&h)
+	st := c.a.srv.Users
+	secret, err := st.BeginMFA(ctx, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Confirm with the step before now, so a code of now is still free.
+	early, _ := users.TOTP(secret, time.Now().Add(-30*time.Second))
+	if _, err := st.ConfirmMFA(ctx, "admin", early); err != nil {
+		t.Fatal(err)
+	}
+	c.a.shared.paused.Store(true)
+	c.a.degraded.Store(true)
+	r := signInWith(t, c.a.client, c.a.url, attempt{user: "admin", pass: "local-break-glass"})
+	if r.code != http.StatusUnauthorized || r.body["code"] != "mfa_required" {
+		t.Fatalf("the -local password without a code: %d %v", r.code, r.body)
+	}
+	if got := c.a.basic("admin", "local-break-glass"); got != http.StatusForbidden {
+		t.Errorf("Basic with the -local password and an app: %d, want 403", got)
+	}
+	withCode := func(code string) int {
+		b, _ := json.Marshal(map[string]string{"username": "admin", "password": "local-break-glass", "code": code})
+		resp, err := c.a.client.Post(c.a.url+"/api/login", "application/json", strings.NewReader(string(b)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := withCode("000000"); got != http.StatusUnauthorized {
+		t.Errorf("a wrong code: %d", got)
+	}
+	code, _ := users.TOTP(secret, time.Now())
+	if code == early {
+		t.Skip("the two steps' codes are the same")
+	}
+	if got := withCode(code); got != http.StatusOK {
+		t.Fatalf("the right code: %d", got)
+	}
+	if got := withCode(code); got != http.StatusUnauthorized {
+		t.Errorf("the same code again: %d", got)
+	}
+	if !strings.Contains(c.a.logs.String(), "break_glass=true") {
+		t.Error("the sign-in's record does not say it was the break-glass password")
 	}
 }
 

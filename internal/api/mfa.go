@@ -86,9 +86,10 @@ func (s *Server) noteMFA(p *principal) {
 // password over the API (Basic) is refused to anyone who has or needs
 // it. It returns why it refused, for the log.
 func (s *Server) secondStep(r *http.Request, ctx context.Context, p *principal, method string, step secondFactor) (string, error) {
-	if p.breakGlass || !mfaSource(p.Source) {
-		// The password signalith passwd -local wrote on this server, for
-		// when the shared settings, and so the code, cannot be read.
+	if p.breakGlass {
+		return s.breakGlassStep(p, method, step)
+	}
+	if !mfaSource(p.Source) {
 		return "", nil
 	}
 	store := s.userStore()
@@ -124,6 +125,40 @@ func (s *Server) secondStep(r *http.Request, ctx context.Context, p *principal, 
 		return "the two-step code could not be checked: " + err.Error(), errMFAUnavailable
 	}
 	p.codeUsed = &res
+	return "", nil
+}
+
+// breakGlassStep is secondStep for the password signalith passwd -local
+// wrote on this server, which works while the shared settings cannot be
+// used: then nothing can be written, so a code cannot be marked used as
+// usual. While the built-in admin's two-step sign-in can still be read
+// here with its app, the app's code is asked for all the same, checked
+// without writing, and a step taken once is not taken again on this
+// server (AUTHRT-06). With none that can be read, the password is
+// enough, so the built-in admin can always get in to fix things; the
+// sign-in's audit record says it was the break-glass password.
+func (s *Server) breakGlassStep(p *principal, method string, step secondFactor) (string, error) {
+	store := s.userStore()
+	if m, ok := store.MFA(p.Username); !ok || !m.AppOn() || m.Secret == "" {
+		return "", nil
+	}
+	if method == "basic" {
+		return "two-step sign-in is on, and Basic auth has no code", errMFABasic
+	}
+	if strings.TrimSpace(step.Code) == "" {
+		return "", errMFANeeded
+	}
+	for {
+		last := s.breakGlassStepUsed.Load()
+		n, err := store.CheckAppCode(p.Username, step.Code, last)
+		if err != nil {
+			return "wrong two-step code", errWrongCode
+		}
+		if s.breakGlassStepUsed.CompareAndSwap(last, n) {
+			break
+		}
+	}
+	p.codeUsed = &users.CodeResult{Kind: users.CodeApp}
 	return "", nil
 }
 

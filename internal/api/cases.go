@@ -146,6 +146,13 @@ func (e errUnknownOwner) Error() string {
 // a directory or single sign-on user seen at sign-in), ignoring case. An
 // owner the item already has is kept as it is, so an item assigned before
 // owners were checked can still be saved.
+//
+// Only the users of this server's tenant can be owners: a tenant's server
+// shares the provider's users, and an owner from elsewhere would both
+// tell a tenant's users which names exist there and give an item to
+// someone who can never see it (AUTHZ-01). The provider's users, the
+// built-in admin among them, are accepted in a tenant only from one of
+// them. Any other name gets the same answer as one nobody has.
 func (s *Server) ownerFor(owner, current, self string) (string, error) {
 	o := strings.TrimSpace(owner)
 	switch {
@@ -155,11 +162,31 @@ func (s *Server) ownerFor(owner, current, self string) (string, error) {
 		return current, nil
 	case self != "" && strings.EqualFold(o, self):
 		return self, nil
-	case s.isBuiltin(o):
-		return s.builtinName(), nil
 	}
-	if st := s.userStore(); st != nil {
-		if u, ok := st.Get(o); ok {
+	tenant := s.userTenant()
+	st := s.userStore()
+	// provider reports whether self is one of the provider's users.
+	provider := func() bool {
+		if self == "" {
+			return false
+		}
+		if s.isBuiltin(self) {
+			return true
+		}
+		if st == nil {
+			return false
+		}
+		u, ok := st.Get(self)
+		return ok && u.Tenant == ""
+	}
+	if s.isBuiltin(o) {
+		if tenant == "" || provider() {
+			return s.builtinName(), nil
+		}
+		return "", errUnknownOwner(o)
+	}
+	if st != nil {
+		if u, ok := st.Get(o); ok && (u.Tenant == tenant || (u.Tenant == "" && provider())) {
 			return u.Username, nil
 		}
 	}

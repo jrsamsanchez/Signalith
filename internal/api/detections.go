@@ -17,6 +17,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/geoip"
+	"github.com/jrsamsanchez/signalith/internal/playbooks"
 	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
@@ -850,7 +851,7 @@ func (s *Server) handleCreateFinding(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f := &findings.Finding{
-		ID: detect.NewID(now), DetectionID: "manual", Title: req.Title, Description: req.Description,
+		ID: detect.NewID(now), DetectionID: playbooks.ManualDetection, Title: req.Title, Description: req.Description,
 		Severity: req.Severity, Status: findings.StatusNew, MITRE: req.MITRE, Entities: ents,
 		Result: req.Result, Query: req.Query, Earliest: req.Earliest, Latest: req.Latest,
 		Created: now, Updated: now,
@@ -868,7 +869,7 @@ func (s *Server) handleCreateFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "finding.create: finding raised by hand", "target", f.ID, "title", f.Title, "severity", f.Severity,
-		"query", safelog.Cut(f.Query, 500))
+		"query", safelog.Cut(f.Query, 500), "entities", safelog.Cut(fmt.Sprint(f.Entities), 500))
 	writeJSON(w, http.StatusCreated, f)
 }
 

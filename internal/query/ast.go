@@ -63,6 +63,11 @@ type Compare struct {
 	Op    string
 	Value string
 	Ref   bool
+	// Exact is set on a comparison whose value came from an event (a
+	// subsearch's rows, map's $field$), so * and ? in it are characters
+	// rather than wildcards (SRCH-04). The language has no way to write
+	// it, so String writes such a value as a plain one.
+	Exact bool
 
 	lit bool // written in a where command, so a bare name is put in quotes
 }
