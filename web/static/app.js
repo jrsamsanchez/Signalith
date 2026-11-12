@@ -792,7 +792,7 @@ const JUMP_WORDS = {
   detections: 'rules sigma alerts', coverage: 'mitre attack matrix techniques tactics',
   compliance: 'compliance audit auditor evidence report controls framework nist 800-53 cis pci dss iso 27001 hipaa soc 2 soc2 nis2 nis 2 gdpr dsgvo rgpd privacy personal data breach notification eu', assets: 'hosts users identities cmdb priority',
   data: 'ingest agents fluent bit sources onboarding syslog firewall switch router cisco wazuh ossec alerts sample demo test data try example zeek suricata ids ips network sensor span mirror pfsense opnsense security onion', retention: 'retention rotation archive restore delete storage disk guard policies',
-  health: 'status opensearch ingest', help: 'help syntax language commands',
+  health: 'status opensearch ingest', sources: 'data sources feeds log sources hosts senders silent quiet stopped volume events per minute eps last event', help: 'help syntax language commands',
   servers: 'cluster nodes servers background jobs leader failover standby readyz',
   tenants: 'tenants customers organizations clients msp mssp multi-tenant switch',
   users: 'accounts people roles permissions ldap active directory sign-in passwords',
@@ -4837,6 +4837,8 @@ function healthPageRender(h) {
   if (ing.retimed) adjusted.push(`${healthPageNum(ing.retimed)} ${ing.retimed === 1 ? 'event was' : 'events were'} dated too far back or ahead and filed under the time ${ing.retimed === 1 ? 'it' : 'they'} arrived (search device_time=* to find them).`);
   if (ing.fields_dropped) adjusted.push(`${healthPageNum(ing.fields_dropped)} ${ing.fields_dropped === 1 ? 'field was' : 'fields were'} not indexed: invalid names, too many fields, or too many new field names in a day (search dropped_fields>0; the values stay in _raw).`);
   if (adjusted.length) ingRow[2] = [].concat(ingRow[2], ' ', adjusted.join(' '));
+  // Which hosts and log types send, and which stopped: the Data sources page.
+  if (ing.last_seen) ingRow[2] = [].concat(ingRow[2], ' ', el('a', { href: '#sources', 'data-page': 'sources' }, 'See every data source'));
 
   const table = el('table', { class: 'table hp-table' },
     el('thead', {}, el('tr', {}, el('th', { scope: 'col', 'data-col': 'name' }, 'Component'), el('th', { scope: 'col', 'data-col': 'state' }, 'Status'), el('th', { scope: 'col' }, 'Details'))),

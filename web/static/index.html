@@ -28,6 +28,8 @@
 <symbol id="i-arrow-up-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
 <symbol id="i-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.929 4.929 19.07 19.071"/></symbol>
 <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></symbol>
+<symbol id="i-radio-tower" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4.9 16.1C1 12.2 1 5.8 4.9 1.9"/><path d="M7.8 4.7a6.14 6.14 0 0 0-.8 7.5"/><circle cx="12" cy="9" r="2"/><path d="M16.2 4.8c2 2 2.26 5.11.8 7.47"/><path d="M19.1 1.9a9.96 9.96 0 0 1 0 14.1"/><path d="M9.5 18h5"/><path d="m8 22 4-11 4 11"/></symbol>
+<symbol id="i-circle-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="10" x2="10" y1="15" y2="9"/><line x1="14" x2="14" y1="15" y2="9"/></symbol>
 <symbol id="i-bell-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M15 8h6"/><path d="M18 5v6"/><path d="M20.002 14.464a9 9 0 0 0 .738.863A1 1 0 0 1 20 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 8.75-5.332"/></symbol>
 <symbol id="i-bell-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"/><path d="m2 2 20 20"/><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"/></symbol>
 <symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol>
@@ -207,6 +209,7 @@
     <div class="nav__group" data-group="Data">
       <div class="nav__label">Data</div>
       <a class="nav__item" href="#data" data-page="data" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-database"/></svg><span>Add data</span></a>
+      <a class="nav__item" href="#sources" data-page="sources"><svg class="icon" aria-hidden="true"><use href="#i-radio-tower"/></svg><span>Data sources</span></a>
       <a class="nav__item" href="#endpoints" data-page="endpoints" data-min-role="analyst"><svg class="icon" aria-hidden="true"><use href="#i-laptop"/></svg><span>Endpoints</span></a>
       <a class="nav__item" href="#assets" data-page="assets"><svg class="icon" aria-hidden="true"><use href="#i-fingerprint"/></svg><span>Assets &amp; identities</span></a>
     </div>
@@ -1427,6 +1430,22 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
   </section>
 
   <!-- Endpoints (analysts and admins): hosts running osquery -->
+  <!-- Data sources: every host and source type, whether it still sends -->
+  <section id="page-sources" class="page">
+    <div class="page-head">
+      <div>
+        <h2 class="page-head__title">Data sources</h2>
+        <p class="page-head__desc">Every host and log type that sent events in the last 7 days: when each was last heard from, how much it sends, and which ones stopped or changed sharply. A detection can’t fire on data that never arrives.</p>
+      </div>
+      <div class="page-head__actions">
+        <button class="btn btn--ghost" type="button" id="src-reload"><svg class="icon" aria-hidden="true"><use href="#i-refresh-cw"/></svg><span class="hide-sm">Refresh</span></button>
+        <a class="btn btn--primary" href="#data" data-page="data" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>Add data</span></a>
+      </div>
+    </div>
+    <div id="src-page" class="src-page" aria-busy="true"></div>
+    <dialog id="src-dialog" class="modal src-dialog" aria-labelledby="src-dialog-title"></dialog>
+  </section>
+
   <section id="page-endpoints" class="page">
     <div class="page-head">
       <div>
@@ -2155,6 +2174,7 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
 <script src="servers-opensearch.js"></script>
 <script src="security.js"></script>
 <script src="endpoints.js"></script>
+<script src="sources.js"></script>
 <script src="sensors.js"></script>
 <script src="sensor-setup.js"></script>
 <script src="agent-setup.js"></script>

@@ -14,6 +14,32 @@ Signalith takes events from these kinds of senders:
 - **OpenTelemetry** Collectors and SDKs over OTLP/HTTP (see [OpenTelemetry](opentelemetry.md));
 - tools built for Splunk's HTTP Event Collector, once turned on (see [Splunk HEC senders](hec.md)).
 
+## Checking that sources still send
+
+A detection can't fire on data that never arrives. The **Data sources** page (under
+**Data** in the menu) lists every host and source type that sent events in the last 7
+days, for every role:
+
+- **Status**: **Sending** when it sent in the last 15 minutes, **Quiet** after that, and
+  **Stopped** once nothing came for `dashboards.stale_after` (2 hours by default; on the
+  Settings page, **Search > Quiet data source after**). Sources from the
+  [sample data](sample-data.md) say **Sample data** and are never called stopped.
+- **Per minute**: its events per minute over the last hour.
+- **Last hour**: how the last hour compares with its usual hour over the day before. It
+  says **3.9× usual** when the last hour had at least three times its usual count (and 60
+  events more), or **80% below usual** when it had a third or less (of a usual hour of at
+  least 60 events). Sources seen for less than a day say **New**.
+- **24 hours**: its events in the last day.
+
+Sources that stopped or changed sharply come first and are marked, and **Needs a look**
+shows only those. Open a source to see its events per minute over the last hour, per hour
+over 7 days, and its 10 latest events, with **Open in Search** for the rest.
+
+The page reads with the same searches the Search page runs, so it shows only data the
+viewer may search, and it refreshes every minute. Signalith's own events and its scans are
+left out. The built-in detection **Data source stopped sending** raises a finding when a
+source that sent all day stops (see [Dashboards](dashboards.md)).
+
 ## Agents
 
 Open **Add data**, pick **Linux** or **Windows**, and follow the steps: install Fluent

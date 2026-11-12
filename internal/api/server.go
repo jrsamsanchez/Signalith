@@ -1372,7 +1372,10 @@ func (s *Server) handleTLSName(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	out := map[string]any{"version": s.Version, "ingest": s.Pipeline.Stats(), "syslog": s.Syslog.Stats()}
+	out := map[string]any{"version": s.Version, "ingest": s.Pipeline.Stats(), "syslog": s.Syslog.Stats(),
+		// How long a host and source type may go quiet before the Data
+		// sources page and the posture dashboard call it stopped.
+		"stale_after_seconds": int(s.conf().StaleAfter().Seconds())}
 	status, err := s.Backend.Health(ctx)
 	var problem, advice string
 	if err != nil {
