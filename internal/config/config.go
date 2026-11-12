@@ -3060,6 +3060,13 @@ func (c *Config) Warnings() []string {
 		w = append(w, "PROXY protocol is on (server.proxy_protocol or syslog.proxy_protocol) but server.trusted_proxies is empty, so no PROXY header is accepted. "+
 			"List your load balancer's address under server.trusted_proxies.")
 	}
+	if len(c.Server.TrustedProxyList()) > 0 && c.Server.ClientAddressHeader() == "" && !c.Server.ProxyProtocol {
+		// AUTHRT-02: every request through such a proxy is one shared
+		// client, which no per-address sign-in limit holds back.
+		w = append(w, "server.trusted_proxies is set but server.client_header is empty, so Signalith does not read the client's address from the proxy: "+
+			"everyone who comes through it counts as one shared client, with no per-address limit on sign-in attempts, and the audit log shows the proxy's address. "+
+			"If the proxy sets X-Forwarded-For (or Forwarded) itself, choose it under server.client_header.")
+	}
 	for _, p := range c.Server.TrustedProxyList() {
 		if p.Bits() == 0 {
 			w = append(w, "server.trusted_proxies includes "+p.String()+", which trusts every address: anyone can then pick the address they are counted and logged under "+

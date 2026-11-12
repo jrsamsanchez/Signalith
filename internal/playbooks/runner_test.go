@@ -244,6 +244,10 @@ func TestTriggerMatching(t *testing.T) {
 		{"off", func(p Playbook) Playbook { p.Enabled = false; return p }, f(nil), false},
 		{"no steps", func(p Playbook) Playbook { p.Steps = nil; return p }, f(nil), false},
 		{"default least urgency is high", func(p Playbook) Playbook { p.Trigger.MinUrgency = ""; return p }, f(func(x *findings.Finding) { x.Severity = "medium" }), false},
+		// AUTHZ-04: a finding raised by hand starts only a playbook that
+		// names it.
+		{"raised by hand, any detection", func(p Playbook) Playbook { p.Trigger.Detections = nil; return p }, f(func(x *findings.Finding) { x.DetectionID = ManualDetection }), false},
+		{"raised by hand, named", func(p Playbook) Playbook { p.Trigger.Detections = []string{ManualDetection}; return p }, f(func(x *findings.Finding) { x.DetectionID = ManualDetection }), true},
 	}
 	for _, c := range cases {
 		pp := p

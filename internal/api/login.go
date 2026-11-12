@@ -152,6 +152,9 @@ func (s *Server) cookieName(r *http.Request) string {
 	return sessionCookie
 }
 
+// maxLoginBody is the largest sign-in request read.
+const maxLoginBody = 64 << 10
+
 // handleLogin signs in from the sign-in page. A user who must change
 // their password gets a session that only allows that (see allow), and
 // the reply says so.
@@ -178,6 +181,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Agreed is the sign-in notice's I agree (see notice.go).
 		Agreed bool `json:"agreed"`
 	}
+	// A sign-in is a few hundred bytes, a passkey's answer a few KB.
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBody)
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

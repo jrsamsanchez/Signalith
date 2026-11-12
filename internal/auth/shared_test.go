@@ -66,7 +66,7 @@ func TestLimiterSharedLocks(t *testing.T) {
 	for range 3 {
 		fail(t, a, addr("10.0.0.1"), "admin")
 	}
-	if len(got) != 1 || got[0].scope != ScopeAddressAccount || got[0].key != LockKey(nil, "p\x0010.0.0.1\x00admin") || !got[0].until.Equal(c.t.Add(15*time.Minute)) {
+	if len(got) != 1 || got[0].scope != ScopeAddressAccount || got[0].key != LockKey(nil, "p\x0010.0.0.1\x00"+AccountKey("admin")) || !got[0].until.Equal(c.t.Add(15*time.Minute)) {
 		t.Fatalf("locks %+v", got)
 	}
 	ext := map[string]time.Time{}
@@ -99,7 +99,7 @@ func TestLimiterSharedLocks(t *testing.T) {
 			slow = append(slow, k)
 		}
 	}
-	if len(slow) == 0 || slow[0].key != LockKey(nil, "u\x00carol") {
+	if len(slow) == 0 || slow[0].key != LockKey(nil, "u\x00"+AccountKey("carol")) {
 		t.Fatalf("slow locks %+v", got)
 	}
 	b.External(map[string]time.Time{slow[len(slow)-1].key: c.t.Add(time.Minute)})

@@ -74,6 +74,43 @@ func TestRenameBuiltin(t *testing.T) {
 	}
 }
 
+// AUTHRT-10: the built-in admin turned off under its old name after the
+// copy and before the delete stays off under the new one.
+func TestRenameBuiltinKeepsATurnOffDuringTheRename(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("kim", users.Admin)
+	b.cycle()
+	t.Cleanup(func() { renameStep = nil })
+	renameStep = func(n int) error {
+		if n != 3 {
+			return nil
+		}
+		// Another server, still reading the old name's document, turns
+		// the built-in admin off there.
+		_, err := b.docs.Users().Mutate(ctx, "other", "admin", func(v *UserBody) error {
+			v.Disabled = true
+			v.SessionEpoch++
+			return nil
+		})
+		return err
+	}
+	if _, err := a.docs.RenameBuiltin(ctx, "test", "root"); err != nil {
+		t.Fatal(err)
+	}
+	renameStep = nil
+	for _, s := range []*server{a, b} {
+		s.cycle()
+		after, _, ok := s.docs.BuiltinUser()
+		if !ok || after.Username != "root" || !after.Disabled {
+			t.Errorf("%s: built-in admin after the rename %+v %v, want root turned off", s.name, after, ok)
+		}
+		if _, _, ok := s.docs.Users().Get("admin"); ok {
+			t.Errorf("%s: the old name's document is still there", s.name)
+		}
+	}
+}
+
 // A rename keeps everything that guards the built-in admin's sign-in: a
 // built-in admin turned off stays off under the new name, and its
 // two-step sign-in and passkeys go with it. A server watching sees the

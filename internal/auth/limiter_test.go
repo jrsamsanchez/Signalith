@@ -324,6 +324,7 @@ func TestLimiterKnownAddressEndsWithThePassword(t *testing.T) {
 // only slow that account down.
 func TestLimiterSharedAddress(t *testing.T) {
 	l := NewLimiter()
+	l.MaxPerShared = 1000 // TestLimiterSharedCeiling
 	nat := Client{Address: "203.0.113.5", Shared: true}
 	for i := 0; i < 200; i++ {
 		if f := fail(t, l, nat, fmt.Sprintf("nobody%d", i)); f.LockedOut() {
@@ -351,6 +352,38 @@ func TestLimiterSharedAddress(t *testing.T) {
 	}
 	for _, a := range open {
 		a.Done()
+	}
+}
+
+// AUTHRT-02: a shared address has a ceiling of failures a minute, so it
+// cannot be used to guess across accounts as fast as the server checks
+// passwords. It waits; it is never locked, and other addresses are not
+// held back.
+func TestLimiterSharedCeiling(t *testing.T) {
+	c := &clock{time.Now()}
+	l := NewLimiter()
+	l.Now = c.now
+	l.MaxPerShared = 20
+	nat := Client{Address: "203.0.113.5", Shared: true}
+	for i := range 20 {
+		if f := fail(t, l, nat, fmt.Sprintf("made-up%d", i)); f.LockedOut() {
+			t.Fatalf("failure %d locked something: %+v", i+1, f)
+		}
+		c.t = c.t.Add(time.Second)
+	}
+	ok, rf := allowed(l, nat, "made-up-more")
+	if ok || rf.Reason != ReasonBusy || rf.Wait > time.Minute || rf.Wait < 30*time.Second {
+		t.Fatalf("past the ceiling: %v %+v", ok, rf)
+	}
+	if ok, _ := allowed(l, addr("198.51.100.1"), "made-up-more"); !ok {
+		t.Error("another address was held back")
+	}
+	if ok, _ := allowed(l, Client{Address: "198.51.100.2", Shared: true}, "x"); !ok {
+		t.Error("another shared address was held back")
+	}
+	c.t = c.t.Add(time.Minute)
+	if ok, _ := allowed(l, nat, "made-up-more"); !ok {
+		t.Error("still refused a minute later")
 	}
 }
 

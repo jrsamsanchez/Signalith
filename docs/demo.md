@@ -29,14 +29,19 @@ and run searches, dashboards and notebooks. The visitor cannot change anything:
 - the visitor has no password to change, cannot set up two-step sign-in or
   passkeys, and cannot make API tokens.
 
-A visitor's searches are written to the server's log, but not kept as audit
-records, so the Audit page and its indices don't grow with every visitor.
+A visitor's searches, and the evidence reports and case files it opens, are
+written to the server's log, but not kept as audit records, so the Audit page and
+its indices don't grow with every visitor. The visitor is named `demo:visitor`,
+which no account can be called, so an account named `demo` stays apart from it.
+It sees only the default tenant.
 
 Visitors' sessions are kept in the server's memory only, apart from the users'
 sessions. One ends after 30 minutes without use and 2 hours after it started,
 and when the browser closes. A visitor's address can start 10 sessions a minute,
 and the server 3,000 an hour in all; past that the button answers `429` with
-`Retry-After`. Someone with many addresses can use up the hourly total and keep
+`Retry-After`. 1,000 of the 3,000 are kept for addresses that started no session
+in the hour, so a few addresses signing in again and again cannot keep new visitors
+out. Someone with many addresses can still use up the hourly total and keep
 everyone else out for the rest of the hour; if that happens, limit requests per
 address in front of the server (at the cloud firewall or a rate-limiting proxy)
 and restart Signalith to start the count again. The searches from one visitor's

@@ -48,7 +48,10 @@ import (
 // An address that stands for many people (Client.Shared: a proxy, load
 // balancer or NAT) has neither of the first two buckets and is never known:
 // its sign-ins are counted per account, so nobody behind it can lock the
-// others out.
+// others out. It has a ceiling instead: past MaxPerShared failures within
+// a minute, further attempts from it wait until the oldest is a minute
+// old, so it cannot be used to guess across accounts or keep the server
+// checking passwords as fast as it can. Nothing is locked.
 //
 // A successful sign-in clears only the failures of its own address (or
 // browser) and account, so signing in to one account never helps guess
@@ -72,7 +75,10 @@ type Limiter struct {
 	// KnownFor is how long an address stays known for an account after a
 	// successful sign-in from it.
 	KnownFor time.Duration
-	Now      func() time.Time
+	// MaxPerShared is the most failures within a minute from a shared
+	// address; 0 for no ceiling.
+	MaxPerShared int
+	Now          func() time.Time
 	// Divisor, when set, returns how many servers take sign-ins: Max,
 	// MaxPerAddress and MaxPerAccount are each divided by it (rounded up,
 	// and at least 3 unless they are lower), so a guesser spreading tries
@@ -93,6 +99,8 @@ type Limiter struct {
 	external map[string]time.Time
 	// lockSecret keys LockKey (SetLockSecret).
 	lockSecret []byte
+	// pruned is when buckets with nothing left in them were last let go.
+	pruned time.Time
 }
 
 // Lock scopes (Limiter.OnLock).
@@ -193,10 +201,11 @@ type bucket struct {
 // NewLimiter allows 10 failures per address and account and 30 per address
 // within 15 minutes, then refuses for 15 minutes; and slows an account down
 // for browsers and addresses that never signed in to it after 30 failures
-// within an hour, up to a 15 minute wait.
+// within an hour, up to a 15 minute wait. A shared address may fail 300
+// times a minute.
 func NewLimiter() *Limiter {
 	return &Limiter{Max: 10, MaxPerAddress: 30, MaxPerAccount: 30, Window: 15 * time.Minute, Lockout: 15 * time.Minute,
-		SlowWindow: time.Hour, MaxSlow: 15 * time.Minute, KnownFor: 30 * 24 * time.Hour,
+		SlowWindow: time.Hour, MaxSlow: 15 * time.Minute, KnownFor: 30 * 24 * time.Hour, MaxPerShared: 300,
 		Now: time.Now, buckets: map[string]*bucket{}, known: map[string]time.Time{}}
 }
 
@@ -266,10 +275,14 @@ func (f Failure) LockedOut() bool { return f.Locked || f.Slowed > 0 }
 
 // Bucket kinds.
 const (
-	kindLock  = iota // locks for Lockout at its limit
-	kindKnown        // known browsers' or known addresses' failures for an account
-	kindSlow         // strangers' failures for an account
+	kindLock    = iota // locks for Lockout at its limit
+	kindKnown          // known browsers' or known addresses' failures for an account
+	kindSlow           // strangers' failures for an account
+	kindCeiling        // a shared address's failures: waits, never locks
 )
+
+// sharedWindow is the window of MaxPerShared.
+const sharedWindow = time.Minute
 
 type slot struct {
 	key    string
@@ -290,11 +303,23 @@ type Attempt struct {
 	done    bool
 }
 
+// AccountKey is what the limiter keeps of an account name: a digest of
+// it, ignoring case and spacing, so a bucket costs the same whatever
+// length of name a guesser sends.
+func AccountKey(account string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(account))))
+	return hex.EncodeToString(sum[:16])
+}
+
+// pruneEvery is how often Begin lets go of buckets with nothing left in
+// them, however few there are.
+const pruneEvery = time.Minute
+
 // Begin starts an attempt to sign in to account from c, or returns a
 // *Refusal saying how long until one is allowed. Account names ignore case
 // and spacing.
 func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
-	account = strings.ToLower(strings.TrimSpace(account))
+	account = AccountKey(account)
 	lim := l.limits()
 	now := l.Now()
 	l.mu.Lock()
@@ -302,11 +327,15 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 	if l.buckets == nil {
 		l.buckets = map[string]*bucket{}
 	}
-	if len(l.buckets) > 50000 {
+	if len(l.buckets) > 50000 || now.Sub(l.pruned) >= pruneEvery || now.Before(l.pruned) {
 		l.pruneLocked(now)
+		l.pruned = now
 	}
 	a := &Attempt{l: l, account: account, version: c.Version}
 	known := !c.Shared && l.knownLocked(c.Address, account, c.Version, now)
+	if c.Shared && c.Address != "" && l.MaxPerShared > 0 {
+		a.slots = append(a.slots, slot{"s\x00" + c.Address, kindCeiling, l.MaxPerShared, sharedWindow})
+	}
 	if !c.Shared {
 		a.address = c.Address
 		// Someone who signed in to this account from here before is not
@@ -379,6 +408,15 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 				refuse(Busy, ReasonBusy)
 			} else if w := b.failures[n-1].Add(l.slowWait(n, s.limit)).Sub(now); w > 0 {
 				refuse(w, ReasonSlowed)
+			}
+		case kindCeiling:
+			if n+b.pending < s.limit {
+				continue
+			}
+			if n == 0 {
+				refuse(Busy, ReasonBusy)
+			} else {
+				refuse(max(b.failures[0].Add(s.window).Sub(now), time.Second), ReasonBusy)
 			}
 		}
 	}

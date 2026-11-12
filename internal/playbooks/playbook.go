@@ -135,10 +135,19 @@ type Step struct {
 // DefaultCaseTitle is an open_case step's title when none is set.
 const DefaultCaseTitle = "{title}"
 
+// ManualDetection is the detection ID of a finding someone raised by
+// hand (POST /api/findings).
+const ManualDetection = "manual"
+
 // Matches reports whether a finding starts the playbook: the playbook is
 // on and has steps, the finding is at least as urgent as its trigger
 // asks, from one of its detections, raised since the playbook was turned
 // on, and not sample data unless the trigger asks for it.
+//
+// A finding raised by hand starts only a playbook whose trigger names
+// ManualDetection: its entities are whatever the analyst typed, so with
+// "any detection" anyone who may raise a finding could point a
+// playbook's actions at a target of their choosing (AUTHZ-04).
 func (p Playbook) Matches(f *findings.Finding) bool {
 	if !p.Enabled || f == nil || len(p.Steps) == 0 {
 		return false
@@ -151,6 +160,9 @@ func (p Playbook) Matches(f *findings.Finding) bool {
 	}
 	if !notify.AtLeast(f.EffectiveUrgency(), p.Trigger.MinUrgency) {
 		return false
+	}
+	if f.DetectionID == ManualDetection {
+		return slices.Contains(p.Trigger.Detections, ManualDetection)
 	}
 	return len(p.Trigger.Detections) == 0 || slices.Contains(p.Trigger.Detections, f.DetectionID)
 }

@@ -162,6 +162,28 @@ func TestHTTPPublicURLFromThePage(t *testing.T) {
 	}
 }
 
+// AUTHRT-02: trusted proxies without a client address header make every
+// visitor one shared client, which is warned about.
+func TestTrustedProxiesWithoutClientHeaderWarn(t *testing.T) {
+	has := func(c *Config) bool {
+		return slices.ContainsFunc(c.Warnings(), func(w string) bool { return strings.Contains(w, "server.client_header is empty") })
+	}
+	for text, want := range map[string]bool{
+		"server:\n  trusted_proxies: [10.0.0.1]\n":                                   true,
+		"server:\n  trusted_proxies: [10.0.0.1]\n  client_header: x-forwarded-for\n": false,
+		"server:\n  trusted_proxies: [10.0.0.1]\n  proxy_protocol: true\n":           false,
+		"server:\n  listen: 127.0.0.1:8443\n":                                        false,
+	} {
+		c, err := Load(writeConfig(t, text))
+		if err != nil {
+			t.Fatalf("%q: %v", text, err)
+		}
+		if got := has(c); got != want {
+			t.Errorf("%q: warned %v, want %v: %v", text, got, want, c.Warnings())
+		}
+	}
+}
+
 // Copying an HTTPS setting into a copy of a config, as applying settings
 // at once does, leaves the original alone.
 func TestCopyValueDoesNotShareTLS(t *testing.T) {

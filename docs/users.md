@@ -143,7 +143,9 @@ as you can.
   a wrong password (`401`, `"code": "wrong_credentials"`), so the well-known name never
   confirms a guessed password; a passkey gets `403` with `"code": "disabled"`. API
   tokens are their own accounts and keep working; revoke them on the API tokens tab if
-  they should stop too. The audit log records `user disabled` (and `user enabled`) with
+  they should stop too. Turning off or deleting any admin who made API tokens that still
+  work writes an `api_token.kept` audit record naming them, and the answer lists them
+  under `api_tokens`. The audit log records `user disabled` (and `user enabled`) with
   `source=builtin` and who did it.
 - **Never without an admin.** Each server checks for the other admin on its own copy of
   the users, so two changes made at the same moment on two servers (one turns the
@@ -204,7 +206,12 @@ To stop anyone locking everyone out:
 - Signalith always keeps at least one enabled admin, and the built-in admin counts
   as one.
 
-Passwords are stored as bcrypt hashes and never shown again.
+Passwords are stored as bcrypt hashes, at cost 12, and never shown again. A local
+user's hash made by an older version at a lower cost is made again at cost 12 the next
+time they sign in with it. Since that changes the hash, that user's sessions on other
+devices end once (on a server that keeps sessions in its own memory), and their other
+browsers sign in once more before they are recognized again. The built-in admin's hash
+changes cost only when its password is next set.
 
 ## Changing your password
 
@@ -223,7 +230,7 @@ Users page.
 ### Password rules
 
 A new password, chosen on the Users page, at **Change password**, with
-`signalith passwd` or `signalith init -admin-password`, must be:
+`signalith passwd` or `SIGNALITH_NEW_PASSWORD` for `signalith init`, must be:
 
 - at least 8 and at most 256 characters, in any script (a password longer than the 72
   bytes bcrypt reads is reduced to a keyed SHA-256 of all of it first, so nothing is
@@ -285,7 +292,15 @@ still being checked count too, so a burst of parallel guesses cannot get past th
 limit. Wrong directory passwords count; an unreachable directory does not. Basic
 auth, **Test a user** with a password, and **Change password** share these limits.
 An IPv6 address is counted with the rest of its /64 network, since one computer can
-usually use any address in it.
+usually use any address in it. A username over 256 bytes or a password over 1,024
+bytes is refused at once, as a wrong one, without being checked, counted or logged.
+
+Each failed sign-in is written to the audit log, up to 10 a minute from one address
+and 120 a minute from all of them together, so someone sending made-up names from
+many addresses cannot flood it. A record past the first in a minute counts the
+failures since the address's last record (`failures`). One that locks or slows
+anything down is always written, and when the total left records out, the first
+record of the next minute, *"audit records left out"*, says how many.
 Servers that share their users share these limits too (see
 [Failed sign-in limits on several servers](#failed-sign-in-limits-on-several-servers)).
 
@@ -338,6 +353,12 @@ that, list the address on the **Settings** page:
   under **Proxies and gateways** (`server.shared_addresses`). Wrong passwords from
   that address are counted for each account only, so it is never refused as a whole,
   and one person's wrong passwords never affect another account.
+
+Such an address has one limit of its own: after 300 wrong passwords in a minute,
+further sign-ins through it wait (`429` with `Retry-After`) until the oldest is a
+minute old. Nothing is locked. Trusted reverse proxies without **Client address
+header** make every visitor one such client, so `signalith validate`, the server log
+at start and the **Health** page warn about it.
 
 When an address is refused as a whole, the server log says so and names these
 settings.
@@ -425,6 +446,20 @@ built-in admin can also be reset by another admin.
 (`auth.mfa_required`) is `off` (the default), `admins` (every admin) or `everyone`.
 Someone it applies to who has not set it up is taken straight to setting it up after
 their password, and can do nothing else until they have.
+
+Two things to keep in mind when you require it:
+
+- **The first to set it up binds it.** Until an account has two-step sign-in, its
+  password alone is enough to set it up. For a new account, or one whose two-step
+  sign-in an admin just reset, whoever knows the password first chooses the app or
+  passkey. Give new accounts a temporary password (they must change it at their first
+  sign-in) and tell the person to sign in soon; after a reset, make sure the person
+  sets it up straight away, and look for `two-step sign-in turned on` in the audit log.
+  The reset leaves the account's sessions running.
+- **It covers local and directory users and the built-in admin, not single sign-on
+  users.** Those sign in at the identity provider, which decides whether a second
+  factor is asked for: require it there. Signalith does not check what the provider
+  says it asked for (`acr`, `amr`).
 
 Wrong codes count toward the failed sign-in limits like wrong passwords, so someone
 who knows your password still cannot guess the code. Scripts cannot use HTTP Basic auth
@@ -937,8 +972,12 @@ The built-in admin has one password for every server.
   to fix that. It is the only break-glass password: an `admin-password-hash` an earlier
   `signalith passwd` wrote (as on Docker and service installs) is not used once the
   users are shared, so a password that leaked before does not come back while
-  OpenSearch is down. Change or delete `admin-password-local` when the person who knew
-  it should no longer have it. On a server that was never a member, `-local` writes
+  OpenSearch is down. When the built-in admin has an authenticator app and this server
+  can still read it, the sign-in asks for its code too (each code works once on this
+  server); when it cannot, the password is enough. The sign-in's audit record has
+  `break_glass=true`, and raises the **Built-in admin signs in** audit alert. Change or
+  delete `admin-password-local` when the person who knew it should no longer have it.
+  On a server that was never a member, `-local` writes
   `admin-password-hash`, which replaces the configured password at the next restart, as
   `signalith passwd` does there.
 - **`auth.admin_password_hash`, `SIGNALITH_ADMIN_PASSWORD` and

@@ -58,7 +58,8 @@ scrapes; it then answers `404`, as for a page that does not exist.
 - **Patience**: each address may scrape 30 times a minute, and all of them
   together 3,600 times an hour; more get `429` with `Retry-After`. Wrong
   tokens count too. Refused scrapes are logged (as audit records) at most
-  once a minute per address.
+  once a minute per address (an IPv6 /64 counting as one), and 60 times a
+  minute in all.
 
 On a [public demo](demo.md) the endpoint is always off.
 

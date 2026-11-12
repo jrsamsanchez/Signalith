@@ -186,8 +186,11 @@ func (d *Docs) RenameBuiltin(ctx context.Context, by, name string) (string, erro
 // document names name, with old as BuiltinPrev.
 func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func(int) error) (string, error) {
 	list := d.Users()
+	// copied is the revision of the old document the new one copies, so
+	// the old one is deleted only at that revision (below).
+	copied := ""
 	if v, _, ok := list.Get(name); !ok {
-		prev, _, found := list.Get(old)
+		prev, prevTag, found := list.Get(old)
 		if !found || prev.Source != users.SourceBuiltin {
 			return "", fmt.Errorf("the built-in admin %s is missing, so its password cannot be carried over; set one with signalith passwd once the rename is done", old)
 		}
@@ -205,16 +208,17 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 		if err != nil && !errors.Is(err, store.ErrExists) {
 			return "", err
 		}
+		if err == nil {
+			copied = prevTag
+		}
 	} else if v.Source != users.SourceBuiltin {
 		return "", fmt.Errorf("a user named %s exists already; rename or delete that user first", name)
 	}
 	if err := step(3); err != nil {
 		return "", err
 	}
-	if _, etag, ok := list.Get(old); ok && old != name {
-		if _, err := list.Delete(ctx, by, old, etag); err != nil && !errors.Is(err, store.ErrNotFound) {
-			return "", err
-		}
+	if err := d.dropRenamed(ctx, by, old, name, copied); err != nil {
+		return "", err
 	}
 	if err := step(4); err != nil {
 		return "", err
@@ -229,6 +233,71 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 	}
 	return old, step(5)
 }
+
+// dropRenamed deletes the old name's document of a rename, at the
+// revision the new name's copies (copied; "" when this run did not make
+// the copy). A change to the old document since (another server turning
+// the built-in admin off, say) would otherwise be deleted with it: the new
+// document takes it first, and the delete is tried again at the revision
+// it took (AUTHRT-10).
+func (d *Docs) dropRenamed(ctx context.Context, by, old, name, copied string) error {
+	if old == name {
+		return nil
+	}
+	list := d.Users()
+	ours := copied != ""
+	for try := 0; ; try++ {
+		prev, etag, ok := list.Get(old)
+		if !ok {
+			return nil
+		}
+		if etag != copied {
+			if _, err := list.Mutate(ctx, by, name, func(v *UserBody) error {
+				if v.Source != users.SourceBuiltin {
+					return fmt.Errorf("a user named %s exists already; rename or delete that user first", name)
+				}
+				if !ours {
+					// Not this run's copy (a rename resumed): the new
+					// document may have changed since, so only a turning
+					// off is carried over, ending its sessions as one does.
+					if !prev.Disabled || v.Disabled {
+						return errNoChange
+					}
+					v.Disabled = true
+					v.SessionEpoch++
+					v.Updated = time.Now().UTC()
+					return nil
+				}
+				off, epoch := v.Disabled, v.SessionEpoch
+				*v = *prev
+				v.Username, v.Role, v.Source = name, users.Admin, users.SourceBuiltin
+				// Turned off on either name stays off.
+				v.Disabled = v.Disabled || off
+				v.SessionEpoch = max(epoch, prev.SessionEpoch+1)
+				v.Updated = time.Now().UTC()
+				return nil
+			}); err != nil && !errors.Is(err, errNoChange) {
+				return err
+			}
+			copied = etag
+		}
+		_, err := list.Delete(ctx, by, old, etag)
+		var stale *shared.StaleError
+		switch {
+		case err == nil || errors.Is(err, store.ErrNotFound):
+			return nil
+		case (errors.As(err, &stale) || errors.Is(err, store.ErrConflict)) && try < store.ModifyTries:
+			if err := list.Refresh(ctx, old); err != nil {
+				return err
+			}
+		default:
+			return err
+		}
+	}
+}
+
+// errNoChange leaves a document as it is from a Mutate.
+var errNoChange = errors.New("no change")
 
 // ErrBuiltinOffLevel refuses to turn the built-in admin off below
 // shared.LevelBuiltinOff, where a server of an older version would still

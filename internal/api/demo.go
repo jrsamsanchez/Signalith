@@ -43,9 +43,13 @@ const demoRoute = "POST /api/demo"
 
 // demoUser and sourceDemo name the demo's visitor (demoPrincipal). The
 // source is what tells it apart: no user of the users file has it, so a
-// local user who happens to be called demo is never taken for it.
+// local user who happens to be called demo is never taken for it. The
+// name holds a colon, which no username does (as apiTokenUser), so what
+// handlers keep by username (the sessions, two-step sign-in, private
+// notebooks and the audit log's "by") is never a real account's
+// (AUTHZ-03).
 const (
-	demoUser   = "demo"
+	demoUser   = "demo:visitor"
 	sourceDemo = "demo"
 )
 
@@ -107,7 +111,7 @@ func (s *Server) demoSessions() *auth.Sessions {
 		s.demoSess = auth.NewSessions(demoIdle)
 		s.demoSess.MaxAge = demoMaxAge
 		s.demoSess.Limit = demoLimit
-		s.demoLimits = tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour}
+		s.demoLimits = tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour, Fresh: 1000}
 	})
 	return s.demoSess
 }
@@ -208,7 +212,10 @@ func writeDemoReadOnly(w http.ResponseWriter) {
 }
 
 // demoRate limits how often visitors start a session: 10 a minute from
-// one address (an IPv6 /64), 3000 an hour in all.
+// one address (an IPv6 /64), 3000 an hour in all, of which 1000 are kept
+// for addresses that started none in the hour, so a few addresses
+// starting sessions again and again cannot keep new visitors out
+// (AUTHRT-05).
 func (s *Server) demoRate() *tokenRate {
 	s.demoSessions()
 	return &s.demoLimits
