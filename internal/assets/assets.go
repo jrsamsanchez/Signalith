@@ -16,11 +16,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net/netip"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -738,13 +736,14 @@ func replaceFile(path string, data []byte) error {
 
 // renameOver renames from over to. On Windows a file another goroutine
 // or program is reading at that moment cannot be replaced (access is
-// denied until it is closed), so it tries again for a while: readers
+// denied, or a sharing violation, until it is closed), so it tries again
+// for a while: readers
 // here close the file at once, but an antivirus scanning the file just
 // written, on a busy computer, can keep it open for longer than a
 // moment.
 func renameOver(from, to string) error {
 	err := os.Rename(from, to)
-	for deadline := time.Now().Add(renameWait); err != nil && runtime.GOOS == "windows" && errors.Is(err, fs.ErrPermission) && time.Now().Before(deadline); {
+	for deadline := time.Now().Add(renameWait); err != nil && inUse(err) && time.Now().Before(deadline); {
 		time.Sleep(25 * time.Millisecond)
 		err = os.Rename(from, to)
 	}
