@@ -58,6 +58,7 @@ func properties() map[string]any {
 		"ai_triage": map[string]any{"properties": map[string]any{
 			"verdict": kw, "confidence": kw, "model": kw, "at": map[string]any{"type": "date"},
 			"summary": map[string]any{"type": "text", "index": false}, "error": map[string]any{"type": "text", "index": false},
+			"injection": map[string]any{"type": "boolean"}, "caution": map[string]any{"type": "text", "index": false},
 		}},
 		"query": map[string]any{"type": "keyword", "index": false},
 	}
