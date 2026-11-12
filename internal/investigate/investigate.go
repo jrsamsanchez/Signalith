@@ -77,6 +77,10 @@ type Investigator struct {
 	Intel    *intel.Store   // may be nil
 	// Actions are the response actions the model may suggest.
 	Actions []respond.Info
+	// Rounds caps the turns in which the model may ask for searches;
+	// zero means MaxRounds. The AI first pass gives it one, to keep the
+	// cost of a look it was not asked for small.
+	Rounds int
 	// Mask lists the fields whose values are never sent (assistant.mask_fields).
 	Mask []string
 	Now  func() time.Time
@@ -242,6 +246,10 @@ func (inv *Investigator) Run(ctx context.Context, f *findings.Finding, emit func
 	msgs := []assistant.Message{{Role: "user", Content: r.firstMessage()}}
 	res.Sent = len(system) + len(msgs[0].Content)
 	asked := 0
+	rounds := MaxRounds
+	if inv.Rounds > 0 && inv.Rounds < MaxRounds {
+		rounds = inv.Rounds
+	}
 	for turn := 0; ; turn++ {
 		r.emit(Event{Type: "status", Text: "Asking " + inv.Model.Name()})
 		text, err := inv.Model.Chat(ctx, system, msgs, maxReplyTokens)
@@ -259,7 +267,7 @@ func (inv *Investigator) Run(ctx context.Context, f *findings.Finding, emit func
 			res.Sent += len(next)
 			continue
 		}
-		if rep.Verdict == "" && len(rep.Searches) > 0 && turn < MaxRounds && asked < MaxSearches {
+		if rep.Verdict == "" && len(rep.Searches) > 0 && turn < rounds && asked < MaxSearches {
 			var data strings.Builder
 			for i, s := range rep.Searches {
 				if asked >= MaxSearches || i >= MaxPerRound {
@@ -274,7 +282,7 @@ func (inv *Investigator) Run(ctx context.Context, f *findings.Finding, emit func
 			}
 			var b strings.Builder
 			b.WriteString(r.fenced(data.String()))
-			left := MaxRounds - turn - 1
+			left := rounds - turn - 1
 			if asked >= MaxSearches {
 				left = 0
 			}

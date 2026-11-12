@@ -105,8 +105,11 @@ jobs:
       # publishes OpenSearch on this machine for the Go tests, and one that
       # turns off OpenSearch's own loading of its security settings on first
       # start, as when that fails on a slow computer: then the
-      # opensearch-security step has to load them.
-      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f ${{ github.workspace }}/ci-opensearch-port.yml -f ${{ github.workspace }}/ci-no-default-init.yml
+      # opensearch-security step has to load them. Cold storage is on
+      # (docker-compose.cold.yml), for its end-to-end test.
+      COMPOSE: docker compose -f deploy/docker/docker-compose.yml -f deploy/docker/docker-compose.build.yml -f deploy/docker/docker-compose.cold.yml -f ${{ github.workspace }}/ci-opensearch-port.yml -f ${{ github.workspace }}/ci-no-default-init.yml
+      SIGNALITH_COLD_DIR: ${{ github.workspace }}/ci-cold
+      SIGNALITH_COLD_CACHE: 1gb
     steps:
       # The runner's disk comes nearly full of tools these jobs never use;
       # past 90% OpenSearch refuses to create indices, and the tests fail.
@@ -132,6 +135,9 @@ jobs:
               environment:
                 - plugins.security.allow_default_init_securityindex=false
           EOF
+          # OpenSearch's user (uid 1000) writes cold storage.
+          mkdir -p "$SIGNALITH_COLD_DIR"
+          sudo chown 1000:1000 "$SIGNALITH_COLD_DIR"
           $COMPOSE up -d --build opensearch
           # Signalith's OpenSearch certificate, from the setup step's volume.
           certs="$RUNNER_TEMP/stuck"
@@ -283,6 +289,31 @@ jobs:
           echo "Signalith stopped in ${took}s"
           if [ "$took" -gt 30 ]; then $COMPOSE logs --no-color --tail 50 signalith; exit 1; fi
           go test -tags integration -count=1 -v -timeout 20m -skip '^TestCluster' ./internal/integration/
+      # These two register snapshot repositories, which only OpenSearch's
+      # admin certificate may do, so they run here with it, and must run:
+      # a skip fails the job.
+      - name: Cold storage and scheduled snapshots end-to-end tests
+        env:
+          SIGNALITH_TEST_OPENSEARCH: https://localhost:9200
+          SIGNALITH_TEST_OPENSEARCH_CA: ${{ runner.temp }}/os-admin/root-ca.pem
+          SIGNALITH_TEST_OPENSEARCH_CERT: ${{ runner.temp }}/os-admin/admin.pem
+          SIGNALITH_TEST_OPENSEARCH_KEY: ${{ runner.temp }}/os-admin/admin-key.pem
+          SIGNALITH_TEST_COLD_PATH: /usr/share/opensearch/cold
+          SIGNALITH_TEST_SNAPSHOT_REPO: ci-snapshots
+        run: |
+          admin="$RUNNER_TEMP/os-admin"
+          mkdir -p "$admin"
+          for f in root-ca.pem admin.pem admin-key.pem; do
+            $COMPOSE cp "opensearch:/usr/share/opensearch/config/certs/$f" "$admin/"
+          done
+          curl -fsS --cacert "$SIGNALITH_TEST_OPENSEARCH_CA" --cert "$admin/admin.pem" --key "$admin/admin-key.pem" \
+            -X PUT -H 'Content-Type: application/json' -d '{"type":"fs","settings":{"location":"/usr/share/opensearch/cold/ci-snapshots"}}' \
+            "$SIGNALITH_TEST_OPENSEARCH/_snapshot/$SIGNALITH_TEST_SNAPSHOT_REPO"; echo
+          set -o pipefail
+          go test -tags integration -count=1 -v -timeout 10m -run '^(TestRetentionColdStorage|TestScheduledSnapshots)$' ./internal/integration/ | tee "$RUNNER_TEMP/must-run.txt"
+          for t in TestRetentionColdStorage TestScheduledSnapshots; do
+            grep -q -- "--- PASS: $t " "$RUNNER_TEMP/must-run.txt" || { echo "::error::$t did not run and pass"; exit 1; }
+          done
       # Only each container's last lines, so the test output above is not
       # buried under them.
       - name: Container logs
@@ -415,6 +446,41 @@ jobs:
         with:
           name: coverage
           path: coverage.out
+
+  # Reports branch coverage (both outcomes of every if, for and switch
+  # case) with gobco, one package at a time. Runs on main only, reports and
+  # never fails: Go's own tool measures statements, not branches.
+  branch-coverage:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - name: Install gobco
+        run: go install github.com/rillig/gobco@v1.3.4
+      - name: Branch coverage
+        run: |
+          covered=0; total=0; : > branch-coverage.txt
+          for pkg in $(go list -f '{{if or .TestGoFiles .XTestGoFiles}}{{.Dir}}{{end}}' ./...); do
+            rel=./${pkg#"$PWD"/}
+            line=$(cd "$pkg" && gobco -branch -test=-short . 2>/dev/null | grep '^Branch coverage:' || true)
+            c=$(echo "$line" | sed -n 's#^Branch coverage: \([0-9]*\)/\([0-9]*\)#\1#p')
+            t=$(echo "$line" | sed -n 's#^Branch coverage: \([0-9]*\)/\([0-9]*\)#\2#p')
+            if [ -z "$t" ]; then echo "$rel: not measured" >> branch-coverage.txt; continue; fi
+            echo "$rel: $c/$t" >> branch-coverage.txt
+            covered=$((covered + c)); total=$((total + t))
+          done
+          cat branch-coverage.txt
+          pct=$(awk -v c="$covered" -v t="$total" 'BEGIN { if (t) printf "%.1f", 100 * c / t; else print "0" }')
+          echo "Branch coverage: $pct% ($covered of $total branch outcomes)" | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: branch-coverage
+          path: branch-coverage.txt
 
   # Builds the release binaries twice, from two checkouts of the commit in
   # different folders with an empty build cache the second time, and fails
@@ -579,3 +645,20 @@ jobs:
           sudo tail -n 20 /var/log/suricata/signalith/eve.json | cut -c1-300 || true
           sudo dmesg | tail -n 20 || true
           $COMPOSE logs --no-color signalith | tail -n 200
+
+  # One check for branch protection to require in place of jobs that a
+  # pull request may skip: packages runs only when packaging files change,
+  # and a required check that never reports would block the merge. This
+  # passes when each job below passed or was skipped, and fails otherwise.
+  ci-passed:
+    if: always()
+    needs: [gofmt, coverage, packages]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: gofmt, coverage and packages passed or were skipped
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS" | jq -r 'to_entries[] | "\(.key): \(.value.result)"'
+          echo "$RESULTS" | jq -e 'all(.[]; .result == "success" or .result == "skipped")' >/dev/null
