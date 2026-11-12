@@ -41,7 +41,16 @@ func (s *Server) routeUsers(api *router) {
 
 // audit logs a change someone made, with who and from where. Passwords
 // are never passed here.
+//
+// A public demo's visitor changes nothing, but some of what it may read
+// is audited for users (an evidence report or case file taken away): as
+// for its searches (auditSearch), its lines go only to the server's log,
+// so anonymous visitors cannot grow the audit records (AUTHZ-02).
 func (s *Server) audit(r *http.Request, msg string, args ...any) {
+	if p := principalOf(r); p != nil && p.Source == sourceDemo {
+		s.Log.Info(msg, slices.Concat([]any{"demo", true, "by", userOf(r)}, s.client(r).logAttrs(), args)...)
+		return
+	}
 	// A tenant's server tags every line of its log with the tenant
 	// already; the default tenant's server tags those it writes for one.
 	// The ID logged is the registry's, found by comparing, never a value

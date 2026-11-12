@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -97,6 +98,10 @@ func TestDemoVisitorSignsInAsAnAnalyst(t *testing.T) {
 // included.
 func TestDemoVisitorOnlyReads(t *testing.T) {
 	ts, s := newDemoServer(t)
+	// What the visitor may use must not write audit records either
+	// (AUTHZ-02): a GET can have that side effect.
+	var tap auditTap
+	s.Log = tap.logger(t)
 	c := demoVisit(t, ts)
 	wildcard := regexp.MustCompile(`\{[^}]+\}`)
 	allowed := 0
@@ -142,6 +147,18 @@ func TestDemoVisitorOnlyReads(t *testing.T) {
 	// Searching works.
 	if code, body, _ := call(t, ts, "POST", "/api/search", `{"query":"*"}`, "", "", c); code == http.StatusForbidden || code == http.StatusUnauthorized {
 		t.Errorf("visitor search = %d %v", code, body)
+	}
+	// An evidence report, which is audited for users, is not for the
+	// visitor.
+	for range 5 {
+		if code, _, raw := call(t, ts, "GET", "/api/compliance/export?framework=pci-dss&format=csv", "", "", "", c); code != http.StatusOK {
+			t.Errorf("visitor compliance export = %d %s", code, raw)
+		}
+	}
+	tap.mu.Lock()
+	defer tap.mu.Unlock()
+	for _, ev := range tap.list {
+		t.Errorf("the visitor wrote an audit record: %s %v", ev.Message, ev.Fields)
 	}
 }
 
@@ -319,6 +336,42 @@ func TestDemoSignInsAreLimited(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" {
 		t.Errorf("the 11th demo sign-in in a minute = %d, want 429 with Retry-After", resp.StatusCode)
+	}
+}
+
+// AUTHZ-03: a real account called demo is not the visitor: the visitor
+// does not see its sessions.
+func TestDemoVisitorIsNoAccount(t *testing.T) {
+	ts, s := newDemoServer(t, "127.0.0.0/8", "::1/128")
+	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "demo", Role: users.Analyst, Password: "role-password"}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, c := login(t, ts, "demo", "role-password"); code != http.StatusOK || c == nil {
+		t.Fatalf("the demo account's sign-in = %d %v", code, out)
+	}
+	if _, err := users.NewMemory().Create(context.Background(), users.NewUser{Username: demoUser, Role: users.Analyst, Password: "role-password"}); err == nil {
+		t.Errorf("an account can be named %q", demoUser)
+	}
+	c := demoVisit(t, ts)
+	code, _, raw := call(t, ts, "GET", "/api/me/sessions", "", "", "", c)
+	if code == http.StatusOK && strings.Contains(raw, "127.0.0.1") {
+		t.Errorf("the visitor sees the demo account's sessions: %s", raw)
+	}
+}
+
+// AUTHZ-05: the visitor is told of the default tenant only.
+func TestDemoVisitorListsNoTenants(t *testing.T) {
+	ts, s := newDemoServer(t)
+	reg, err := tenants.Open(tenants.File(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Add("acme", "Acme", "pat", time.Now())
+	s.Tenants = reg
+	c := demoVisit(t, ts)
+	code, out, raw := call(t, ts, "GET", "/api/tenants", "", "", "", c)
+	if code != http.StatusOK || len(out["tenants"].([]any)) != 1 || strings.Contains(raw, "acme") || strings.Contains(raw, "pat") {
+		t.Errorf("the visitor's tenants = %d %s", code, raw)
 	}
 }
 

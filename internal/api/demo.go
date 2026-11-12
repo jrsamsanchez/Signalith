@@ -45,9 +45,13 @@ const demoRoute = "POST /api/demo"
 
 // demoUser and sourceDemo name the demo's visitor (demoPrincipal). The
 // source is what tells it apart: no user of the users file has it, so a
-// local user who happens to be called demo is never taken for it.
+// local user who happens to be called demo is never taken for it. The
+// name holds a colon, which no username does (as apiTokenUser), so what
+// handlers keep by username (the sessions, two-step sign-in, private
+// notebooks and the audit log's "by") is never a real account's
+// (AUTHZ-03).
 const (
-	demoUser   = "demo"
+	demoUser   = "demo:visitor"
 	sourceDemo = "demo"
 )
 
