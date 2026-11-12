@@ -143,7 +143,9 @@ as you can.
   a wrong password (`401`, `"code": "wrong_credentials"`), so the well-known name never
   confirms a guessed password; a passkey gets `403` with `"code": "disabled"`. API
   tokens are their own accounts and keep working; revoke them on the API tokens tab if
-  they should stop too. The audit log records `user disabled` (and `user enabled`) with
+  they should stop too. Turning off or deleting any admin who made API tokens that still
+  work writes an `api_token.kept` audit record naming them, and the answer lists them
+  under `api_tokens`. The audit log records `user disabled` (and `user enabled`) with
   `source=builtin` and who did it.
 - **Never without an admin.** Each server checks for the other admin on its own copy of
   the users, so two changes made at the same moment on two servers (one turns the
@@ -444,6 +446,20 @@ built-in admin can also be reset by another admin.
 (`auth.mfa_required`) is `off` (the default), `admins` (every admin) or `everyone`.
 Someone it applies to who has not set it up is taken straight to setting it up after
 their password, and can do nothing else until they have.
+
+Two things to keep in mind when you require it:
+
+- **The first to set it up binds it.** Until an account has two-step sign-in, its
+  password alone is enough to set it up. For a new account, or one whose two-step
+  sign-in an admin just reset, whoever knows the password first chooses the app or
+  passkey. Give new accounts a temporary password (they must change it at their first
+  sign-in) and tell the person to sign in soon; after a reset, make sure the person
+  sets it up straight away, and look for `two-step sign-in turned on` in the audit log.
+  The reset leaves the account's sessions running.
+- **It covers local and directory users and the built-in admin, not single sign-on
+  users.** Those sign in at the identity provider, which decides whether a second
+  factor is asked for: require it there. Signalith does not check what the provider
+  says it asked for (`acr`, `amr`).
 
 Wrong codes count toward the failed sign-in limits like wrong passwords, so someone
 who knows your password still cannot guess the code. Scripts cannot use HTTP Basic auth

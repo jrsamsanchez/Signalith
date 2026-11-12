@@ -161,6 +161,40 @@ func (s *Server) apiTokenPrincipal(r *http.Request, tok string) *principal {
 		tokenID: b.ID, shared: true}
 }
 
+// tokensMadeBy lists the API tokens user made that still work. A token is
+// an account of its own and keeps working when the admin who made it is
+// turned off or deleted (AUTHRT-09): the audit record and the answer of
+// that change name them, so another admin can revoke them.
+func (s *Server) tokensMadeBy(user string) []map[string]any {
+	if s.SharedUsers == nil || s.SharedUsers.Docs == nil || user == "" {
+		return nil
+	}
+	now := time.Now()
+	var out []map[string]any
+	for _, b := range s.SharedUsers.Docs.APITokens() {
+		if b.Active(now) && strings.EqualFold(b.CreatedBy, user) {
+			out = append(out, map[string]any{"id": b.ID, "name": b.Name, "role": b.Role})
+		}
+	}
+	return out
+}
+
+// noteTokensKept adds to a "user disabled" or "user deleted" answer, and
+// writes in the audit log, the API tokens user made that keep working.
+func (s *Server) noteTokensKept(r *http.Request, user string, out map[string]any) {
+	list := s.tokensMadeBy(user)
+	if len(list) == 0 {
+		return
+	}
+	names := make([]string, 0, len(list))
+	for _, t := range list {
+		names = append(names, t["name"].(string))
+	}
+	s.audit(r, "api_token.kept: API tokens this user made keep working; revoke them on the API tokens tab if they should stop",
+		"user", user, "tokens", strings.Join(names, ","), "count", len(list))
+	out["api_tokens"] = list
+}
+
 // tokenRefused logs that the revoked or expired token b was sent.
 func (s *Server) tokenRefused(r *http.Request, b clusterauth.APITokenBody, now time.Time) {
 	s.refusedMu.Lock()

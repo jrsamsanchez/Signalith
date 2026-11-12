@@ -593,15 +593,17 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if u.Role != cur.Role {
 		s.audit(r, "user role changed", "user", u.Username, "from", cur.Role, "to", u.Role)
 	}
+	out := map[string]any{"user": s.viewUser(u, userOf(r))}
 	if u.Disabled != cur.Disabled {
 		if u.Disabled {
 			ended := s.sessions().EndUser(r.Context(), u.Username, "")
 			s.audit(r, "user disabled", "user", u.Username, "sessions_ended", ended)
+			s.noteTokensKept(r, u.Username, out)
 		} else {
 			s.audit(r, "user enabled", "user", u.Username)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": s.viewUser(u, userOf(r))})
+	writeJSON(w, http.StatusOK, out)
 }
 
 // setBuiltinDisabled turns the built-in admin off or on (PUT
@@ -654,7 +656,11 @@ func (s *Server) setBuiltinDisabled(w http.ResponseWriter, r *http.Request, off 
 			go s.security().run(context.WithoutCancel(r.Context()), s.gatherSecurity, true)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": s.builtinView(userOf(r))})
+	out := map[string]any{"user": s.builtinView(userOf(r))}
+	if changed && off {
+		s.noteTokensKept(r, name, out)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -682,7 +688,9 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "user deleted", "user", u.Username, "source", u.Source, "role", u.Role, "sessions_ended", ended)
 	s.releaseNotebooks(r.Context(), u.Username, userOf(r), u.Tenant == "")
-	writeJSON(w, http.StatusOK, map[string]any{"deleted": u.Username})
+	out := map[string]any{"deleted": u.Username}
+	s.noteTokensKept(r, u.Username, out)
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleResetPassword gives a local user a temporary password, which they
