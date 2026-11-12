@@ -88,7 +88,7 @@
       lead: 'Connects with the settings above, saved or not.',
     },
     assistant: {
-      keys: ['assistant.provider', 'assistant.url', 'assistant.model', 'assistant.api_key', 'assistant.request_timeout'],
+      keys: ['assistant.provider', 'assistant.url', 'assistant.model', 'assistant.api_key', 'assistant.request_timeout', 'assistant.allow_insecure_http'],
       path: 'api/settings/test/assistant', button: 'Test', icon: 'sparkles', busy: 'Asking the model…',
       lead: 'Asks the model one sample question with the settings above, saved or not.',
     },

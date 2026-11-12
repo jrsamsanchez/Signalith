@@ -277,6 +277,48 @@ retention:
 
 Archives already encrypted stay encrypted and still read.
 
+### Authenticated manifests
+
+Each manifest carries a MAC (`mac`): an HMAC-SHA256 over everything a restore relies
+on (the index, day, file, size, SHA-256, event count, encryption and keys), made with
+a key derived from the master key and, on servers that share their settings, one from
+the cluster key. Someone who can write to the archive folder (or, on servers that
+share archives, to the manifests in OpenSearch) but has neither key can't change a
+manifest without the change being noticed: a manifest whose MAC doesn't match is
+refused, on the page, by `signalith archive verify` and by restores.
+
+The manifest is what says whether a file is encrypted, so while archives are
+encrypted (`retention.encrypt_archives`, on by default) a **plain** archive whose
+manifest no key of this server authenticates is refused too: it could be a forged
+file put in place of an encrypted one, with a manifest rewritten to say "not
+encrypted". Encrypted archives whose manifests have no MAC (written by versions
+before manifests had one) still read: decrypting them proves they were written with
+your keys.
+
+Plain archives written before encryption was turned on, or by a version before
+manifests had MACs, are therefore refused while encryption is on. If you know where
+such an archive came from, let this server read them for as long as you restore them:
+
+```yaml
+retention:
+  allow_unauthenticated_archives: true   # remove once the old days are restored
+```
+
+or, with the CLI, add `-allow-unauthenticated` to `signalith archive verify` or
+`signalith archive restore -offline`. A manifest whose MAC doesn't match is refused
+even then. Only signalith.yaml can set this, never the page or the shared settings.
+A plain archive whose only MAC was made with a master key you have since removed
+(`signalith secrets rotate-master -prune`) needs it too.
+
+### Snapshots are not archives
+
+OpenSearch snapshots (see [Backup and restore](backup.md#opensearch-snapshots)) copy every
+Signalith index, events, users and sessions included, into the snapshot repository.
+OpenSearch writes them itself, so archive encryption doesn't cover them: the
+passwords and keys inside stay encrypted with the master key, but everything else is
+as readable as the repository is. Keep the repository on encrypted storage that only
+OpenSearch and its operators can read.
+
 ### Restoring
 
 On the page, open **Archive**, select days and choose **Restore**. Before anything is
@@ -420,6 +462,7 @@ retention:
 | `retention.interval` | `1h` | How often policies are enforced (5m to 24h) |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Archive folder; relative paths are relative to signalith.yaml. `SIGNALITH_ARCHIVE_DIR` overrides it |
 | `retention.encrypt_archives` | `true` | Encrypt archive files ([Encryption](#encryption)); only signalith.yaml can turn it off |
+| `retention.allow_unauthenticated_archives` | `false` | Read plain archives whose manifest no key authenticates while archives are encrypted ([Authenticated manifests](#authenticated-manifests)); only signalith.yaml can set it |
 | `retention.default` | none | Default event policy: `keep_days`, `max_size_gb`, `compact_after_days`, `cold_after_days`, `archive` |
 | `retention.policies.<id>` | none | Policy for one category (IDs above). Findings and cases accept only `keep_days` |
 | `retention.guard.enabled` | `true` | Disk guard on or off |

@@ -1099,6 +1099,21 @@ func logMasterKey(c *config.Config, log *slog.Logger) {
 	}
 }
 
+// masterKeyFileProblem refuses to start the server when other accounts on
+// this computer can read or replace the master key file, and says how to
+// fix it. In a container only the warning stays: Docker and Kubernetes
+// mount secrets readable by all (mode 0644) by default, and no other
+// account runs there. On Windows the key file has its own access list and
+// there is nothing to check.
+func masterKeyFileProblem(c *config.Config, inContainer bool) error {
+	src, err := c.Keyring().Source()
+	if err != nil || src.Warning == "" || inContainer {
+		return nil
+	}
+	return fmt.Errorf("%s. The master key opens every stored password and key, so Signalith does not start with a key file "+
+		"other accounts can read or replace; fix it and start again", src.Warning)
+}
+
 // useKeys makes c's master key the one the files the server writes are
 // encrypted with, says where it comes from when that is new (at the first
 // start, or after a restart in place that changed it), and encrypts the
@@ -1139,6 +1154,9 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	c, err := loadConfig(path, log)
 	if err != nil {
+		return err
+	}
+	if err := masterKeyFileProblem(c, incontainer.Here()); err != nil {
 		return err
 	}
 	// The first start of the Docker quick start with this version decides

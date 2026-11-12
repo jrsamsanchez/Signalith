@@ -50,6 +50,22 @@ type Archive struct {
 	Seal       func(io.Writer) (io.WriteCloser, []string, error)
 	Unseal     func(io.Reader) (io.Reader, error)
 	Encryption string
+	// MAC, when set, authenticates the manifests Write makes: it returns
+	// one MAC of msg per key it has (the master key and the cluster key),
+	// none when there is no key. Authenticate checks the MACs of a
+	// manifest: true when a key of this server made one of them, an error
+	// when one made by a key of this server does not match, and false
+	// when no key of this server made any.
+	MAC          func(msg []byte) ([]string, error)
+	Authenticate func(msg []byte, macs []string) (bool, error)
+	// RequireAuthenticated refuses to read a plain archive whose manifest
+	// no key of this server authenticates, unless AllowUnauthenticated:
+	// set when archives are encrypted, so a forged plain file with a
+	// manifest that says "not encrypted" cannot stand in for an encrypted
+	// one. Encrypted archives need no MAC: decrypting them authenticates
+	// their content, so ones written before manifests had MACs still read.
+	RequireAuthenticated bool
+	AllowUnauthenticated bool
 	// Server names this server in the manifests it writes, when servers
 	// share one archive folder.
 	Server string
@@ -117,6 +133,58 @@ type Manifest struct {
 	// Server is the server that wrote the archive, when servers share one
 	// archive folder.
 	Server string `json:"server,omitempty"`
+	// MAC authenticates the manifest (MACMessage), one per key of the
+	// server that wrote it; none in older manifests.
+	MAC []string `json:"mac,omitempty"`
+}
+
+// MACMessage is what a manifest's MAC covers: every field a restore or a
+// check relies on, in a fixed form, and not State, which changes as a
+// ManifestStore completes it.
+func (m Manifest) MACMessage() []byte {
+	b, _ := json.Marshal(struct {
+		V          string `json:"v"`
+		Format     string `json:"format"`
+		ID         string `json:"id"`
+		File       string `json:"file"`
+		Index      string `json:"index"`
+		IndexUUID  string `json:"index_uuid"`
+		Category   string `json:"category"`
+		Day        string `json:"day"`
+		Docs       int64  `json:"docs"`
+		Bytes      int64  `json:"bytes"`
+		IndexBytes int64  `json:"index_bytes"`
+		SHA256     string `json:"sha256"`
+		Created    string `json:"created"`
+		Encryption string `json:"encryption"`
+		KID        string `json:"kid"`
+		Server     string `json:"server"`
+	}{"signalith-archive-manifest/1", m.Format, m.ID, m.File, m.Index, m.IndexUUID, m.Category, m.Day,
+		m.Docs, m.Bytes, m.IndexBytes, m.SHA256, m.Created.UTC().Format(time.RFC3339Nano), m.Encryption, m.KID, m.Server})
+	return b
+}
+
+// ErrUnauthenticated means a plain archive's manifest is not
+// authenticated by any key of this server while archives are encrypted.
+var ErrUnauthenticated = errors.New("the archive is not encrypted and no key of this server authenticates its manifest")
+
+// checkManifest refuses a manifest that was changed, and a plain archive
+// whose manifest is not authenticated when that is required.
+func (a *Archive) checkManifest(m Manifest) error {
+	ok := false
+	if len(m.MAC) > 0 && a.Authenticate != nil {
+		var err error
+		if ok, err = a.Authenticate(m.MACMessage(), m.MAC); err != nil {
+			return fmt.Errorf("its manifest was changed after it was written (%v); restore %s and %s from a backup", err, m.ID+manifestExt, m.File)
+		}
+	}
+	if !ok && m.Encryption == "" && a.RequireAuthenticated && !a.AllowUnauthenticated {
+		return fmt.Errorf("%w. Archives are encrypted here, so a plain one may have been put in place of an encrypted one. "+
+			"If you know this archive was written plain (before encryption was turned on, or before manifests had MACs), "+
+			"set retention.allow_unauthenticated_archives: true in signalith.yaml for as long as you restore it "+
+			"(signalith archive takes -allow-unauthenticated)", ErrUnauthenticated)
+	}
+	return nil
 }
 
 var archiveID = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,250}$`)
@@ -314,6 +382,12 @@ func (a *Archive) Write(ctx context.Context, ex Exporter, src Source, expectDocs
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), storeTimeout)
 			defer cancel()
 			_ = a.Manifests.Abandon(ctx, id)
+		}
+	}
+	if a.MAC != nil {
+		if m.MAC, err = a.MAC(m.MACMessage()); err != nil {
+			abandon()
+			return nil, fmt.Errorf("could not authenticate the manifest of %s: %w", index, err)
 		}
 	}
 	// A reserved name is this server's alone, but a file of that name
@@ -543,8 +617,13 @@ func (a *Archive) readManifest(id string) (Manifest, error) {
 
 // Read calls fn with every document in an archive file, then checks the
 // file's checksum and document count against its manifest. Callers that
-// must not act on a damaged file call Verify first.
+// must not act on a damaged file call Verify first. A manifest whose MAC
+// does not match is refused before the file is read, and so is a plain
+// archive whose manifest is not authenticated when RequireAuthenticated.
 func (a *Archive) Read(m Manifest, fn func(Doc) error) error {
+	if err := a.checkManifest(m); err != nil {
+		return err
+	}
 	f, err := os.Open(a.path(m.File))
 	if err != nil {
 		return err

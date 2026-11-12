@@ -307,8 +307,12 @@ query but not run until you check the query and run it.
 An AI model is optional. When `assistant.provider` is set, questions the translator
 only partly understands go to the model instead, and every question does when you
 tick **Use AI**. Only the question and the field list are sent, never your events. The
-parser checks the model's query before you see it. Point `assistant.url` at a local
-Ollama or LM Studio server to keep everything on site:
+parser checks the model's query before you see it, and the Search page runs it at once
+unless it runs more searches of its own (`map`, `join`, `append`, `union` or a subsearch
+in `[ ]`): those wait for you to check and run them. Point `assistant.url` at a local
+Ollama or LM Studio server to keep everything on site (plain `http://` works for
+`localhost`, private addresses and single-label names such as `ollama`; for a model
+beyond your network use `https://`, or turn on `assistant.allow_insecure_http`):
 
 ```yaml
 assistant:

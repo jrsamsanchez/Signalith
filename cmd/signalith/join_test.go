@@ -615,11 +615,22 @@ func TestJoinTokenNotInTheCommandLine(t *testing.T) {
 	if code := runJoin(context.Background(), m.env, []string{"-", "-c", m.config, "--name", "siem-c", "--yes", "--no-start"}); code != joinExitOK || f.joins() != 1 {
 		t.Fatalf("token from the standard input: %d %s", code, m.out.String())
 	}
+	if strings.Contains(m.out.String(), "in the command line") {
+		t.Errorf("warned about a token from the standard input:\n%s", m.out.String())
+	}
+	// In the command line: it works, with a warning (CRYPTO-05).
+	m = newJoinMachine(t)
+	if code := m.join(t, f.tok, "--no-start"); code != joinExitOK || f.joins() != 2 {
+		t.Fatalf("token in the command line: %d %s", code, m.out.String())
+	}
+	if !strings.Contains(m.out.String(), "Warning: the join token was given in the command line") {
+		t.Errorf("no warning for a token in the command line:\n%s", m.out.String())
+	}
 	// Asked for at the terminal, not shown.
 	m = newJoinMachine(t)
 	m.env.terminal = true
 	m.env.readSecret = func() (string, error) { return f.tok.String(), nil }
-	if code := runJoin(context.Background(), m.env, []string{"-c", m.config, "--name", "siem-c", "--yes", "--no-start"}); code != joinExitOK || f.joins() != 2 {
+	if code := runJoin(context.Background(), m.env, []string{"-c", m.config, "--name", "siem-c", "--yes", "--no-start"}); code != joinExitOK || f.joins() != 3 {
 		t.Fatalf("token asked for: %d %s", code, m.out.String())
 	}
 	if strings.Contains(m.out.String(), f.tok.String()) {
@@ -631,7 +642,7 @@ func TestJoinTokenNotInTheCommandLine(t *testing.T) {
 		t.Errorf("no token: %d %s", code, m.out.String())
 	}
 	m.env.in = strings.NewReader("")
-	if code := runJoin(context.Background(), m.env, []string{"-", "-c", m.config, "--yes"}); code != joinExitFailed || f.joins() != 2 {
+	if code := runJoin(context.Background(), m.env, []string{"-", "-c", m.config, "--yes"}); code != joinExitFailed || f.joins() != 3 {
 		t.Errorf("empty standard input: %d %s", code, m.out.String())
 	}
 }

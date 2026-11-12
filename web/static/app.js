@@ -2827,7 +2827,8 @@ async function ask(question, mode) {
   // A query the translator was unsure of waits for the analyst, so a
   // half-understood question does not show results for another one.
   if (!res.run) {
-    kids.splice(kids.length - 1, 0, el('span', { class: 'ask-read__warn' }, icon('triangle-alert'), 'Not run: part of the question was not understood. Check the query, then ',
+    kids.splice(kids.length - 1, 0, el('span', { class: 'ask-read__warn' }, icon('triangle-alert'),
+      res.run_note ? 'Not run: the AI model’s query runs more searches of its own (map, join or a subsearch). Check the query, then ' : 'Not run: part of the question was not understood. Check the query, then ',
       el('button', { type: 'button', class: 'link-btn', onclick: () => runSearch() }, 'run it'), '.'));
   }
   showAskResult(...kids);

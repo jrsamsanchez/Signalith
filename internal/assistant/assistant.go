@@ -66,7 +66,7 @@ func New(provider, url, model, apiKey string) *Client {
 		model = id
 	}
 	return &Client{Provider: provider, URL: BaseURL(provider, url), Model: strings.TrimSpace(model), APIKey: apiKey,
-		HTTP: &http.Client{Timeout: 3 * time.Minute, CheckRedirect: sameOriginRedirects}}
+		HTTP: &http.Client{Timeout: 3 * time.Minute, CheckRedirect: sameOriginRedirects, Transport: transport()}}
 }
 
 // BaseURL is the address requests are made under: Anthropic's paths
@@ -277,6 +277,12 @@ func (c *Client) do(ctx context.Context, method, path string, hdr http.Header, b
 			} else if json.Unmarshal(e.Error, &str) == nil && str != "" {
 				msg, parsed = str, true
 			}
+		}
+		if !parsed {
+			// Not the service's own error message but a page, such as a
+			// proxy's or another web server's: it is not passed on, so the
+			// address cannot be used to read other servers' answers.
+			msg = "the answer was not an AI model's error message"
 		}
 		if len(msg) > 300 {
 			msg = msg[:300]

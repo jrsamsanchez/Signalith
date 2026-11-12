@@ -27,6 +27,9 @@ import (
 // with every key this server has: the master key, the previous one kept
 // after a rotation, and the cluster keys in its state folder.
 
+// manifestMACField is what archive manifests are authenticated as.
+const manifestMACField = "retention.archive_manifest"
+
 // archiveCrypto makes a encrypt the archives it writes, unless
 // retention.encrypt_archives is false, and read encrypted ones. cluster,
 // when set, gives the cluster key in use now, nil when there is none.
@@ -51,7 +54,58 @@ func archiveCrypto(a *retention.Archive, c *config.Config, cluster func() *secre
 		}
 		return archivecrypt.Unseal(r, secrets.Chain(openers...))
 	}
-	if !c.ArchiveEncryption() {
+	// Manifests are authenticated with the same keys, so that a manifest
+	// cannot be rewritten to call an encrypted archive plain.
+	encrypt := c.ArchiveEncryption()
+	a.MAC = func(msg []byte) ([]string, error) {
+		var macs []string
+		tag, err := keys.MAC(manifestMACField, msg)
+		switch {
+		case err == nil:
+			macs = append(macs, tag)
+		case encrypt:
+			// Seal needs the master key too.
+			return nil, err
+		}
+		if cluster != nil {
+			if k := cluster(); k != nil {
+				macs = append(macs, k.MAC(manifestMACField, msg))
+			}
+		}
+		return macs, nil
+	}
+	a.Authenticate = func(msg []byte, macs []string) (bool, error) {
+		checkers := []interface {
+			CheckMAC(field string, msg []byte, tag string) error
+		}{keys}
+		if cluster != nil {
+			if k := cluster(); k != nil {
+				checkers = append(checkers, k)
+			}
+		}
+		if saved, err := store.ClusterKeys(); err == nil {
+			for _, k := range saved {
+				checkers = append(checkers, k.SecretsKey())
+			}
+		}
+		ok := false
+		for _, tag := range macs {
+			for _, ch := range checkers {
+				err := ch.CheckMAC(manifestMACField, msg, tag)
+				if err == nil {
+					ok = true
+					break
+				}
+				if !errors.Is(err, secrets.ErrMACKey) {
+					return false, err
+				}
+			}
+		}
+		return ok, nil
+	}
+	a.RequireAuthenticated = encrypt
+	a.AllowUnauthenticated = c.Retention.AllowUnauthenticatedArchives
+	if !encrypt {
 		return
 	}
 	a.Encryption = archivecrypt.Scheme
