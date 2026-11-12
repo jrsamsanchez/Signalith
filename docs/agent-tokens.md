@@ -307,9 +307,7 @@ osquery send with the key.
   token too, without a key, until they update.
 - **What it does not stop.** The line's token stays on each computer, so a computer that
   was taken over can still send events with it, and can enroll names that have no key yet.
-  The `host` field of an event is what the sender wrote, whether it came with a key or
-  with the line's token, so it can name another computer of the line. Revoke the line's
-  token to stop that.
+  Revoke the line's token to stop that.
 - **Volume.** There is no daily limit per token or computer: a token holder can store as
   much as the [ingest limits](sending-data.md#ingest-limits) let each request carry. Watch
   for a token whose volume jumps (`signalith_token_id=<id> | timechart count`) and revoke
