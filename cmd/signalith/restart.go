@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/netip"
 	"slices"
 	"strings"
 	"sync"
@@ -1384,7 +1385,21 @@ func webChanges(old, next *config.Config) bool {
 // webLimits are the connection limits of the web listener.
 func webLimits(c *config.Config) httpserver.Limits {
 	return httpserver.Limits{Max: c.Server.MaxConnections, Shared: c.Server.SharedList(),
-		Proxy: proxyFor(c, c.Server.ProxyProtocol, nil)}
+		Proxy: proxyFor(c, c.Server.ProxyProtocol, nil), ClientProxies: clientProxies(c)}
+}
+
+// clientProxies returns the trusted proxies and the header they name the
+// client in, as the settings say now (they apply without a restart), so
+// the limit on requests in progress counts each client behind a reverse
+// proxy on its own.
+func clientProxies(c *config.Config) func() ([]netip.Prefix, string) {
+	return func() ([]netip.Prefix, string) {
+		srv := c.Server
+		if s := proxyServer.Load(); s != nil {
+			srv = s.Running().Server
+		}
+		return srv.TrustedProxyList(), srv.ClientAddressHeader()
+	}
 }
 
 // openSearchMoves reports whether the OpenSearch connection changes.
@@ -1591,6 +1606,7 @@ var downHandler http.Handler = downPage{}
 type downPage struct{}
 
 func (downPage) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	httpserver.SecurityHeaders(w.Header())
 	w.Header().Set("Retry-After", "30")
 	w.Header().Set("Cache-Control", "no-store")
 	const msg = "Signalith could not start and tries again every 30 seconds. Its log on the server says why."
@@ -1641,6 +1657,8 @@ func (f *front) serve(w http.ResponseWriter, r *http.Request, plain bool) {
 	}
 	h := f.enter(r, plain)
 	if h == nil {
+		httpserver.SecurityHeaders(w.Header())
+		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("Content-Type", "application/json")
 		w.Header().Set("Retry-After", "5")
 		w.WriteHeader(http.StatusServiceUnavailable)
@@ -1660,8 +1678,8 @@ func (f *front) probe(w http.ResponseWriter, r *http.Request) bool {
 	if r.URL.Path != "/livez" && r.URL.Path != "/readyz" {
 		return false
 	}
+	httpserver.SecurityHeaders(w.Header())
 	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

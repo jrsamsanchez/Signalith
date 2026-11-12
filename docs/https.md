@@ -544,12 +544,18 @@ counts as one shared address, so nobody can pause sign-ins for the others. For n
 ```nginx
 location / {
     proxy_pass http://127.0.0.1:9000;
-    proxy_set_header Host $host;
+    proxy_set_header Host $http_host;
     proxy_set_header X-Forwarded-Proto $scheme;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     client_max_body_size 20m;
 }
 ```
+
+Keep the `Host` header as the browser sent it, port included (`$http_host` in nginx, not
+`$host`, which drops the port). Signalith checks that a sign-in or other change comes from
+its own page by comparing the browser's `Origin` with `Host`; a proxy that rewrites `Host`
+(or sends its upstream's `127.0.0.1:9000`) only works when `server.public_url` names the
+address people use, since an `Origin` equal to `server.public_url` is always accepted.
 
 Without the `X-Forwarded-For` line, nginx passes on whatever the browser sent, so add the
 line before you set `server.client_header`. Caddy and Traefik set `X-Forwarded-For`

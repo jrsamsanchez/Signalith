@@ -77,7 +77,15 @@ type Engine struct {
 	optMu   sync.RWMutex
 	slotsMu sync.Mutex
 	slots   chan struct{}
-	perUser map[string]chan struct{}
+	perUser map[string]*userSlots
+}
+
+// userSlots is one user's share of the search slots, kept while any of
+// the user's searches holds or waits for one of them, so users who have
+// stopped searching are not remembered (SRCH-03).
+type userSlots struct {
+	ch   chan struct{}
+	refs int
 }
 
 // SetDefaults changes the default time range, the most events a search
@@ -158,14 +166,31 @@ func (e *Engine) acquire(ctx context.Context) (func(), error) {
 	var mine chan struct{}
 	if user != "" {
 		if e.perUser == nil {
-			e.perUser = map[string]chan struct{}{}
+			e.perUser = map[string]*userSlots{}
 		}
-		if mine = e.perUser[user]; mine == nil {
-			mine = make(chan struct{}, perUserSearches(cap(slots)))
-			e.perUser[user] = mine
+		u := e.perUser[user]
+		if u == nil {
+			u = &userSlots{ch: make(chan struct{}, perUserSearches(cap(slots)))}
+			e.perUser[user] = u
 		}
+		u.refs++
+		mine = u.ch
 	}
 	e.slotsMu.Unlock()
+	// done forgets the user's share once nothing of theirs holds or
+	// waits for it.
+	done := func() {
+		if user == "" {
+			return
+		}
+		e.slotsMu.Lock()
+		if u := e.perUser[user]; u != nil {
+			if u.refs--; u.refs <= 0 {
+				delete(e.perUser, user)
+			}
+		}
+		e.slotsMu.Unlock()
+	}
 
 	t := time.NewTimer(o.QueueWait)
 	defer t.Stop()
@@ -186,6 +211,7 @@ func (e *Engine) acquire(ctx context.Context) (func(), error) {
 	}
 	if mine != nil {
 		if err := take(mine, ErrUserBusy); err != nil {
+			done()
 			return nil, err
 		}
 	}
@@ -193,6 +219,7 @@ func (e *Engine) acquire(ctx context.Context) (func(), error) {
 		if mine != nil {
 			<-mine
 		}
+		done()
 		return nil, err
 	}
 	return func() {
@@ -200,6 +227,7 @@ func (e *Engine) acquire(ctx context.Context) (func(), error) {
 		if mine != nil {
 			<-mine
 		}
+		done()
 	}, nil
 }
 
@@ -864,6 +892,14 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	// The result is written out after the search frees its slot, so a
+	// user's search may answer with only so much, however little the
+	// search built: rows can share one value many times (RT-02).
+	if bg, _ := ctx.Value(backgroundKey{}).(bool); !bg {
+		if n := resultBytes(res); n > MaxResultBytes {
+			return nil, &QueryError{Msg: fmt.Sprintf("the search's results come to about %d MB, more than the %d MB a search may return; narrow it, keep fewer fields (fields, table) or fewer rows (head)", n>>20, MaxResultBytes>>20)}
+		}
+	}
 	evaluatorFor(ctx).sub.mark(res)
 	res.TookMS = time.Since(start).Milliseconds()
 	if loc := zoneOf(q.TimeZone); loc != time.UTC {
@@ -915,6 +951,11 @@ func (e *Engine) run(ctx context.Context, q *query.Query, p *Plan) (*Result, err
 	}
 	return res, nil
 }
+
+// MaxResultBytes caps a user's search result, as resultBytes measures it:
+// what the API writes out after the search has freed its slot. 10,000
+// events of several KB each fit.
+const MaxResultBytes = 128 << 20
 
 // maxResultGrowth caps how much a search's commands may add to the rows
 // they were given, measured as written out.
@@ -1037,7 +1078,9 @@ func (e *Engine) fetch(ctx context.Context, p *Plan) (*Result, error) {
 		for _, b := range buckets {
 			row := bucketKeys(b, st.By)
 			if p.fill != nil {
-				applyFillnull(&Result{Rows: []Row{row}}, p.fill)
+				if err := applyFillnull(evaluatorFor(ctx), &Result{Rows: []Row{row}}, p.fill); err != nil {
+					return nil, err
+				}
 			}
 			for i, a := range st.Aggs {
 				switch {

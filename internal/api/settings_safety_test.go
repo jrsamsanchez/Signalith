@@ -320,7 +320,9 @@ func TestSessionCookieFollowsTheRequest(t *testing.T) {
 			if c := login(map[string]string{"Origin": ts.URL}); c == "" || strings.Contains(c, "Secure") || strings.Contains(c, "__Host-") {
 				t.Errorf("plain HTTP: %q", c)
 			}
-			if c := login(map[string]string{"Origin": ts.URL, "X-Forwarded-Proto": "https"}); strings.Contains(c, "Secure") != tc.proxyBelieved {
+			// The page behind the proxy is an https:// one (WEB-03).
+			https := strings.Replace(ts.URL, "http://", "https://", 1)
+			if c := login(map[string]string{"Origin": https, "X-Forwarded-Proto": "https"}); strings.Contains(c, "Secure") != tc.proxyBelieved {
 				t.Errorf("behind an HTTPS proxy: %q", c)
 			}
 		})

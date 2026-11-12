@@ -68,6 +68,9 @@ type evaluator struct {
 	jsonOK   bool
 	// sub holds the marks of the subsearches among the search's terms.
 	sub subMarks
+	// regexCost holds the instructions of the patterns regexWork
+	// charged for.
+	regexCost map[*regexp.Regexp]int
 }
 
 func newEvaluator(ctx context.Context) *evaluator {
@@ -592,7 +595,7 @@ func (ev *evaluator) like(v, pattern any) bool {
 		if !ev.step() {
 			return false
 		}
-		if s, ok := evStr(x); ok && re.MatchString(s) {
+		if s, ok := evStr(x); ok && ev.regexWork(re, len(s)) && re.MatchString(s) {
 			return true
 		}
 	}
@@ -939,7 +942,7 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			if !ev.step() {
 				return nil
 			}
-			if s, ok := evStr(v); ok && re.MatchString(s) {
+			if s, ok := evStr(v); ok && ev.regexWork(re, len(s)) && re.MatchString(s) {
 				return int64(i)
 			}
 		}
@@ -1004,7 +1007,7 @@ func (ev *evaluator) call(c *query.Call, r Row) any {
 			if !ev.step() {
 				return false
 			}
-			if s, ok := evStr(v); ok && re.MatchString(s) {
+			if s, ok := evStr(v); ok && ev.regexWork(re, len(s)) && re.MatchString(s) {
 				return true
 			}
 		}
@@ -1245,6 +1248,9 @@ func (ev *evaluator) replaceNth(re *regexp.Regexp, s, template string, nth int) 
 	limit := -1
 	if nth > 0 {
 		limit = nth
+	}
+	if !ev.regexWork(re, len(s)) {
+		return nil
 	}
 	for i, m := range re.FindAllStringSubmatchIndex(s, limit) {
 		if !ev.step() {
@@ -1545,6 +1551,9 @@ func applyRex(ctx context.Context, res *Result, c *query.Rex) error {
 		if !ok {
 			continue
 		}
+		if !ev.regexWork(re, len(s)) {
+			return ev.err
+		}
 		matches := re.FindAllStringSubmatchIndex(s, limit)
 		if len(matches) == 0 {
 			continue
@@ -1618,11 +1627,15 @@ func applyDedup(ctx context.Context, res *Result, c *query.Dedup) error {
 	return nil
 }
 
-func applyFillnull(res *Result, c *query.Fillnull) {
+// applyFillnull puts c's value in the empty fields of each row. Every
+// copy shares the value's memory but is written out with the result, so
+// each counts against the search's budget as eval's values do (RT-03).
+func applyFillnull(ev *evaluator, res *Result, c *query.Fillnull) error {
 	var fill any = c.Value
 	if n, ok := parseNumber(c.Value); ok {
 		fill = toNumber(n)
 	}
+	size := valueSize(fill)
 	fields := c.Fields
 	if len(fields) == 0 {
 		fields = res.Columns
@@ -1630,6 +1643,9 @@ func applyFillnull(res *Result, c *query.Fillnull) {
 	for _, r := range res.Rows {
 		for _, f := range fields {
 			if v, ok := r[f]; !ok || v == nil {
+				if !ev.charge(size) {
+					return ev.err
+				}
 				r[f] = fill
 			}
 		}
@@ -1637,6 +1653,7 @@ func applyFillnull(res *Result, c *query.Fillnull) {
 	for _, f := range c.Fields {
 		addColumn(res, f)
 	}
+	return nil
 }
 
 func applyEventStats(ctx context.Context, res *Result, c *query.EventStats) error {

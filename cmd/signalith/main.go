@@ -256,8 +256,10 @@ func cmdInit(args []string) error {
 	osCert := fs.String("opensearch-cert", "", "certificate file Signalith signs in to OpenSearch with (opensearch.cert_file)")
 	osKey := fs.String("opensearch-key", "", "that certificate's key file (opensearch.key_file)")
 	osInsecure := fs.Bool("opensearch-allow-insecure-http", false, "allow the OpenSearch username and password over plain http to another machine (sets opensearch.allow_insecure_http; prefer https)")
-	password := fs.String("admin-password", "", "deprecated: a password on the command line is kept in the shell history and shown to other users of this machine in the process list; "+
-		"give the admin password in the "+newPasswordEnv+" environment variable instead (default: generate one)")
+	// -admin-password is refused, with what to do instead: a password on
+	// the command line is kept in the shell history and shown to other
+	// users of the machine in the process list (AUTHRT-12).
+	password := fs.String("admin-password", "", "no longer accepted: give the admin password in the "+newPasswordEnv+" environment variable (default: generate one)")
 	// Plain syslog is unencrypted and anyone who can reach the port can
 	// send fake events, so a new install takes syslog over TLS only.
 	// Installers that want it pass an address, such as 0.0.0.0:514.
@@ -268,6 +270,10 @@ func cmdInit(args []string) error {
 	savePassword := fs.Bool("save-password", false, "keep a generated admin password in "+initialPasswordFile+" next to the config file, for signalith initial-password, instead of printing it (for installers)")
 	fs.Parse(args)
 
+	if *password != "" {
+		return errors.New("-admin-password is no longer accepted: a password on the command line is kept in the shell history and shown in the process list. " +
+			"Give it in the " + newPasswordEnv + " environment variable instead, or leave it out to have one made; then change the one you typed with signalith passwd")
+	}
 	if _, err := os.Stat(*path); err == nil && !*force {
 		return fmt.Errorf("%s already exists; use -force to overwrite it", *path)
 	}
@@ -299,15 +305,8 @@ func cmdInit(args []string) error {
 	c.Syslog.TCP = *syslogTCP
 	c.Syslog.TLS = *syslogTLS
 	// The admin password comes from the environment, as for signalith
-	// passwd, so that it is in no command line. -admin-password still
-	// works, with a warning.
-	pw, from := *password, "-admin-password"
-	if pw != "" {
-		fmt.Fprintln(os.Stderr, "Warning: -admin-password is deprecated: the password is now in this shell's history and was visible in the process list. "+
-			"Give it in the "+newPasswordEnv+" environment variable instead, and change this one with signalith passwd.")
-	} else if pw = os.Getenv(newPasswordEnv); pw != "" {
-		from = newPasswordEnv
-	}
+	// passwd, so that it is in no command line.
+	pw, from := os.Getenv(newPasswordEnv), newPasswordEnv
 	generated := pw == ""
 	if generated {
 		pw = config.RandomToken(9)
@@ -1099,6 +1098,22 @@ func logMasterKey(c *config.Config, log *slog.Logger) {
 	}
 }
 
+// masterKeyFileProblem refuses to start the server when other accounts on
+// this computer can read or replace the master key file, and says how to
+// fix it. In an application container (Docker, Podman, Kubernetes) only
+// the warning stays: they mount secrets readable by all (mode 0644) by
+// default, and no other account runs there. An LXC system container is
+// not one (incontainer.AppHere). On Windows the warning is the key file's
+// access list allowing broad groups such as Users (CRYPTO-06).
+func masterKeyFileProblem(c *config.Config, inContainer bool) error {
+	src, err := c.Keyring().Source()
+	if err != nil || src.Warning == "" || inContainer {
+		return nil
+	}
+	return fmt.Errorf("%s. The master key opens every stored password and key, so Signalith does not start with a key file "+
+		"other accounts can read or replace; fix it and start again", src.Warning)
+}
+
 // useKeys makes c's master key the one the files the server writes are
 // encrypted with, says where it comes from when that is new (at the first
 // start, or after a restart in place that changed it), and encrypts the
@@ -1139,6 +1154,9 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	}
 	c, err := loadConfig(path, log)
 	if err != nil {
+		return err
+	}
+	if err := masterKeyFileProblem(c, incontainer.AppHere()); err != nil {
 		return err
 	}
 	// The first start of the Docker quick start with this version decides
@@ -1330,6 +1348,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	}
 	ret := newRetention(c, cl, log)
 	archiveCrypto(ret.Archive, c, r.clusterKey)
+	if err := recordLegacyArchives(ret.Archive, c); err != nil {
+		log.Warn("could not list the archives written before manifests had MACs; encrypted ones among them will need retention.allow_unauthenticated_archives to restore", "err", err)
+	}
 	if sharedOn {
 		r.sharedContent.sharedRetention(ret)
 	} else {

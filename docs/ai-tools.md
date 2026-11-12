@@ -296,8 +296,15 @@ To make a token through the API, as an admin, `POST /api/api-tokens` with its `n
 - **Event data is untrusted.** Logs can hold text an attacker wrote, such as a user name
   or a command line made to look like instructions. The server tells the model never to
   follow instructions in data, and because every tool only reads, such text cannot make
-  the tools change anything. Still check what the model tells you against Signalith
-  itself before you act on it.
+  the tools change anything in Signalith. Still check what the model tells you against
+  Signalith itself before you act on it.
+- **The risk moves to the AI tool's other tools.** The server's advice to the model is
+  only advice. If the same AI tool can also send mail, write files, browse or call
+  other services, planted log text could try to make it search Signalith for something
+  sensitive and pass it on through one of those. Don't give an AI tool that reads
+  Signalith tools that send data elsewhere in the same session, or have it ask you
+  before each such call. Give it a **Viewer** token, so it can read no more than it
+  needs (API tokens work in the default tenant only).
 - **The token is in the AI tool's config file.** Keep that file private, or use
   `SIGNALITH_TOKEN_FILE`. To cut the AI tool off, revoke its token on
   **Settings > API tokens**. Tokens expire, 90 days after they are made by default, so

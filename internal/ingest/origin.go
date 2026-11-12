@@ -19,7 +19,10 @@ const (
 	IntakeField = "signalith_intake"
 	// TokenField is the name of the agent token the event came with, as
 	// it was then (never the token itself). Renaming the token later
-	// leaves stored events as they are.
+	// leaves stored events as they are. An event sent with a computer's
+	// own key (Origin.Host) names that computer too, as "<token> @
+	// <computer>", and one whose host is not the computer that sent it is
+	// marked with HostMismatch (see Origin.stampHost).
 	TokenField = "signalith_token"
 	// TokenIDField is that token's ID.
 	TokenIDField = "signalith_token_id"
@@ -62,6 +65,9 @@ type Origin struct {
 	Sender    string
 	// Purpose is the agent token's purpose; empty for a shared token.
 	Purpose string
+	// Host is the enrolled computer whose own key sent the events (see
+	// agenttokens.Identity.Host); "" when a token sent them.
+	Host string
 }
 
 // IsZero reports whether o says nothing.
@@ -89,6 +95,84 @@ func (o Origin) stamp(f map[string]any) {
 			f[k] = v
 		}
 	}
+}
+
+// HostMismatch ends TokenField on an event whose host is not the computer
+// that sent it: one sent with a computer's own key that names another
+// host, or one sent with a token (not a computer's key) that names a
+// computer that has a key of its own (ING-03). The event is stored as
+// sent; the mark says its host is the sender's word, not proven:
+// signalith_token="*(host mismatch)" finds them. The known-field budget
+// is spent, so the mark reuses TokenField instead of a field of its own.
+const HostMismatch = " (host mismatch)"
+
+type enrolledKey struct{}
+
+// WithEnrolled returns ctx with how to tell whether a computer has a key
+// of its own, for HostMismatch on events sent with a token.
+func WithEnrolled(ctx context.Context, enrolled func(host string) bool) context.Context {
+	return context.WithValue(ctx, enrolledKey{}, enrolled)
+}
+
+// enrolledFrom returns what WithEnrolled put in ctx, or nil.
+func enrolledFrom(ctx context.Context) func(string) bool {
+	f, _ := ctx.Value(enrolledKey{}).(func(string) bool)
+	return f
+}
+
+// cachedEnrolled is enrolled with each name's answer kept, for the events
+// of one write, which mostly name the same few hosts. nil stays nil.
+func cachedEnrolled(enrolled func(string) bool) func(string) bool {
+	if enrolled == nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	return func(host string) bool {
+		v, ok := seen[host]
+		if !ok {
+			v = enrolled(host)
+			if len(seen) < 1000 {
+				seen[host] = v
+			}
+		}
+		return v
+	}
+}
+
+// stampHost names, in TokenField, the computer whose key sent an event,
+// and marks an event whose host is not the computer that sent it (see
+// HostMismatch). enrolled may be nil. It runs after stamp.
+func (o Origin) stampHost(f map[string]any, enrolled func(string) bool) {
+	if o.TokenName == "" {
+		return
+	}
+	host, _ := f["host"].(string)
+	host = strings.ToLower(strings.TrimSpace(host))
+	switch {
+	case o.Host != "":
+		v := o.TokenName + " @ " + o.Host
+		if host != "" && !sameHost(host, strings.ToLower(o.Host)) {
+			v += HostMismatch
+		}
+		f[TokenField] = v
+	case host != "" && enrolled != nil && (enrolled(host) || enrolled(shortHost(host))):
+		f[TokenField] = o.TokenName + HostMismatch
+	}
+}
+
+// sameHost reports whether two lower-case host names are the same
+// computer: equal, or one is the other's short name (web-01 and
+// web-01.corp.example).
+func sameHost(a, b string) bool {
+	return a == b || shortHost(a) == b || a == shortHost(b)
+}
+
+// shortHost is a host name up to its first dot.
+func shortHost(h string) string {
+	if i := strings.IndexByte(h, '.'); i > 0 {
+		return h[:i]
+	}
+	return h
 }
 
 // reservedNames are the fields Signalith sets on events itself, which a

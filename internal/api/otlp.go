@@ -15,7 +15,6 @@ import (
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
-	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 )
 
@@ -47,7 +46,8 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		writeOTLPStatus(w, isJSON, status, err.Error())
 	}
-	from := clientaddr.Parse(r.RemoteAddr)
+	// The client behind a trusted reverse proxy, not the proxy (ING-04).
+	from := s.client(r).Addr
 	who, checked := s.tokens().Check(bearerToken(r))
 	if checked != agenttokens.Valid {
 		if status, _, msg, retry, ok := agentRefusal(checked); ok {
@@ -59,6 +59,11 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.Pipeline.NoteRefused(from, ingest.RefusedToken)
 		fail(http.StatusUnauthorized, "", errors.New("missing or invalid agent token; send it as Authorization: Bearer <token>"))
+		return
+	}
+	if !purposeFits(ingest.IntakeOTLP, who) {
+		s.notePurposeRefused(r, ingest.IntakeOTLP, who)
+		fail(http.StatusForbidden, "", errors.New(purposeRefused(ingest.IntakeOTLP, who)))
 		return
 	}
 	if ct != "application/x-protobuf" && !isJSON {
@@ -89,12 +94,8 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 	if enc == "gzip" {
-		sender := netip.Addr{}
-		if !clientaddr.Shared(from, s.Config.Server.SharedList()) {
-			sender = clientaddr.Key(from)
-		}
 		var releaseRaw func()
-		body, releaseRaw, err = gunzip(s.Pipeline, body, sender)
+		body, releaseRaw, err = gunzip(s.Pipeline, body, s.agentSender(r))
 		if err != nil {
 			fail(s.batchFailure(r, err))
 			return
@@ -107,7 +108,9 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer slot()
-	res, err = s.Pipeline.IngestOTLP(withOrigin(r, ingest.IntakeOTLP, who), body, isJSON)
+	res, err = s.Pipeline.IngestOTLP(s.agentOrigin(r, ingest.IntakeOTLP, who), body, isJSON)
+	// What was stored is credited even when the request fails part way
+	// (ING-02).
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed)
 		s.noteAgent(r, ingest.IntakeOTLP, "", who, res.Indexed, res.Hosts, nil)

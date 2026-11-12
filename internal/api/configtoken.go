@@ -7,11 +7,15 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"io"
 	"io/fs"
 	"net"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 )
@@ -19,9 +23,14 @@ import (
 // Headers of read-your-writes behind a load balancer, and of the web UI
 // during an upgrade (docs/servers.md#several-servers-behind-one-address).
 const (
-	// headerVersion is this server's version, on every response: a page
-	// from another version reloads once when it sees it.
+	// headerVersion is this server's version, on the responses of
+	// signed-in requests and of a successful sign-in only (see
+	// configToken).
 	headerVersion = "X-Signalith-Version"
+	// headerBuild is this server's build token (see buildToken), on
+	// every response: a page from another build reloads once when it
+	// sees it.
+	headerBuild = "X-Signalith-Build"
 	// headerConfig is how far this server has read the shared settings
 	// ("<config index uuid>.<seq>"); after a change, how far it must be
 	// read to see the change.
@@ -49,32 +58,29 @@ type ConfigToken interface {
 	Wait(ctx context.Context, min string) (stale bool)
 }
 
-// configHeaders sets headerVersion on every response. The version is
-// no secret from someone not signed in: the sign-in page names it in its
-// script paths, as every server of one version must.
+// configHeaders sets headerBuild on every response. The build token is
+// opaque: someone not signed in learns which build answers (so a page
+// can tell two builds apart), not the version, which would name the
+// fixes it lacks (WEB-01).
 func (s *Server) configHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.Version != "" {
-			w.Header().Set(headerVersion, s.Version)
+		if b := s.buildToken(); b != "" {
+			w.Header().Set(headerBuild, b)
 		}
 		next.ServeHTTP(w, r)
 	})
 }
 
-// configToken sets headerConfig, which names the config index, on the
-// responses of signed-in requests (inside requireUser), and with okOnly
-// on a successful sign-in. The token is taken when the response starts,
-// so a request that changed the shared settings reports its own write.
+// configToken sets headerVersion and headerConfig, which names the
+// config index, on the responses of signed-in requests (inside
+// requireUser), and with okOnly on a successful sign-in. The token is
+// taken when the response starts, so a request that changed the shared
+// settings reports its own write.
 func (s *Server) configToken(okOnly bool, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ct := s.ConfigToken
-		if ct == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		cw := &configWriter{ResponseWriter: w, ct: ct, before: -1, okOnly: okOnly}
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			cw.writes, cw.before = true, ct.Written()
+		cw := &configWriter{ResponseWriter: w, ct: s.ConfigToken, version: s.Version, before: -1, okOnly: okOnly}
+		if cw.ct != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			cw.writes, cw.before = true, cw.ct.Written()
 		}
 		next.ServeHTTP(cw, r)
 		cw.stamp(http.StatusOK)
@@ -97,10 +103,12 @@ func (s *Server) awaitConfig(next http.Handler) http.Handler {
 	})
 }
 
-// configWriter sets headerConfig when the response starts.
+// configWriter sets headerVersion and headerConfig when the response
+// starts.
 type configWriter struct {
 	http.ResponseWriter
-	ct      ConfigToken
+	ct      ConfigToken // nil: no headerConfig
+	version string
 	writes  bool
 	before  int64
 	stamped bool
@@ -114,6 +122,12 @@ func (c *configWriter) stamp(code int) {
 	}
 	c.stamped = true
 	if c.okOnly && code >= 300 {
+		return
+	}
+	if c.version != "" {
+		c.Header().Set(headerVersion, c.version)
+	}
+	if c.ct == nil {
 		return
 	}
 	tok := ""
@@ -158,10 +172,52 @@ func (c *configWriter) Unwrap() http.ResponseWriter { return c.ResponseWriter }
 
 // Versioned static files (4.9): behind a load balancer, a page from one
 // version may ask a server of another for its scripts. index.html and
-// login.html name every script and stylesheet under /v/<version>/, which
-// only a server of that version serves, and which browsers keep for a
+// login.html name every script and stylesheet under /v/<build>/, which
+// only a server of that build serves, and which browsers keep for a
 // year; a page whose files fail to load reloads (assets/loader.js). The
 // unversioned paths keep working, for pages of the version before.
+//
+// <build> is the build token, not the version: the sign-in page is
+// public, and a version there would tell anyone which fixes the server
+// lacks (WEB-01). The token is the same on every server of one build, so
+// a load balancer may send a page's requests to any of them, and it
+// changes with the version and with any file of the web UI.
+//
+// It is not a secret either: the public files (assets/) are the same for
+// everyone who runs a release, so someone who downloads every release
+// can still match them. It keeps the version out of plain sight.
+
+// buildToken is this server's build token, "" when the server has no
+// version that can be a path segment (as before: no /v/ paths then).
+func (s *Server) buildToken() string {
+	s.pageCache.buildOnce.Do(func() { s.pageCache.build = makeBuildToken(s.Version, s.UI) })
+	return s.pageCache.build
+}
+
+// makeBuildToken hashes the version and every file of the web UI into a
+// token that is a path segment.
+func makeBuildToken(version string, ui fs.FS) string {
+	if versionSegment(version) == "" {
+		return ""
+	}
+	h := sha256.New()
+	_, _ = io.WriteString(h, "signalith build\x00"+version+"\x00")
+	if ui != nil {
+		_ = fs.WalkDir(ui, ".", func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			b, err := fs.ReadFile(ui, p)
+			if err != nil {
+				return nil
+			}
+			_, _ = io.WriteString(h, p+"\x00"+strconv.Itoa(len(b))+"\x00")
+			_, _ = h.Write(b)
+			return nil
+		})
+	}
+	return "b" + hex.EncodeToString(h.Sum(nil)[:10])
+}
 
 // versionSegment is the path segment of this server's version, "" when
 // it has none that can be a path segment.
@@ -204,13 +260,13 @@ func versionedFiles(version string, private bool, next http.Handler) http.Handle
 var assetRef = regexp.MustCompile(`(<(?:script|link)\b[^>]*?\b(?:src|href)=")([A-Za-z0-9][^"#:]*)("[^>]*>)`)
 
 // renderPage returns a page of the web UI with its scripts and
-// stylesheets under /v/<version>/ and the version in its
+// stylesheets under /v/<build>/ and the build token in its
 // signalith-version meta tag. A tag marked data-unversioned keeps its
 // path: the loader must load from a server of any version.
-func renderPage(page []byte, version string) []byte {
-	seg := versionSegment(version)
+func renderPage(page []byte, build string) []byte {
+	seg := versionSegment(build)
 	page = bytes.Replace(page, []byte(`<meta name="signalith-version" content="">`),
-		[]byte(`<meta name="signalith-version" content="`+htmlAttr(version)+`">`), 1)
+		[]byte(`<meta name="signalith-version" content="`+htmlAttr(build)+`">`), 1)
 	if seg == "" {
 		return page
 	}
@@ -232,6 +288,9 @@ func htmlAttr(s string) string {
 type pages struct {
 	mu   sync.Mutex
 	done map[string][]byte
+	// build is the build token, made once (see buildToken).
+	buildOnce sync.Once
+	build     string
 }
 
 // page returns the rendered page name of the web UI.
@@ -245,7 +304,7 @@ func (s *Server) page(name string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	b = renderPage(b, s.Version)
+	b = renderPage(b, s.buildToken())
 	if s.pageCache.done == nil {
 		s.pageCache.done = map[string][]byte{}
 	}

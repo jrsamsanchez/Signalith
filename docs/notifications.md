@@ -281,9 +281,6 @@ turned off.
 
 ## Audit alerts
 
-!!! note "Arriving with the next release"
-    Audit alerts are on `main` and come with the release after 0.4.0.
-
 Audit alerts tell admins about Signalith itself: who signs in to admin accounts, failed
 sign-ins and lockouts, changes to users, tenants, tokens and settings, deletions, and audit
 records that were lost. They come from Signalith's [audit records](audit.md), not from
@@ -319,8 +316,12 @@ What gets sent:
   says "(not a known account)" and gives the address it came from.
 - A failed single sign-on that names no user says only the sign-in page's code for it
   (`denied`, `expired`, ...): the rest may be text the sender chose, and stays in the audit
-  log. Such failures are written to the audit log at most once a minute for each address
-  (the record counts those since, as `failures`), and not at all while single sign-on is off.
+  log. Such failures are written to the audit log at most once a minute for each address,
+  an IPv6 /64 counting as one (the record counts those since, as `failures`), and 60 times a
+  minute in all, and not at all while single sign-on is off. When the total leaves records
+  out, one record (*"audit records left out"*) says how many. Failed password sign-ins and
+  refused SCIM tokens and scrapes are limited the same way (see
+  [Failed sign-in limits](users.md#signing-in)).
 - The flood guard, retries and **Recent deliveries** work as for findings, except that the
   first message of each alert is sent on its own before a second of any, and a summary names
   the alerts it stands for: "And 12 more audit alerts: Sign-ins locked out (10), Tokens made

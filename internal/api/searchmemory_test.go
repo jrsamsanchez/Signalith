@@ -40,9 +40,12 @@ func TestHeavyMultivalueSearchIsRefused(t *testing.T) {
 		t.Errorf("error = %q, want the multivalue budget named", msg)
 	}
 	// Everything allocated while it ran, kept or not; it was 3.8 GB held.
-	if mb := (after.TotalAlloc - before.TotalAlloc) >> 20; mb > 1536 {
+	// (Not under the race detector, where the regexp package allocates a
+	// matcher for every call and the count says nothing.)
+	if mb := (after.TotalAlloc - before.TotalAlloc) >> 20; mb > 768 && !raceOn {
 		t.Errorf("the refused search allocated %d MB", mb)
 	}
+	t.Logf("allocated %d MB", (after.TotalAlloc-before.TotalAlloc)>>20)
 }
 
 // TestDemoVisitorHeavySearchIsRefused: an anonymous visitor of a public

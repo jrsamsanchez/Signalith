@@ -21,6 +21,15 @@ recommends for web applications:
    with a fresh random `state`, `nonce` and PKCE challenge (S256). They are kept in a
    cookie for 10 minutes (HttpOnly, SameSite=Lax, and `__Host-` and Secure over HTTPS),
    so nothing is held on the server and any server of a cluster can finish the sign-in.
+   The cookie carries a MAC under a key the servers share, so a made-up or changed one
+   is refused. That does not stop *login CSRF* by itself: someone who can set cookies
+   in your browser could copy in a genuine cookie from a sign-in they started, and
+   finish it with their own code, signing your browser in as them. Over HTTPS the
+   `__Host-` prefix keeps any other site, a sibling subdomain included, from setting
+   the cookie, which is what stops it. Over plain HTTP anyone on the network path can
+   set cookies (and read everything else), so use HTTPS for single sign-on; a second
+   cookie binding the state to the browser would not help there, as it could be
+   planted the same way.
 2. The person signs in at the provider, which sends the browser back to
    `/api/auth/oidc/callback` with a one-time code.
 3. Signalith checks the `state` against the cookie, trades the code for tokens at the
