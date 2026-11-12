@@ -748,6 +748,10 @@ var Excluded = map[string]Exclusion{
 	"demo.enabled":               {ScopeServer, "Demo mode turns off sign-in with passwords, event intake and everything that reaches other systems, so only signalith.yaml or SIGNALITH_DEMO can turn it on or off, never a page. See docs/demo.md."},
 	"demo.admin_networks":        {ScopeServer, "It decides where password sign-in works in demo mode, so only signalith.yaml or SIGNALITH_DEMO_ADMIN_NETWORKS can set it, never a page. See docs/demo.md."},
 	"cluster.node_name":          {ScopeBootstrap, "This server's name is set in signalith.yaml or with SIGNALITH_NODE_NAME, and kept in its state folder once chosen. The Servers page shows it."},
+
+	// Only the file can let this server restore plain archives that no
+	// key authenticates, never a page or the shared settings.
+	"retention.allow_unauthenticated_archives": {ScopeServer, "It lets this server restore plain archives that no key authenticates, so only signalith.yaml can turn it on, for as long as such archives are restored. See docs/retention.md."},
 }
 
 // ScopeOf returns the scope of a setting of Config, on the page or not,

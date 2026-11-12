@@ -7,6 +7,10 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -66,10 +70,24 @@ func TestArchiveEncryption(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(folder, m.File)); !strings.HasPrefix(string(b), "SGLARC1\n") || strings.Contains(string(b), "alice") {
 		t.Error("the archive file is not encrypted")
 	}
-	for _, x := range []retention.Manifest{plain, m} {
-		if err := read(a, x); err != nil {
-			t.Errorf("%s: %v", x.ID, err)
-		}
+	if err := read(a, m); err != nil {
+		t.Errorf("%s: %v", m.ID, err)
+	}
+	// A plain archive no key authenticates (written before encryption,
+	// and before manifests had MACs) needs the override while archives
+	// are encrypted (CRYPTO-01).
+	if len(plain.MAC) != 0 {
+		t.Fatalf("an archive written without keys has MACs %q", plain.MAC)
+	}
+	if err := read(a, plain); !errors.Is(err, retention.ErrUnauthenticated) {
+		t.Errorf("a plain archive no key authenticates: %v", err)
+	}
+	over := config.Default()
+	over.Retention.AllowUnauthenticatedArchives = true
+	ao := &retention.Archive{Dir: folder}
+	archiveCrypto(ao, over, cluster)
+	if err := read(ao, plain); err != nil {
+		t.Errorf("with retention.allow_unauthenticated_archives: %v", err)
 	}
 
 	// decrypt gives the plain gzip, as written before encryption.
@@ -104,10 +122,98 @@ func TestArchiveEncryption(t *testing.T) {
 	off.Retention.EncryptArchives = &no
 	b := &retention.Archive{Dir: folder}
 	archiveCrypto(b, off, nil)
-	if p := write(b, "signalith-endpoint-2026.07.03"); p.Encryption != "" {
-		t.Errorf("encryption off: %q", p.Encryption)
+	p := write(b, "signalith-endpoint-2026.07.03")
+	if p.Encryption != "" || len(p.MAC) != 1 {
+		t.Errorf("encryption off: %q, MACs %q", p.Encryption, p.MAC)
+	}
+	// Its manifest is authenticated, so it reads once encryption is on.
+	if err := read(a, p); err != nil {
+		t.Errorf("a plain archive with a MAC, encryption on: %v", err)
 	}
 	if err := read(b, m); err != nil {
 		t.Errorf("encryption off, reading an encrypted archive: %v", err)
+	}
+}
+
+// TestArchiveManifestForgery checks that an encrypted archive cannot be
+// swapped for a plain one by rewriting its manifest (CRYPTO-01), and that
+// encrypted archives written before manifests had MACs still read.
+func TestArchiveManifestForgery(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SIGNALITH_STATE_DIR", filepath.Join(dir, "state"))
+	ck, err := shared.NewClusterKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cluster := func() *secrets.Key { return ck.SecretsKey() }
+	folder := filepath.Join(dir, "archive")
+	a := &retention.Archive{Dir: folder}
+	archiveCrypto(a, config.Default(), cluster)
+	mem := retention.NewMemory()
+	const index = "signalith-endpoint-2026.07.02"
+	mem.AddIndex(index, 1, retention.Doc{ID: "a", Source: []byte(`{"user":"alice"}`)})
+	m, err := a.Write(context.Background(), mem, retention.Source{Index: index, Category: "endpoint", Day: "2026-07-02"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.MAC) != 2 {
+		t.Fatalf("MACs %q, want one for the master key and one for the cluster key", m.MAC)
+	}
+	// Another server of the cluster checks the cluster key's MAC.
+	t.Setenv("SIGNALITH_STATE_DIR", filepath.Join(dir, "other"))
+	other := &retention.Archive{Dir: folder}
+	archiveCrypto(other, config.Default(), cluster)
+	if err := other.Verify(*m); err != nil {
+		t.Errorf("another server of the cluster: %v", err)
+	}
+	t.Setenv("SIGNALITH_STATE_DIR", filepath.Join(dir, "state"))
+
+	// An encrypted archive whose manifest has no MAC, as written before,
+	// still reads: decrypting it authenticates it.
+	old := *m
+	old.MAC = nil
+	if err := a.Verify(old); err != nil {
+		t.Errorf("an encrypted archive without a MAC: %v", err)
+	}
+
+	// Forge: a plain gzip of other events and a manifest that matches it.
+	var buf bytes.Buffer
+	zw := gzip.NewWriter(&buf)
+	zw.Write([]byte(`{"_id":"x","_source":{"user":"mallory"}}` + "\n"))
+	zw.Close()
+	if err := os.WriteFile(filepath.Join(folder, m.File), buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(buf.Bytes())
+	forged := *m
+	forged.Encryption, forged.KID = "", ""
+	forged.SHA256, forged.Bytes, forged.Docs = hex.EncodeToString(sum[:]), int64(buf.Len()), 1
+	// With the MACs kept, they no longer match: refused, even with the
+	// override.
+	over := config.Default()
+	over.Retention.AllowUnauthenticatedArchives = true
+	ao := &retention.Archive{Dir: folder}
+	archiveCrypto(ao, over, cluster)
+	for _, x := range []*retention.Archive{a, ao} {
+		if err := x.Verify(forged); err == nil || !strings.Contains(err.Error(), "changed") {
+			t.Errorf("a forged manifest with the old MACs: %v", err)
+		}
+	}
+	// Without MACs it is refused while archives are encrypted.
+	forged.MAC = nil
+	if err := a.Verify(forged); !errors.Is(err, retention.ErrUnauthenticated) {
+		t.Errorf("a forged plain archive without MACs: %v", err)
+	}
+	// The manifest file, as restore reads it, is refused the same way.
+	b, _ := json.Marshal(forged)
+	if err := os.WriteFile(filepath.Join(folder, m.ID+".json"), b, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err := a.Get(m.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Read(got, func(retention.Doc) error { t.Error("a forged event was read"); return nil }); err == nil {
+		t.Error("a forged archive read")
 	}
 }

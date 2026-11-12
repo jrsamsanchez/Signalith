@@ -803,6 +803,13 @@ type Retention struct {
 	// true; false writes plain gzip files, for tools that read them
 	// directly. Archives already written stay as they are.
 	EncryptArchives *bool `yaml:"encrypt_archives,omitempty"`
+	// AllowUnauthenticatedArchives restores plain archives whose manifest
+	// no key of this server authenticates while archives are encrypted:
+	// ones written plain before encryption was turned on, or before
+	// manifests were authenticated. Off by default, since a forged plain
+	// archive could otherwise stand in for an encrypted one; turn it on
+	// only for as long as such archives are restored.
+	AllowUnauthenticatedArchives bool `yaml:"allow_unauthenticated_archives,omitempty"`
 }
 
 // RetentionInterval returns retention.interval as a duration (1h if unset

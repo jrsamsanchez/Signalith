@@ -317,7 +317,11 @@ It works on OpenSearch 2.17 and 3.x.
 Every server shares these settings. Each snapshot holds Signalith's indices
 (`signalith-*`, `signalith_*` and the tenants' `signalith.t.*`), not OpenSearch's own
 settings or security configuration (`include_global_state: false`), and only copies
-what changed since the one before. The policy is Signalith's: a change made to it in
+what changed since the one before. Archive encryption (`retention.encrypt_archives`)
+doesn't cover snapshots: OpenSearch writes them itself, so events, users and sessions
+in them are as readable as the repository is (passwords and keys inside stay
+encrypted with the master key). Keep the repository on encrypted storage that only
+OpenSearch and its operators can read. The policy is Signalith's: a change made to it in
 OpenSearch is put back within a minute, so change the settings instead.
 
 Days in [cold storage](cold-storage.md) are left out. They are mounted from their own
