@@ -390,8 +390,8 @@ func AuditMessage(a AuditAlert, rec AuditRecord, link string) Message {
 	m := Message{
 		Kind: KindAudit, AuditID: clean(rec.ID, 100), Title: clean(a.Name+": "+what, maxTitle), Urgency: a.Urgency,
 		AuditAlert: clean(a.Name, 100), AuditAction: clean(ev.Action, 100), Created: ev.Time.UTC(), Link: link,
-		AuditTarget: clean(ev.Target, maxEntity), AuditServer: clean(ev.Server, 200),
-		AuditTenant: clean(field(ev, "tenant"), 100), AuditReason: clean(field(ev, "reason"), maxEntity),
+		AuditTarget: shown(ev.Target, maxEntity), AuditServer: clean(ev.Server, 200),
+		AuditTenant: clean(field(ev, "tenant"), 100), AuditReason: shown(field(ev, "reason"), maxEntity),
 	}
 	if ev.Message == ssoFailed {
 		// The reason of a failed single sign-on may quote text the sender
@@ -402,10 +402,10 @@ func AuditMessage(a AuditAlert, rec AuditRecord, link string) Message {
 			m.AuditReason = "code " + code + " (the audit log says more)"
 		}
 	}
-	if u := clean(ev.User, maxEntity); u != "" {
+	if u := shown(ev.User, maxEntity); u != "" {
 		m.Entities = map[string]string{"user": u}
 	}
-	if ip := clean(ev.SourceIP, maxEntity); ip != "" {
+	if ip := shown(ev.SourceIP, maxEntity); ip != "" {
 		if m.Entities == nil {
 			m.Entities = map[string]string{}
 		}

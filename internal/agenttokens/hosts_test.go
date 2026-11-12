@@ -33,6 +33,8 @@ func TestHostKeyFormat(t *testing.T) {
 func TestEnrollCheckRevokeRelease(t *testing.T) {
 	fake := ostest.New(t)
 	ctx := context.Background()
+	defer func(d time.Duration) { missCheck = d }(missCheck)
+	missCheck = 0
 	r := newReg(t, fake.URL, "n1")
 	line, lineSecret, err := r.Create(ctx, "Web servers", PurposeAgent, "sam")
 	if err != nil {
@@ -143,10 +145,8 @@ func TestEnrollCheckRevokeRelease(t *testing.T) {
 	if id, res := r.Check(key3); res != Valid || id.ID != line2.ID || len(hooked) != 1 || hooked[0] != k2.ID {
 		t.Errorf("new key: %+v %v %v", id, res, hooked)
 	}
+	// Revoking line2 frees the name.
 	if _, _, err := r.Revoke(ctx, line2.ID, "sam"); err != nil {
-		t.Fatal(err)
-	}
-	if _, _, err := r.ReleaseHost(ctx, "web-01", "sam"); err != nil {
 		t.Fatal(err)
 	}
 	k2, key2, err = r.Enroll(ctx, line.ID, "web-01", "", "")
@@ -154,19 +154,17 @@ func TestEnrollCheckRevokeRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Revoking the line cuts off its keys, and removes their osquery hosts.
+	// Revoking the line cuts off its keys (they are deleted, see
+	// TestRevokeLineFreesItsNames), and removes their osquery hosts.
 	hooked = nil
 	if _, _, err := r.Revoke(ctx, line.ID, "sam"); err != nil {
 		t.Fatal(err)
 	}
-	if _, res := r.Check(key2); res != Revoked {
+	if _, res := r.Check(key2); res != Unknown {
 		t.Fatalf("after line revoke: %v", res)
 	}
 	if len(hooked) != 2 || hooked[0] != line.ID || hooked[1] != k2.ID {
 		t.Errorf("line revoke hooks %v", hooked)
-	}
-	if h, ok := r.Host("web-01"); !ok || h.Status != StateRevoked {
-		t.Errorf("listed %+v", h)
 	}
 	_, _, err = r.Enroll(ctx, line.ID, "web-02", "", "")
 	wantCode(t, err, CodeRevoked)
@@ -203,8 +201,8 @@ func TestEnrollLoadsWithHosts(t *testing.T) {
 func TestHostKeyFromAnotherServer(t *testing.T) {
 	fake := ostest.New(t)
 	ctx := context.Background()
-	defer func(d time.Duration) { missReload = d }(missReload)
-	missReload = 0
+	defer func(d time.Duration) { missCheck = d }(missCheck)
+	missCheck = 0
 	a, b := newReg(t, fake.URL, "n1"), newReg(t, fake.URL, "n2")
 	line, _, err := a.Create(ctx, "Agents", PurposeAgent, "sam")
 	if err != nil {
@@ -220,16 +218,213 @@ func TestHostKeyFromAnotherServer(t *testing.T) {
 	if id, res := b.Check(key); res != Valid || id.Host != "web-01" {
 		t.Fatalf("other server: %+v %v", id, res)
 	}
-	// Within missReload of a read, an unknown key is refused without one.
-	missReload = time.Hour
 	if _, res := b.Check("sgh_" + strings.Repeat("a", 52)); res != Unknown {
 		t.Errorf("unknown key: %v", res)
 	}
-	missReload = 0
 	if _, _, err := a.ReleaseHost(ctx, "web-01", "sam"); err != nil {
 		t.Fatal(err)
 	}
 	if _, key2, err := b.Enroll(ctx, line.ID, "web-01", "", key); err != nil || key2 == key {
 		t.Fatalf("enroll after release with the old key: %v", err)
+	}
+}
+
+// ING-205: a key nobody made costs one small request (the watched
+// document's version), not a read of every token and key, and within
+// missCheck of the last look not even that.
+func TestUnknownHostKeyCostsOneLook(t *testing.T) {
+	fake := ostest.New(t)
+	ctx := context.Background()
+	defer func(d time.Duration) { missCheck = d }(missCheck)
+	missCheck = 0
+	a, b := newReg(t, fake.URL, "n1"), newReg(t, fake.URL, "n2")
+	line, _, err := a.Create(ctx, "Agents", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Enroll(ctx, line.ID, "web-01", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	random := func() string {
+		k, err := newHostKey()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return k
+	}
+	// The first look reads everything, as b has not seen the watched
+	// document yet; the next ones only look at its version.
+	if err := b.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, res := b.Check(random()); res != Unknown {
+		t.Fatalf("first: %v", res)
+	}
+	fake.Requests()
+	for range 5 {
+		if _, res := b.Check(random()); res != Unknown {
+			t.Fatalf("unknown key: %v", res)
+		}
+	}
+	for _, req := range fake.Requests() {
+		if !strings.Contains(req, "/_mget") {
+			t.Errorf("unknown key made %s", req)
+		}
+	}
+	// Within missCheck of a look: "try again", and nothing asked.
+	missCheck = time.Hour
+	if _, res := b.Check(random()); res != NotLoaded {
+		t.Errorf("within missCheck: %v", res)
+	}
+	if reqs := fake.Requests(); len(reqs) != 0 {
+		t.Errorf("within missCheck: %v", reqs)
+	}
+}
+
+// ING-204: a server that read the keys a moment ago still finds a key
+// made on another server since, and is never sure a key is unknown
+// without looking after it was sent: it says "try again" instead.
+func TestNewHostKeyRightAfterARead(t *testing.T) {
+	fake := ostest.New(t)
+	ctx := context.Background()
+	defer func(d time.Duration) { missCheck = d }(missCheck)
+	missCheck = 0
+	a, b := newReg(t, fake.URL, "n1"), newReg(t, fake.URL, "n2")
+	line, _, err := a.Create(ctx, "Agents", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// b reads everything as Run does, just before the key is made.
+	w, err := b.readWatch(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.loadSince(ctx, w); err != nil {
+		t.Fatal(err)
+	}
+	if _, res := b.Check("sgh_" + strings.Repeat("b", 52)); res != Unknown {
+		t.Fatalf("unknown key: %v", res)
+	}
+	_, key, err := a.Enroll(ctx, line.ID, "web-01", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Within missCheck of b's last look the key is not refused for good.
+	missCheck = time.Hour
+	if _, res := b.Check(key); res != NotLoaded {
+		t.Fatalf("within missCheck: %v", res)
+	}
+	missCheck = 0
+	if id, res := b.Check(key); res != Valid || id.Host != "web-01" {
+		t.Fatalf("after a look: %+v %v", id, res)
+	}
+}
+
+// ING-203: revoking a line deletes its computers' keys, so a line token
+// that leaked cannot keep names taken, or fill MaxHosts, once revoked.
+func TestRevokeLineFreesItsNames(t *testing.T) {
+	fake := ostest.New(t)
+	ctx := context.Background()
+	a, b := newReg(t, fake.URL, "n1"), newReg(t, fake.URL, "n2")
+	leaked, _, err := a.Create(ctx, "Leaked", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, _, err := a.Create(ctx, "Good", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Enroll(ctx, good.ID, "db-01", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	var keys []string
+	for _, h := range []string{"web-01", "web-02"} {
+		_, k, err := a.Enroll(ctx, leaked.ID, h, "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys = append(keys, k)
+	}
+	// One more, made on the other server.
+	if _, _, err := b.Enroll(ctx, leaked.ID, "web-03", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Revoke(ctx, leaked.ID, "sam"); err != nil {
+		t.Fatal(err)
+	}
+	if hosts := a.Hosts(); len(hosts) != 1 || hosts[0].Host != "db-01" {
+		t.Fatalf("hosts after the line's revoke: %+v", hosts)
+	}
+	for _, h := range []string{"web-01", "web-02", "web-03"} {
+		if fake.Source("tt_runtime", hostDocID(h)) != nil {
+			t.Errorf("%s still stored", h)
+		}
+		if a.Enrolled(h) {
+			t.Errorf("%s still taken", h)
+		}
+	}
+	if _, res := a.Check(keys[0]); res != Unknown {
+		t.Errorf("key of the revoked line: %v", res)
+	}
+	// The names are free for the good line, and other servers see it.
+	if _, _, err := b.Enroll(ctx, good.ID, "web-01", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	// Revoking it again changes nothing.
+	if _, _, err := a.Revoke(ctx, leaked.ID, "sam"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Load(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Hosts()) != 2 {
+		t.Errorf("hosts %+v", a.Hosts())
+	}
+}
+
+// Revoking a line removes only its active keys: a key an admin revoked by
+// itself keeps its name taken, and a computer that moved to another line
+// keeps its new key.
+func TestRevokeLineKeepsRevokedAndMovedKeys(t *testing.T) {
+	fake := ostest.New(t)
+	ctx := context.Background()
+	a, b := newReg(t, fake.URL, "n1"), newReg(t, fake.URL, "n2")
+	leaked, _, err := a.Create(ctx, "Leaked", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	good, _, err := a.Create(ctx, "Good", PurposeAgent, "sam")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Enroll(ctx, leaked.ID, "blocked-01", "", ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.RevokeHost(ctx, "blocked-01", "sam"); err != nil {
+		t.Fatal(err)
+	}
+	_, old, err := a.Enroll(ctx, leaked.ID, "moved-01", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The computer moves to the good line on the other server.
+	_, moved, err := b.Enroll(ctx, good.ID, "moved-01", "", old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := a.Revoke(ctx, leaked.ID, "sam"); err != nil {
+		t.Fatal(err)
+	}
+	if fake.Source("tt_runtime", hostDocID("blocked-01")) == nil {
+		t.Error("the key an admin revoked by itself was deleted with the line")
+	}
+	if _, _, err := b.Enroll(ctx, good.ID, "blocked-01", "", ""); err == nil {
+		t.Error("the name an admin revoked became free when its line was revoked")
+	}
+	if fake.Source("tt_runtime", hostDocID("moved-01")) == nil {
+		t.Fatal("the key of a computer that moved to another line was deleted")
+	}
+	if _, res := a.Check(moved); res == Unknown {
+		t.Errorf("the moved computer's new key: %v", res)
 	}
 }

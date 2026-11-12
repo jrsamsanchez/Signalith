@@ -276,7 +276,9 @@ osquery send with the key.
 - **Cut off one computer.** `signalith tokens hosts revoke <name>` (or
   `POST /api/agent-hosts/{host}/revoke`) refuses that computer's key within a few seconds
   on every server and removes its osquery host. Its name stays taken, so nothing can enroll
-  with it again. Revoking the line's token cuts off its computers' keys too.
+  with it again. Revoking the line's token cuts off its computers' keys too, and deletes
+  them, so their names are free again and no longer count towards the limit of 20,000
+  keys (if OpenSearch fails part way, the server logs it; revoke the line again to finish).
 - **Moving a computer to another line.** Run the other line's install line on it. The
   agent shows the key it has (`X-Signalith-Host-Key`), which proves it is the same
   computer, and gets a key for the new line; its old key stops working.
@@ -286,13 +288,19 @@ osquery send with the key.
   `signalith tokens hosts release <name>`; the agent then gets a new key by itself. An
   agent whose key was released goes back to the line's token and asks for a new key at
   once.
+- **At most 20,000 keys**, revoked ones included. From 16,000 on, the server logs a
+  warning about once an hour; at 20,000 new computers get no key and keep sending with
+  their line's token (`409`, `too_many`).
 - **Older servers and agents.** An agent talking to a server older than 0.4.0 keeps
   sending with the line's token, as before. In a [cluster](servers.md), computers get keys
   only once every server runs 0.4.0 or later (cluster level 13, shown on the **Servers**
   page): until then a server answers `409 host_keys_unavailable` and agents keep the
   line's token, so an older server behind the same load balancer never sees a key it
   doesn't know. A server that doesn't know a key yet (one made on another server a moment
-  ago) reads the keys again before it answers. An agent whose key a server didn't know
+  ago) looks whether the keys changed since it last read them, and reads them again if
+  so, before it answers; while it can't tell yet it answers `503` (try again), never
+  `401`. A key that looks right but that nobody made costs one small request to
+  OpenSearch, at most twice a second per server. An agent whose key a server didn't know
   keeps the key and shows it when it asks again, so it gets a new one by itself.
 - **At most 1,000 new keys an hour per line** (5,000 per server). More are answered
   `429` and logged, so a leaked line token can't take every computer name at once. Older agents keep working with the line's

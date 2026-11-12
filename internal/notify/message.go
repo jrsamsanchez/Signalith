@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 )
 
@@ -141,7 +142,7 @@ func NewMessage(f *findings.Finding, link string) Message {
 		if !ok || v == nil {
 			continue
 		}
-		if s := clean(fmt.Sprint(v), maxEntity); s != "" {
+		if s := shown(fmt.Sprint(v), maxEntity); s != "" {
 			if m.Entities == nil {
 				m.Entities = map[string]string{}
 			}
@@ -201,6 +202,14 @@ func clean(s string, max int) string {
 	}, s)
 	s = strings.Join(strings.Fields(s), " ")
 	return cut(s, max)
+}
+
+// shown is clean for a value from an event, which anyone who can get a
+// line into a log controls: characters that hide or disguise text, such
+// as a right-to-left override or a zero-width space, are written as
+// markers like ⟨U+202E⟩ (detect.ShowHidden), as the web UI shows them.
+func shown(s string, max int) string {
+	return cut(detect.ShowHidden(clean(s, len(s))), max)
 }
 
 // cut shortens s to at most max characters.

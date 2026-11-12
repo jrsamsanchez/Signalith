@@ -12,7 +12,7 @@ import (
 )
 
 // A where comparison with a bare name compares with that field when the
-// row has one, as in Splunk (SL-02), and with the text otherwise.
+// rows have one, as in Splunk (SL-02), and with the text otherwise.
 func TestWhereComparesWithAField(t *testing.T) {
 	for _, tc := range []struct {
 		src  string
@@ -31,6 +31,13 @@ func TestWhereComparesWithAField(t *testing.T) {
 		{`| makeresults | eval user="admin", admin="x" | where user="admin"`, 1},
 		{`| makeresults | eval user="admin", admin="x" | where user=adm*`, 1},
 		{`| makeresults | eval a=5, b=3 | where NOT a <= b AND (a >= b OR a=b)`, 1},
+		// A name that is a field on some rows is a field on every row: a
+		// row without it does not match, rather than being compared with
+		// the text (SRCH-210).
+		{`| makeresults count=2 | streamstats count as n | eval user="admin" | eval admin=if(n=1,"x",null()) | where user=admin`, 0},
+		{`| makeresults count=2 | streamstats count as n | eval user="admin" | eval admin=if(n=1,"admin",null()) | where user=admin`, 1},
+		{`| makeresults count=2 | streamstats count as n | eval user="admin" | eval admin=if(n=1,"x",null()) | where user!=admin`, 1},
+		{`| makeresults count=2 | streamstats count as n | eval user=split("admin,b", ",") | eval admin=if(n=1,"x",null()) | where user!=admin`, 1},
 	} {
 		res, err := (&Engine{}).Run(context.Background(), tc.src)
 		if err != nil {
