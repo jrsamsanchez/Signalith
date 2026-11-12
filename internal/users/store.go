@@ -919,6 +919,11 @@ func (s *Store) rehash(name, hash, password string) {
 	if cost, err := bcrypt.Cost([]byte(hash)); err != nil || cost >= hashCost {
 		return
 	}
+	// The new hash is made before the hold is taken, as SetPassword does:
+	// the hold keeps the users file from moving into the shared settings
+	// mid-change, and bcrypt's quarter second need not hold that off.
+	// Nothing read before the hold is trusted after it: the change below
+	// replaces only the very hash that was checked.
 	h, err := HashPassword(password)
 	if err != nil {
 		return

@@ -158,3 +158,39 @@ func TestWasteTimeMatchesStoredCosts(t *testing.T) {
 		t.Error("an unknown name signed in")
 	}
 }
+
+// A rehash makes its hash before taking the hold, and replaces only the
+// hash it checked: a password changed while it waited for the hold stays.
+func TestRehashKeepsAPasswordChangedMeanwhile(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemory()
+	if _, err := st.Create(ctx, NewUser{Username: "olga", Role: Viewer, Password: "correct horse battery"}); err != nil {
+		t.Fatal(err)
+	}
+	old, err := bcrypt.GenerateFromPassword([]byte("correct horse battery"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.b.Change(ctx, "test", "olga", "", func(r *Record) error { r.Hash = string(old); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	changed := ""
+	st.Hold = func() (func(), error) {
+		if changed == "" {
+			// Another change wins the race for the hold.
+			changed = "set"
+			st.Hold = nil
+			if _, err := st.SetPassword(ctx, "olga", "a new staple battery", false); err != nil {
+				t.Error(err)
+			}
+			changed = st.PasswordVersion("olga")
+		}
+		return func() {}, nil
+	}
+	if !st.CheckPassword("olga", "correct horse battery") {
+		t.Fatal("the right password was refused")
+	}
+	if changed == "" || changed == "set" || st.PasswordVersion("olga") != changed {
+		t.Error("the rehash replaced a password changed while it waited")
+	}
+}
