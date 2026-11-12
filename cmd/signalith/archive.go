@@ -24,9 +24,9 @@ import (
 
 const archiveUsage = `Usage:
   signalith archive list    [-c file] [-dir folder]
-  signalith archive verify  [-c file] [-dir folder] <file or id>...
+  signalith archive verify  [-c file] [-dir folder] [-allow-unauthenticated] <file or id>...
   signalith archive decrypt [-c file] [-dir folder] <file or id>...
-  signalith archive restore [-c file] [-dir folder] [-keep-days N] [-confirm] [-offline [-force]] <file or id>...
+  signalith archive restore [-c file] [-dir folder] [-keep-days N] [-confirm] [-offline [-force]] [-allow-unauthenticated] <file or id>...
 
 An archived day is a <index>.ndjson.gz file with a <index>.json manifest
 beside it. Name it by its file path or, for files in the archive folder,
@@ -45,6 +45,15 @@ its progress; -confirm restores even when the disk check asks first.
 -offline restores from the files here instead, for when no server runs:
 it is refused while a server that runs retention is up, unless -force.
 
+Each manifest carries a MAC made with the master key and the cluster key,
+so it cannot be changed without them. While archives are encrypted
+(retention.encrypt_archives), a plain archive whose manifest no key here
+authenticates is refused: it may be a forged file put in place of an
+encrypted one. Archives written plain before encryption was turned on, or
+before manifests had MACs, need -allow-unauthenticated here (verify and
+-offline restore), or retention.allow_unauthenticated_archives: true in
+the server's signalith.yaml for a restore through the server.
+
 restore installs Signalith's index template first, if it is missing, so restored days get
 the same field types as live ones, even on a new OpenSearch.`
 
@@ -61,10 +70,14 @@ func cmdArchive(args []string) error {
 	confirm := fs.Bool("confirm", false, "restore even when the disk check asks first (servers that share their archives)")
 	offline := fs.Bool("offline", false, "restore from the files here, not through the server that runs retention")
 	force := fs.Bool("force", false, "with -offline, restore even while a server runs retention")
+	unauth := fs.Bool("allow-unauthenticated", false, "read plain archives whose manifest no key here authenticates (written before encryption was turned on)")
 	fs.Parse(args[1:])
 	c, err := config.Load(*path)
 	if err != nil {
 		return err
+	}
+	if *unauth {
+		c.Retention.AllowUnauthenticatedArchives = true
 	}
 	folder := c.ArchiveDir()
 	if *dir != "" {

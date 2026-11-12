@@ -17,6 +17,10 @@ server:
   # say a request came over HTTPS, and whose it is.
   trusted_proxies: [172.31.250.2]
   client_header: x-forwarded-for
+  # Caddy carries every visitor's requests, so its connections are not
+  # capped as one client's; each visitor's requests in progress are,
+  # counted by the address Caddy names (WEB-07).
+  shared_addresses: [172.31.250.2]
 opensearch:
   url: https://opensearch:9200
   ca_file: /run/signalith-secrets/opensearch-ca.pem

@@ -449,7 +449,7 @@ func TestAdoptOpenSearch(t *testing.T) {
 	path := filepath.Join(d, "signalith", "signalith.yaml")
 	os.MkdirAll(filepath.Dir(path), 0o700)
 	captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path, "-opensearch", "http://127.0.0.1:9200", "-admin-password", "first-password"}); err != nil {
+		if err := initWithPassword("first-password", "-c", path, "-opensearch", "http://127.0.0.1:9200"); err != nil {
 			t.Fatal(err)
 		}
 	})

@@ -1399,7 +1399,7 @@ type assistantReport struct {
 // handleTestAssistant asks the model in the form one fixed question and
 // says whether it answered.
 func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
-	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.model", "assistant.api_key", "assistant.request_timeout")
+	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.model", "assistant.api_key", "assistant.request_timeout", "assistant.allow_insecure_http")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -1413,6 +1413,10 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 			fields["assistant.provider"] = "Choose Anthropic, or Local model or OpenAI-compatible."
 		case a.URL != "" && config.Origin(a.URL) == "":
 			fields["assistant.url"] = "Enter an address like http://localhost:11434/v1, or leave it empty."
+		case assistant.CheckURL(a.URL) != nil:
+			fields["assistant.url"] = sentence(assistant.CheckURL(a.URL).Error())
+		case c.AssistantInsecure():
+			fields["assistant.url"] = insecureModelURL
 		case a.Provider == assistant.OpenAI && a.Model == "":
 			fields["assistant.model"] = "Enter the model's name: a local model or OpenAI-compatible service needs one, such as llama3.1 with Ollama or gpt-4.1 with OpenAI."
 		case a.Provider == assistant.Anthropic && a.APIKey == "":
@@ -1444,6 +1448,11 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "settings tested", "what", "assistant", "provider", a.Provider, "url", redact.URL(client.URL), "model", client.Model, "ok", rep.OK)
 	writeJSON(w, http.StatusOK, rep)
 }
+
+// insecureModelURL says why a plain http address to a public IP address
+// is not used (see config.AssistantInsecure).
+const insecureModelURL = "This is plain http to a public address, so questions, events, the model's answers and any API key would cross the network unencrypted, " +
+	"and answers changed on the way would become verdicts and queries. Use https://, or turn on Allow plain http to accept the risk."
 
 // explainAssistant words a failed assistant test, and names the setting
 // it points at.
@@ -1501,7 +1510,7 @@ type modelsReport struct {
 // key, only for the address it was saved for), or, when that fails, the
 // ones Signalith knows of. The key never reaches the page.
 func (s *Server) handleAssistantModels(w http.ResponseWriter, r *http.Request) {
-	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.api_key")
+	c, fields, err := s.testValues(r, "assistant.provider", "assistant.url", "assistant.api_key", "assistant.allow_insecure_http")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -1526,12 +1535,23 @@ func (s *Server) handleAssistantModels(w http.ResponseWriter, r *http.Request) {
 		rep.Message = "Enter a whole address, such as http://localhost:11434/v1, to see its models."
 		writeJSON(w, http.StatusOK, rep)
 		return
+	case assistant.CheckURL(a.URL) != nil:
+		rep.Message = sentence(assistant.CheckURL(a.URL).Error())
+		writeJSON(w, http.StatusOK, rep)
+		return
+	case c.AssistantInsecure():
+		rep.Message = "The address is plain http to a public address: use https://, or turn on Allow plain http, to see its models."
+		writeJSON(w, http.StatusOK, rep)
+		return
 	case a.Provider == assistant.Anthropic && a.APIKey == "":
 		rep.Message = "Save an API key to see every model your account can use."
 		writeJSON(w, http.StatusOK, rep)
 		return
 	}
 	client := assistant.New(a.Provider, a.URL, "", a.APIKey)
+	if a.AllowInsecureHTTP {
+		client.AllowPlainHTTP()
+	}
 	sum := sha256.Sum256([]byte(a.APIKey))
 	id := a.Provider + "\x00" + client.URL + "\x00" + hex.EncodeToString(sum[:])
 	s.aiModels.mu.Lock()

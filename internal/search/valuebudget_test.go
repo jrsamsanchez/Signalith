@@ -42,11 +42,12 @@ func TestManyValuesOnManyRowsAreRefused(t *testing.T) {
 			if !strings.Contains(qe.Msg, "MB") {
 				t.Errorf("error %q does not name the limit", qe.Msg)
 			}
-			// Everything the search allocated, kept or not: a few times
-			// the budget at most, where it used to be several GB.
+			// Everything the search allocated, kept or not: at most three
+			// times the budget (it is under 1.5 today), where it used to be
+			// several GB.
 			// (Not under the race detector, where the regexp package
 			// allocates a matcher for every call.)
-			if mb := (after.TotalAlloc - before.TotalAlloc) >> 20; mb > 6*(maxEvalTotal>>20) && !raceOn {
+			if mb := (after.TotalAlloc - before.TotalAlloc) >> 20; mb > 3*(maxEvalTotal>>20) && !raceOn {
 				t.Errorf("the search allocated %d MB before it was refused", mb)
 			}
 			t.Logf("%v (allocated %d MB)", err, (after.TotalAlloc-before.TotalAlloc)>>20)

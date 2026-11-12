@@ -650,9 +650,16 @@ func newFence() string {
 // any copy of them from the data first. Masking comes first, so a stand-in
 // can never rewrite a marker.
 func (r *run) fenced(data string) string {
+	if InstructionLike(data) {
+		r.flagged = true
+	}
 	data = r.mask.Text(data)
 	open, end := "<<<DATA "+r.fence, "END DATA "+r.fence+">>>"
-	data = strings.ReplaceAll(strings.ReplaceAll(data, open, ""), end, "")
+	// Until none is left: removing one copy must not join the text
+	// around it into another.
+	for strings.Contains(data, open) || strings.Contains(data, end) {
+		data = strings.ReplaceAll(strings.ReplaceAll(data, open, ""), end, "")
+	}
 	return open + "\n" + strings.TrimRight(data, "\n") + "\n" + end + "\n"
 }
 

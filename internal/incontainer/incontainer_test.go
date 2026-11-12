@@ -45,3 +45,39 @@ func TestDetect(t *testing.T) {
 		}
 	}
 }
+
+// CRYPTO-06: an LXC, LXD or Proxmox system container is a container, but
+// not an application one, so the master key check does not relax for it
+// on that hint alone; Docker and Kubernetes still do.
+func TestDetectApp(t *testing.T) {
+	probe := func(env map[string]string, files map[string]string) Probe {
+		return Probe{GOOS: "linux", Getenv: func(k string) string { return env[k] },
+			Exists: func(path string) bool { _, ok := files[path]; return ok },
+			ReadFile: func(path string) ([]byte, error) {
+				if s, ok := files[path]; ok {
+					return []byte(s), nil
+				}
+				return nil, errors.New("not found")
+			}}
+	}
+	lxc := map[string]string{"/proc/1/cgroup": "12:pids:/lxc/101/init.scope\n"}
+	if !Detect(probe(nil, lxc)) || DetectApp(probe(nil, lxc)) {
+		t.Error("an LXC system container")
+	}
+	lxd := map[string]string{"/proc/1/cgroup": "0::/lxc.payload.web01/init.scope\n"}
+	if DetectApp(probe(nil, lxd)) {
+		t.Error("an LXD system container counted as an application container")
+	}
+	if !DetectApp(probe(map[string]string{EnvVar: "1"}, lxc)) {
+		t.Error("SIGNALITH_CONTAINER=1 in an LXC container")
+	}
+	for name, p := range map[string]Probe{
+		"Docker":     probe(nil, map[string]string{"/.dockerenv": ""}),
+		"Kubernetes": probe(map[string]string{"KUBERNETES_SERVICE_HOST": "10.96.0.1"}, nil),
+		"containerd": probe(nil, map[string]string{"/proc/1/cgroup": "12:pids:/kubepods/besteffort/pod1/abc\n"}),
+	} {
+		if !DetectApp(p) {
+			t.Errorf("%s is not an application container", name)
+		}
+	}
+}

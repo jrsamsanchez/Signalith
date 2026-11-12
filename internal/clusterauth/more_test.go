@@ -324,7 +324,7 @@ func TestLocksShared(t *testing.T) {
 		}
 	}
 	secret := a.key().LockKey()
-	id := LockID(a.docs.ClusterID(), auth.ScopeAddressAccount, auth.LockKey(secret, "p\x0010.0.0.1\x00jlee"))
+	id := LockID(a.docs.ClusterID(), auth.ScopeAddressAccount, auth.LockKey(secret, "p\x0010.0.0.1\x00"+auth.AccountKey("jlee")))
 	deadline := time.Now().Add(5 * time.Second)
 	for o.fake.Source(runtimeIndex(testPrefix), id) == nil {
 		if time.Now().After(deadline) {
@@ -353,7 +353,7 @@ func TestLocksShared(t *testing.T) {
 		}
 	}
 	// An earlier end does not replace a later one.
-	if err := locksB.Write(ctx, auth.ScopeAddressAccount, auth.LockKey(secret, "p\x0010.0.0.1\x00jlee"), clk.Now()); err != nil {
+	if err := locksB.Write(ctx, auth.ScopeAddressAccount, auth.LockKey(secret, "p\x0010.0.0.1\x00"+auth.AccountKey("jlee")), clk.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if err := locksB.Reload(ctx); err != nil {

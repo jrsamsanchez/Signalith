@@ -4,7 +4,9 @@
 package ingest
 
 import (
+	"encoding/json"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -51,6 +53,9 @@ const (
 	// names cannot leave none for the others' fields for the rest of the
 	// day (ING-216).
 	senderShare = 2
+	// maxClashes caps the type clashes kept for the log between two
+	// writes.
+	maxClashes = 20
 )
 
 // namesBudget is one server's share of maxNewNamesPerIndex when servers
@@ -476,6 +481,8 @@ func validFieldName(name string) bool {
 type fieldBudget struct {
 	mu      sync.Mutex
 	indices map[string]*indexNames // by index name
+	// clashes are the type clashes limitTo found since takeClashes.
+	clashes []TypeClash
 }
 
 type indexNames struct {
@@ -485,6 +492,69 @@ type indexNames struct {
 	paths map[string]bool
 	// bySender counts the names each sender added.
 	bySender map[string]int
+	// kinds is the kind of value (valueKind) that first gave each name
+	// added its type in the index, and firstBy the sender that sent it.
+	kinds   map[string]byte
+	firstBy map[string]string
+	// clashed holds the names whose type clash was reported.
+	clashed map[string]bool
+}
+
+// TypeClash is a sender-chosen field whose value a daily index cannot
+// index: OpenSearch typed the name by the first value it got that day (a
+// number, say), and this value is of another kind (text), so it is kept in
+// the event but not searchable by the field (ING-07). First is the sender
+// that sent the first value, Sender the one whose value clashed: "token:"
+// and an agent token's ID, or "addr:" and an address.
+type TypeClash struct {
+	Index, Field, First, Sender string
+}
+
+// Kinds of value, as OpenSearch's dynamic mapping types them.
+const (
+	kindOther  byte = iota // objects and lists: not checked
+	kindString             // keyword: takes any value
+	kindNumber
+	kindBool
+)
+
+// valueKind is the kind of v.
+func valueKind(v any) byte {
+	switch v.(type) {
+	case string:
+		return kindString
+	case bool:
+		return kindBool
+	case int, int32, int64, uint, uint32, uint64, float32, float64, json.Number:
+		return kindNumber
+	}
+	return kindOther
+}
+
+// fits reports whether a field typed by a value of kind takes v.
+func fits(kind byte, v any) bool {
+	got := valueKind(v)
+	if kind == kindString || kind == kindOther || got == kindOther || got == kind {
+		return true
+	}
+	s, text := v.(string)
+	switch kind {
+	case kindNumber:
+		_, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		return text && err == nil
+	case kindBool:
+		return text && (s == "true" || s == "false")
+	}
+	return true
+}
+
+// takeClashes returns the type clashes found since the last call.
+func (b *fieldBudget) takeClashes() []TypeClash {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	c := b.clashes
+	b.clashes = nil
+	return c
 }
 
 // limit is limitTo with the whole budget, as on a server alone, for no
@@ -551,7 +621,8 @@ func (b *fieldBudget) limitTo(index, day, oldest, sender string, f map[string]an
 				delete(b.indices, k)
 			}
 		}
-		ix = &indexNames{day: day, paths: map[string]bool{}, bySender: map[string]int{}}
+		ix = &indexNames{day: day, paths: map[string]bool{}, bySender: map[string]int{},
+			kinds: map[string]byte{}, firstBy: map[string]string{}, clashed: map[string]bool{}}
 		b.indices[index] = ix
 	}
 	for _, k := range unknown {
@@ -562,6 +633,11 @@ func (b *fieldBudget) limitTo(index, day, oldest, sender string, f map[string]an
 		if isObject, seen := ix.paths[k]; seen {
 			if isObject {
 				drop(k) // "a" when the index already has "a.b"
+			} else if kind, ok := ix.kinds[k]; ok && !ix.clashed[k] && !fits(kind, f[k]) && len(b.clashes) < maxClashes {
+				// The value is kept, as it would be anyway; that it is
+				// not indexed is reported once per index and name.
+				ix.clashed[k] = true
+				b.clashes = append(b.clashes, TypeClash{Index: index, Field: k, First: ix.firstBy[k], Sender: sender})
 			}
 			continue
 		}
@@ -595,6 +671,8 @@ func (b *fieldBudget) limitTo(index, day, oldest, sender string, f map[string]an
 			ix.paths[strings.Join(parts[:i], ".")] = true
 		}
 		ix.paths[k] = false
+		ix.kinds[k] = valueKind(f[k])
+		ix.firstBy[k] = sender
 	}
 	return dropped
 }

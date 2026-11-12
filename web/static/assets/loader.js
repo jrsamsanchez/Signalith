@@ -1,8 +1,8 @@
 // Copyright 2026 The Signalith authors
 // SPDX-License-Identifier: Apache-2.0
 // Reloads the page when one of its scripts or stylesheets fails to load.
-// The server names them under v/<version>/, which only a server of that
-// version serves: behind a load balancer during an upgrade, a page from
+// The server names them under v/<build>/, which only a server of that
+// build serves: behind a load balancer during an upgrade, a page from
 // one version may ask a server of another for them, and get a 404. A
 // reload gets a page and files from one server again. After 5 tries in a
 // row the page says why it may not work. This file is loaded by its plain
@@ -18,13 +18,10 @@
   const note = () => {
     const show = () => {
       if (document.getElementById('upgrade-note')) return;
-      const meta = document.querySelector('meta[name="signalith-version"]');
-      const v = meta ? meta.content : '';
       const div = document.createElement('div');
       div.id = 'upgrade-note';
       div.setAttribute('role', 'alert');
-      div.textContent = 'Signalith is being upgraded; some pages may not work until every server runs the same version as this page' +
-        (v ? ' (' + v + ')' : '') + '. Reload the page in a minute.';
+      div.textContent = 'Signalith is being upgraded; some pages may not work until every server runs the same version as this page. Reload the page in a minute.';
       // Styled here: the stylesheet may be what failed to load.
       Object.assign(div.style, {
         position: 'fixed', left: '16px', right: '16px', top: '16px', zIndex: '1000', padding: '12px 14px',

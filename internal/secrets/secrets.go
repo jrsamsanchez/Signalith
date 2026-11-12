@@ -63,6 +63,9 @@ const (
 	infoReport = "signalith case-report v1 master"
 	// ReportSalt is the HKDF salt of both report signing keys.
 	ReportSalt = "signalith"
+	// infoMAC makes the key that authenticates records which are not
+	// secret but must not be changed, such as archive manifests (MAC).
+	infoMAC = "signalith mac v1"
 )
 
 // sealedForm matches the start of an encrypted value of any version:
@@ -91,6 +94,8 @@ type masterKey struct {
 	// report signs the case reports of a server that is not in a cluster
 	// (ReportKey); it is made from the key with its own HKDF info.
 	report ed25519.PrivateKey
+	// mac authenticates records with HMAC-SHA256 (see MAC).
+	mac []byte
 }
 
 // newMasterKey derives the encryption key and the key id from raw. The
@@ -121,7 +126,11 @@ func newMasterKey(raw []byte) (*masterKey, error) {
 		return nil, err
 	}
 	defer clear(seed)
-	return &masterKey{id: hex.EncodeToString(idb), aead: aead, report: ed25519.NewKeyFromSeed(seed)}, nil
+	mk, err := hkdf.Key(sha256.New, raw, nil, infoMAC, 32)
+	if err != nil {
+		return nil, err
+	}
+	return &masterKey{id: hex.EncodeToString(idb), aead: aead, report: ed25519.NewKeyFromSeed(seed), mac: mk}, nil
 }
 
 // aad binds a value to its key and its setting.

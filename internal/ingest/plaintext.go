@@ -32,6 +32,9 @@ const (
 	RefusedRevoked = "revoked"
 	// RefusedToken: sent with a wrong ingest token, or none.
 	RefusedToken = "token"
+	// RefusedPurpose: sent with an agent token made for another kind of
+	// agent, such as a Linux agent's token on the OpenTelemetry route.
+	RefusedPurpose = "purpose"
 )
 
 // Sender is an agent the Health page warns about: one that sends events

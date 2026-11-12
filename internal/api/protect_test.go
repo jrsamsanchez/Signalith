@@ -46,7 +46,10 @@ func TestSecurityHeadersOnEveryResponse(t *testing.T) {
 	} {
 		resp := send(t, tc.method, ts.URL+tc.path, "{}", nil)
 		csp := resp.Header.Get("Content-Security-Policy")
-		for _, d := range []string{"default-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'"} {
+		if pp := resp.Header.Get("Permissions-Policy"); !strings.Contains(pp, "camera=()") || !strings.Contains(pp, "geolocation=()") {
+			t.Errorf("%s %s: Permissions-Policy %q", tc.method, tc.path, pp)
+		}
+		for _, d := range []string{"default-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'", "require-trusted-types-for 'script'"} {
 			if !strings.Contains(csp, d) {
 				t.Errorf("%s %s (%d): CSP %q lacks %q", tc.method, tc.path, resp.StatusCode, csp, d)
 			}
