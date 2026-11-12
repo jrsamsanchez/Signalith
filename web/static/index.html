@@ -28,6 +28,7 @@
 <symbol id="i-arrow-up-right" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></symbol>
 <symbol id="i-ban" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M4.929 4.929 19.07 19.071"/></symbol>
 <symbol id="i-bell" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"/></symbol>
+<symbol id="i-bell-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M15 8h6"/><path d="M18 5v6"/><path d="M20.002 14.464a9 9 0 0 0 .738.863A1 1 0 0 1 20 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 8.75-5.332"/></symbol>
 <symbol id="i-bell-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M17 17H4a1 1 0 0 1-.74-1.673C4.59 13.956 6 12.499 6 8a6 6 0 0 1 .258-1.742"/><path d="m2 2 20 20"/><path d="M8.668 3.01A6 6 0 0 1 18 8c0 2.687.77 4.653 1.707 6.05"/></symbol>
 <symbol id="i-book-open" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v16"/><path d="M20.001 19A2 2 0 0022 17V5a2 2 0 00-1.999-2L16 3.002A5 5 0 0012 5a5 5 0 00-4-2H4a2 2 0 00-2 2v12a2 2 0 001.999 2H8a5 5 0 014 2 5 5 0 014-2z"/></symbol>
 <symbol id="i-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"/></symbol>
@@ -921,7 +922,8 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
       <div class="page-head__actions">
         <button class="btn btn--secondary" type="button" id="d-scoped" title="Exceptions for every detection, a content pack's rules or a tag's"><svg class="icon" aria-hidden="true"><use href="#i-bell-off"/></svg>Exceptions</button>
         <button class="btn btn--secondary" type="button" id="d-describe" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-wand-sparkles"/></svg>Describe a detection</button>
-        <button class="btn btn--secondary" type="button" id="d-sigma" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-sigma"/></svg>Import Sigma rule</button>
+        <button class="btn btn--secondary" type="button" id="d-export" title="Download the detections made here, to share or keep"><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Export</button>
+        <button class="btn btn--secondary" type="button" id="d-sigma" data-min-role="admin" title="Add a detection someone shared, or a Sigma rule"><svg class="icon" aria-hidden="true"><use href="#i-upload"/></svg>Import rule</button>
         <button class="btn btn--primary" type="button" id="d-new" data-min-role="admin"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg>New detection</button>
       </div>
     </div>
@@ -963,16 +965,34 @@ login-bank.example,Phishing site,,2026-12-31,phishing</pre>
     <dialog class="modal" id="d-sigma-box" aria-labelledby="d-sigma-title">
       <form method="dialog" id="d-sigma-form">
         <div class="modal__head">
-          <div><h2 class="modal__title" id="d-sigma-title">Import a Sigma rule</h2><p class="modal__desc">Paste a <a href="https://github.com/SigmaHQ/sigma" target="_blank" rel="noopener">Sigma</a> rule to turn it into a detection. You review it before saving, and it starts turned off.</p></div>
+          <div><h2 class="modal__title" id="d-sigma-title">Import rules</h2><p class="modal__desc">Paste or choose a detection someone shared, a file of them, or a <a href="https://github.com/SigmaHQ/sigma" target="_blank" rel="noopener">Sigma</a> rule. You review them before anything is added, and each one starts turned off.</p></div>
           <button class="btn btn--ghost btn--icon btn--sm dx-close" type="button" aria-label="Close" id="d-sigma-x"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
         </div>
-        <div class="modal__body">
-          <div class="alert hidden" data-tone="danger" id="d-sigma-error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b>This rule could not be converted.</b><p id="d-sigma-error-text"></p></div></div>
-          <div class="field"><label class="label" for="d-sigma-text">Rule (YAML)</label><textarea class="textarea mono det-code" id="d-sigma-text" rows="14" spellcheck="false" placeholder="title: ...&#10;logsource: ...&#10;detection: ..."></textarea></div>
+        <div class="modal__body" id="d-sigma-step1">
+          <div class="alert hidden" data-tone="danger" id="d-sigma-error" role="alert"><svg class="icon" aria-hidden="true"><use href="#i-circle-alert"/></svg><div><b id="d-sigma-error-title">This could not be read.</b><p id="d-sigma-error-text"></p></div></div>
+          <div class="field"><div class="dx-import__label"><label class="label" for="d-sigma-text">Rules (YAML)</label><label class="btn btn--ghost btn--sm dx-import__file"><svg class="icon" aria-hidden="true"><use href="#i-file-text"/></svg>Choose file<input type="file" id="d-sigma-file" accept=".yaml,.yml,.txt,application/yaml,text/yaml,text/plain" class="sr-only"></label></div><textarea class="textarea mono det-code" id="d-sigma-text" rows="14" spellcheck="false" placeholder="id: ...&#10;title: ...&#10;query: ...&#10;&#10;or a Sigma rule: title, logsource, detection"></textarea></div>
         </div>
+        <div class="modal__body hidden" id="d-sigma-step2"></div>
         <div class="modal__foot">
           <button class="btn btn--ghost" type="button" id="d-sigma-cancel">Cancel</button>
-          <button class="btn btn--primary" type="submit" id="d-sigma-convert">Convert</button>
+          <button class="btn btn--primary" type="submit" id="d-sigma-convert">Continue</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog class="modal" id="d-export-box" aria-labelledby="d-export-title">
+      <form method="dialog">
+        <div class="modal__head">
+          <div><h2 class="modal__title" id="d-export-title">Export detections</h2><p class="modal__desc" id="d-export-desc">One YAML file with the detections made here, to share or keep. Another Signalith adds them with Import rule. Each one is turned off in the file.</p></div>
+          <button class="btn btn--ghost btn--icon btn--sm dx-close" type="button" aria-label="Close" id="d-export-x"><svg class="icon" aria-hidden="true"><use href="#i-x"/></svg></button>
+        </div>
+        <div class="modal__body">
+          <p id="d-export-count"></p>
+          <label class="check"><input type="checkbox" id="d-export-exc"> <span>Include exceptions</span></label>
+          <div class="hint">Exceptions often name your own hosts, users and addresses. Leave them out when sharing outside your team.</div>
+        </div>
+        <div class="modal__foot">
+          <button class="btn btn--ghost" type="button" id="d-export-cancel">Cancel</button>
+          <a class="btn btn--primary" id="d-export-go" href="api/detections?format=yaml" download><svg class="icon" aria-hidden="true"><use href="#i-download"/></svg>Download</a>
         </div>
       </form>
     </dialog>

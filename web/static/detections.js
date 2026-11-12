@@ -1419,16 +1419,19 @@ async function loadDetections() {
   const seq = ++det.seq;
   if (!det.loaded) renderDetectionsSkeleton();
   try {
-    const [res, f24, packs, contentInfo] = await Promise.all([
+    const [res, f24, packs, contentInfo, notify] = await Promise.all([
       api('api/detections'),
       api('api/findings?since=24h&limit=1000').catch(() => null),
       api('api/detections/packs').catch(() => null),
       api('api/detections/content').catch(() => null),
+      // Who hears about each detection's findings: admins only.
+      can('admin') ? api('api/notify').catch(() => null) : null,
     ]);
     if (seq !== det.seq) return;
     detections = res.detections;
     det.packs = packs ? packs.packs : [];
     det.content = contentInfo;
+    det.notify = notify;
     schedulerOn = res.scheduler;
     runsOn = typeof res.runs_on === 'string' ? res.runs_on : null;
     schedulerHere = res.scheduler_here !== false;
@@ -1949,6 +1952,7 @@ function renderDetectionInspector() {
     { icon: 'search', label: 'Open in Search', run: () => openSearch(d.query, '-' + (d.lookback || '24h')) },
     { icon: 'list-filter', label: 'View its findings', run: () => viewDetectionFindings(d.id) },
     { icon: 'download', label: 'Download YAML', href: 'api/detections/' + encodeURIComponent(d.id) + '/yaml', download: true },
+    admin && window.notifyForDetection ? { icon: 'bell-plus', label: 'Notify me when it fires', run: () => window.notifyForDetection(d.id, d.title) } : null,
     del && admin ? 'sep' : null, admin ? del : null,
   ]);
 
@@ -2014,6 +2018,7 @@ function renderDetectionInspector() {
         (d.origin.references || []).length ? ['References', el('div', { class: 'dx-refs' }, ...d.origin.references.slice(0, 5).map((u) => /^https?:\/\//.test(u) ? el('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, u.replace(/^https?:\/\//, '')) : el('span', {}, u)))] : null,
       ])) : null,
       exceptionsSection(d, admin),
+      notifySection(d, admin),
       dxSection('Settings', dxKv([
         ['Repeats', (thr.fields || []).length ? `One finding per ${thr.fields.join(', ')}${thr.window ? ' for ' + thr.window : ''}` : thr.window ? `Held back for ${thr.window}` : 'Every result raises a finding'],
         ['Risk', risk ? `+${risk.score} to ${(risk.objects || []).map((o) => o.field).join(', ') || 'nothing'}${risk.only ? ', no findings' : ''}` : 'None'],
@@ -2210,6 +2215,26 @@ function exceptionWhen(e) {
 
 // exceptionsSection lists a detection's exceptions; admins add a
 // maintenance window or remove one.
+// notifySection says who hears about this detection's findings: the
+// notification rules that send them, by name, channel and least urgency,
+// or that nobody does, with Notify me when it fires to add a rule. Admins
+// only; for others the page cannot read the rules.
+const NOTIFY_LEAST = { critical: 'Critical', high: 'High and critical', medium: 'Medium and up', low: 'Low and up', informational: 'All' };
+function notifySection(d, admin) {
+  const n = det.notify;
+  if (!admin || !n || !n.rules) return null;
+  const chans = new Map((n.channels || []).map((c) => [c.id, c.name]));
+  const rules = n.rules.filter((r) => r.enabled && (r.channels || []).length && (!(r.detections || []).length || r.detections.includes(d.id)));
+  const add = dxBtn('ghost', 'Notify me when it fires', () => window.notifyForDetection && window.notifyForDetection(d.id, d.title), { sm: true, icon: 'bell-plus' });
+  const line = (r) => el('li', {}, el('b', {}, (NOTIFY_LEAST[r.min_urgency] || r.min_urgency || 'All') + ' findings'),
+    (r.detections || []).length ? '' : ' (from any detection)', ' go to ', r.channels.map((c) => chans.get(c) || c).join(', '),
+    el('span', { class: 'hint' }, ' · ', r.name || 'Unnamed rule'));
+  return el('section', { class: 'section' },
+    el('div', { class: 'dx-sec-head' }, el('h3', { class: 'section-title' }, 'Notifications'), n.manage === false ? null : add),
+    rules.length ? el('ul', { class: 'dx-notify' }, ...rules.map(line))
+      : el('p', { class: 'hint' }, d.enabled ? 'Nobody is told when it raises a finding. Findings still show on the Findings page.' : 'Nobody is told when it raises a finding.'));
+}
+
 function exceptionsSection(d, admin) {
   const es = d.exceptions || [];
   const items = es.map((e) => {
@@ -2697,31 +2722,153 @@ $('d-describe-form').addEventListener('submit', async (ev) => {
     describeError(e.problems ? e.problems.join('\n') : e.message);
   } finally { btn.disabled = false; }
 });
+// ---------- sharing: Import rule and Export ----------
+// Import reads a shared file of detections, one detection or a Sigma rule
+// (the server converts it and saves nothing). One rule opens in the
+// editor to review; a file of several lists them, and Add creates the ones
+// that are free, each turned off, with the same call as New detection.
+const imp = { rules: null };
+function impStep(n) {
+  $('d-sigma-step1').classList.toggle('hidden', n !== 1);
+  $('d-sigma-step2').classList.toggle('hidden', n !== 2);
+  $('d-sigma-cancel').textContent = n === 2 ? 'Back' : 'Cancel';
+  if (n === 1) { imp.rules = null; $('d-sigma-convert').textContent = 'Continue'; $('d-sigma-convert').disabled = false; }
+}
+function impError(title, text) {
+  $('d-sigma-error-title').textContent = title;
+  $('d-sigma-error-text').textContent = text;
+  $('d-sigma-error').classList.remove('hidden');
+}
 $('d-sigma').addEventListener('click', () => {
   $('d-sigma-error').classList.add('hidden');
+  impStep(1);
   $('d-sigma-box').showModal();
   $('d-sigma-text').focus();
 });
-for (const id of ['d-sigma-cancel', 'd-sigma-x']) $(id).addEventListener('click', () => $('d-sigma-box').close());
+$('d-sigma-x').addEventListener('click', () => $('d-sigma-box').close());
+$('d-sigma-cancel').addEventListener('click', () => {
+  if (imp.rules) { impStep(1); $('d-sigma-text').focus(); } else $('d-sigma-box').close();
+});
+$('d-sigma-file').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = '';
+  if (!f) return;
+  $('d-sigma-error').classList.add('hidden');
+  if (f.size > 4 * 1024 * 1024) { impError('This file is too big.', `${f.name} is over 4 MB; split it into smaller files.`); return; }
+  $('d-sigma-text').value = await f.text();
+  $('d-sigma-text').focus();
+});
 $('d-sigma-form').addEventListener('submit', async (ev) => {
   ev.preventDefault();
   $('d-sigma-error').classList.add('hidden');
+  if (imp.rules) { addImportedRules(); return; }
   const btn = $('d-sigma-convert');
-  if (!$('d-sigma-text').value.trim()) {
-    $('d-sigma-error-text').textContent = 'Paste a Sigma rule first.';
-    $('d-sigma-error').classList.remove('hidden');
-    return;
-  }
+  if (!$('d-sigma-text').value.trim()) { impError('Nothing to import.', 'Paste a rule or choose a file first.'); return; }
   btn.disabled = true;
   try {
-    const res = await api('api/detections/sigma', { rule: $('d-sigma-text').value });
+    const res = await api('api/detections/convert', { rule: $('d-sigma-text').value });
+    const rules = res.rules || [];
+    if (rules.length === 1 && !rules[0].exists) {
+      $('d-sigma-box').close();
+      $('d-sigma-text').value = '';
+      editDetection({ ...rules[0].detection, enabled: false, source: 'new' }, { warnings: [...(rules[0].warnings || []), ...(rules[0].problems || [])] });
+      return;
+    }
+    imp.rules = rules;
+    renderImportList();
+  } catch (e) {
+    impError('This could not be read.', e.problems ? e.problems.join('\n') : e.message);
+  } finally { if (!imp.rules) btn.disabled = false; }
+});
+
+// renderImportList is the second step for a file of several rules: each
+// with a box to tick, ticked when it can be added as it is.
+function renderImportList() {
+  const rules = imp.rules;
+  rules.forEach((r) => { r.pick = !r.exists && !(r.problems || []).length; r.done = false; r.error = ''; });
+  const box = $('d-sigma-step2');
+  const btn = $('d-sigma-convert');
+  const sync = () => {
+    const n = rules.filter((r) => r.pick && !r.done).length;
+    btn.textContent = n ? `Add ${n} ${n === 1 ? 'detection' : 'detections'}` : 'Add';
+    btn.disabled = !n;
+  };
+  const rows = rules.map((r, i) => {
+    const d = r.detection || {};
+    const why = r.exists ? 'A detection with this ID is already here.'
+      : (r.problems || []).length ? r.problems.join(' ')
+      : (r.warnings || []).length ? `Converted from Sigma, with ${r.warnings.length} ${r.warnings.length === 1 ? 'approximation' : 'approximations'} to review.`
+      : r.format === 'sigma' ? 'Converted from Sigma.' : '';
+    const cb = el('input', { type: 'checkbox', id: 'di-' + i, 'aria-describedby': why ? 'di-why-' + i : null });
+    cb.checked = r.pick;
+    cb.disabled = !r.pick;
+    cb.addEventListener('change', () => { r.pick = cb.checked; sync(); });
+    r.row = el('li', { class: 'dx-import__row' + (r.pick ? '' : ' is-off') },
+      cb,
+      el('label', { for: 'di-' + i, class: 'dx-import__main' },
+        el('span', { class: 'dx-import__title' }, d.title || d.id || 'Untitled', d.severity ? sevBadge(d.severity) : null),
+        el('span', { class: 'mono hint' }, d.id || ''),
+        why ? el('span', { class: 'dx-import__why' + (r.pick ? '' : ' is-bad'), id: 'di-why-' + i }, why) : null));
+    return r.row;
+  });
+  const free = rules.filter((r) => r.pick).length;
+  box.replaceChildren(
+    el('p', {}, `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'} in the file. ${free === rules.length ? 'All of them' : free ? `${free} of them` : 'None of them'} can be added as ${free === 1 ? 'it is' : 'they are'}; each starts turned off.`),
+    el('ul', { class: 'dx-import' }, ...rows));
+  impStep(2);
+  sync();
+}
+
+async function addImportedRules() {
+  const btn = $('d-sigma-convert');
+  btn.disabled = true;
+  btn.textContent = 'Adding…';
+  let added = 0, failed = 0;
+  for (const r of imp.rules) {
+    if (!r.pick || r.done) continue;
+    try {
+      await api('api/detections', { ...r.detection, enabled: false });
+      r.done = true;
+      added++;
+      r.row.classList.add('is-done');
+      r.row.querySelector('input').disabled = true;
+    } catch (e) {
+      failed++;
+      r.pick = false;
+      r.row.classList.add('is-off');
+      r.row.querySelector('input').checked = false;
+      const why = r.row.querySelector('.dx-import__why') || r.row.querySelector('.dx-import__main').appendChild(el('span', { class: 'dx-import__why' }));
+      why.classList.add('is-bad');
+      why.textContent = e.problems ? e.problems.join(' ') : e.message;
+    }
+  }
+  if (added) loadDetections();
+  if (!failed) {
     $('d-sigma-box').close();
     $('d-sigma-text').value = '';
-    editDetection({ ...res.detection, source: 'new' }, { warnings: res.warnings });
-  } catch (e) {
-    $('d-sigma-error-text').textContent = e.problems ? e.problems.join('\n') : e.message;
-    $('d-sigma-error').classList.remove('hidden');
-  } finally { btn.disabled = false; }
+    dxNotify(`Added ${added} ${added === 1 ? 'detection' : 'detections'}, turned off. Test each one, then turn it on.`);
+    return;
+  }
+  impError(`${failed} ${failed === 1 ? 'rule was' : 'rules were'} not added.`, added ? `${added} ${added === 1 ? 'was' : 'were'} added. The list says why the others were not.` : 'The list says why.');
+  btn.textContent = 'Add';
+  btn.disabled = true;
+}
+
+// Export: the detections made here, turned off, as one YAML file.
+$('d-export').addEventListener('click', () => {
+  const mine = (detections || []).filter((d) => d.source === 'custom').length;
+  $('d-export-count').textContent = mine ? `${mine} ${mine === 1 ? 'detection was' : 'detections were'} made here. Built-in and content pack detections are left out: every Signalith has them.`
+    : 'No detection has been made here yet, so the file would be empty. Built-in and content pack detections are left out: every Signalith has them.';
+  $('d-export-exc').checked = false;
+  $('d-export-go').href = 'api/detections?format=yaml';
+  if (mine) $('d-export-go').removeAttribute('aria-disabled'); else $('d-export-go').setAttribute('aria-disabled', 'true');
+  $('d-export-box').showModal();
+});
+$('d-export-exc').addEventListener('change', (ev) => { $('d-export-go').href = 'api/detections?format=yaml' + (ev.target.checked ? '&exceptions=true' : ''); });
+for (const id of ['d-export-x', 'd-export-cancel']) $(id).addEventListener('click', () => $('d-export-box').close());
+$('d-export-go').addEventListener('click', (ev) => {
+  if (ev.currentTarget.getAttribute('aria-disabled') === 'true') { ev.preventDefault(); return; }
+  setTimeout(() => $('d-export-box').close());
 });
 
 // "Save as detection" on the Search page.

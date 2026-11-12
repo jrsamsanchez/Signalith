@@ -279,6 +279,27 @@ What gets sent:
 When you delete a channel, it is taken out of its rules. A rule left with no channel is
 turned off.
 
+### From a detection
+
+Each detection on the **Detections** page has a **Notifications** section (admins see it).
+It lists the rules that send that detection's findings, and where to, or says that nobody
+is told. **Notify me when it fires** opens a new rule for just that detection, set to send
+its findings whatever their urgency. With no channel yet, Signalith asks for one first,
+starting with email, then opens the rule.
+
+### Text messages and phones
+
+Signalith does not send SMS itself. To get alerts on a phone:
+
+- Use the Slack or Teams mobile app, whose push notifications reach the phone, or an
+  email channel to an address the phone gets.
+- For texts and calls with on-call schedules and escalation, send a
+  [webhook](#webhook) to a paging service that accepts one, or point an email channel at
+  the paging service's email intake address.
+
+Email-to-text gateway addresses from mobile carriers are not a good choice: several carriers
+have stopped running them, and the rest may drop or delay messages.
+
 ## Audit alerts
 
 !!! note "Arriving with the next release"

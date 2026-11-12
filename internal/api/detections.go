@@ -44,6 +44,9 @@ func (s *Server) routeDetections(api *router) {
 	api.admin("POST /api/detections/test", s.handleTestDetection)
 	s.routeDetectionDrafts(api)
 	api.admin("POST /api/detections/sigma", s.handleSigma)
+	// Reading a shared file of detections or Sigma rules for review; it
+	// saves nothing.
+	api.admin("POST /api/detections/convert", s.handleReadRules)
 	api.admin("POST /api/detections/enable", s.handleEnableDetections)
 	api.admin("PUT /api/detections/{id}", s.handlePutDetection)
 	api.admin("DELETE /api/detections/{id}", s.handleDeleteDetection)
@@ -154,6 +157,10 @@ type detectionView struct {
 
 func (s *Server) handleListDetections(w http.ResponseWriter, r *http.Request) {
 	if !s.detectionsReady(w) {
+		return
+	}
+	if r.URL.Query().Get("format") == "yaml" {
+		s.exportDetections(w, r, s.Detections.List())
 		return
 	}
 	states, serr := s.Scheduler.StatusCtx(r.Context())

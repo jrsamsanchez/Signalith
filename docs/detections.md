@@ -22,9 +22,10 @@ are on by default. With both [content packs](#content-packs) on, rules are tagge
   it to see which findings it would raise, or **Run now**. Editing a built-in saves
   your version and keeps the original to revert to. Any search can become a
   detection with **Save as detection** on the Search page.
-- **Import Sigma rule** converts a [Sigma](https://github.com/SigmaHQ/sigma) rule to
-  a Signalith query and lists anything it had to approximate (see
-  [Sigma rules](#sigma-rules)).
+- **Import rule** reads a detection someone shared, a whole file of them, or a
+  [Sigma](https://github.com/SigmaHQ/sigma) rule, which it converts to a Signalith query
+  and lists anything it had to approximate (see [Sharing detections](#sharing-detections)
+  and [Sigma rules](#sigma-rules)).
 - **ATT&CK coverage** shows the Enterprise matrix with the techniques covered by
   enabled detections, those covered only by disabled ones, and the gaps.
 
@@ -1722,9 +1723,33 @@ counting over a longer span can cross a threshold that live runs would
 not. Each person runs one backtest at a time, the server at most two, and
 a backtest stops after 3 minutes with what it has so far.
 
+## Sharing detections
+
+To share the detections you wrote, choose **Export** on the Detections page. It downloads
+one YAML file with every detection made on this Signalith (not the built-in or content
+pack ones, which every Signalith already has). Each rule in the file is turned off.
+Exceptions often name your own hosts and users, so they are left out unless you tick
+**Include exceptions**. Viewers can export too, since they can already read every
+detection. Each export is in the [audit log](audit.md) as `detection.export`.
+
+One detection also downloads on its own from **More actions > Download YAML**.
+
+To add detections someone shared, choose **Import rule** and paste the YAML or pick the
+file. It takes a Signalith detection, a file of them, or a Sigma rule. Nothing is saved
+until you say so:
+
+- A single rule opens in the editor, so you can review it, **Test** it against your own
+  data, and save it.
+- A file of several rules lists them. Rules whose ID is already taken, or that have a
+  problem to fix, are listed but not added; the rest are added with **Add**.
+
+Every imported rule starts turned off, and each one added is a `detection.create` line
+in the audit log, as if written by hand. Read a shared query before you turn it on: it
+runs with the server's access to all your data.
+
 ## Sigma rules
 
-**Import Sigma rule** on the Detections page (or `POST /api/detections/sigma`)
+**Import rule** on the Detections page (or `POST /api/detections/sigma`)
 converts a rule and shows the result for review. Supported:
 
 - Log sources `process_creation` (Endpoint), `network_connection` and `firewall`
@@ -1789,11 +1814,13 @@ Imported rules start disabled with a 5 minute schedule and 10 minute lookback.
 | `POST /api/detections` | Create (400 lists every problem) |
 | `GET`, `PUT`, `DELETE /api/detections/{id}` | Read, save, delete or revert |
 | `GET /api/detections/{id}/yaml` | Export as YAML |
+| `GET /api/detections?format=yaml` | Export every detection made here as one YAML file, turned off; `&exceptions=true` keeps their exceptions |
 | `POST /api/detections/test` | Run an unsaved detection; returns rows and titles, raises nothing |
 | `POST /api/detections/draft` | `{"description": "...", "mode": "auto"}`: draft a detection from plain English (admin). `mode` is `auto` (the AI model when one is set up), `rules` (offline) or `ai`. Returns the draft with its steps, warnings and similar detections; nothing is saved |
 | `POST /api/detections/backtest` | `{"detection": {...}, "window": "30d"}`: what an unsaved detection would have raised over a past window of 1h to 90d (admin; 429 while one of yours runs). Raises nothing |
 | `POST /api/detections/{id}/run` | Run now on this server and raise findings (admin). Searches the lookback up to now, does not change the schedule, and is recorded as the detection's last Run now with who ran it |
 | `POST /api/detections/sigma` | Convert a Sigma rule (YAML body, or JSON `{"rule": "..."}`) |
+| `POST /api/detections/convert` | Read a file of shared rules (YAML body, or JSON `{"rule": "..."}`): Signalith detections and Sigma rules, up to 500 and 4 MB. Returns each rule with its problems and whether its ID is taken; nothing is saved (admin) |
 | `GET /api/detections/packs` | Content packs with their rule IDs, how many are on, and counts by severity |
 | `GET /api/detections/content` | Content update status: the version in use, whether it is an update, the last check and the `content_updates` mode |
 | `POST /api/detections/content/check` | Download and install a newer content update (admin; 502 with the reason when it fails) |
