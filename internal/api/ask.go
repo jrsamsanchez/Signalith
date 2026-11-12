@@ -108,14 +108,47 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 			s.Log.Info("question translated with AI", "audit", true, "by", userOf(r), "model", ai.Name(), "sent_to", sentTo, "chars_sent", len(req.Question)+len(res.Query))
 		}
 	}
+	fansOut := false
 	if q, err := query.Parse(resp["query"].(string)); err == nil {
 		resp["query"] = q.String()
 		resp["explanation"] = Explain(q)
+		fansOut = runsMoreSearches(q)
 	}
 	// run tells the Search page whether to run the query at once: the AI
-	// model's, or the translator's when it understood the question.
-	resp["run"] = resp["source"] == "ai" || res.Confidence >= aiThreshold
+	// model's, or the translator's when it understood the question. A
+	// model's query that runs more searches of its own (map, join,
+	// subsearches) waits for the analyst: a hostile or intercepted model
+	// endpoint could otherwise pick an expensive one that runs with the
+	// analyst's limits.
+	resp["run"] = resp["source"] == "ai" && !fansOut || resp["source"] != "ai" && res.Confidence >= aiThreshold
+	if resp["source"] == "ai" && fansOut {
+		resp["run_note"] = "The model's query runs more searches of its own (map, join or a subsearch), so check it and run it yourself."
+	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// fanOutCommands are commands that run searches of their own.
+var fanOutCommands = map[string]bool{"map": true, "join": true, "append": true, "appendpipe": true, "union": true, "multisearch": true, "set": true}
+
+// runsMoreSearches reports whether q runs searches besides its own: a
+// subsearch in [ ] among its terms or in a where, or a command such as
+// map or join.
+func runsMoreSearches(q *query.Query) bool {
+	found := false
+	mark := func(*query.Subsearch) { found = true }
+	query.WalkSubsearches(q.Search, mark)
+	for _, c := range q.Commands {
+		switch c := c.(type) {
+		case *query.Where:
+			query.WalkSubsearches(c.Expr, mark)
+		case *query.InputLookup:
+			found = found || c.Append
+		}
+		if fanOutCommands[c.Name()] {
+			found = true
+		}
+	}
+	return found
 }
 
 // AssetHints lets the translator recognize bare user and host names from
