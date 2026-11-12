@@ -86,17 +86,34 @@ const UnknownName = "(not a known account)"
 // are paused after too many wrong passwords.
 const addressPaused = "sign-ins from this address are paused"
 
+// recordsLeftOut is the record of failed sign-ins too many to log one by
+// one in a minute.
+const recordsLeftOut = "audit records left out"
+
 // AuditAlerts are the built-in audit alerts, in the order the page lists
 // them. A record that more than one matches goes to a channel once, as
 // the first of them.
 var AuditAlerts = []AuditAlert{
 	{
 		ID: "audit_integrity", Name: "Audit records lost or settings tampered with", Urgency: "critical",
-		Description: "Audit records could not be kept, or shared settings, the cluster document or a sign-in session were changed in OpenSearch outside Signalith.",
+		Description: "Audit records could not be kept; shared settings, the cluster document or a sign-in session were changed in OpenSearch outside Signalith; the cluster key was exported or imported; or a passkey that may have been copied was used.",
 		actions:     []string{audit.ActionLost, "config.tamper", "session.tamper"},
 		messages: []string{
 			"a response action was not run: its audit record could not be written",
 			"a response action ran but its result could not be written to the audit log",
+			"exported the cluster key", "imported a cluster key",
+			"refused to run a request: it may have been forged or replayed by someone who can write to OpenSearch",
+			"shared documents that no cluster key signed were not signed with the new key",
+			"the rule tuning stored in OpenSearch fails the checks of a save: no sensor gets it until an admin saves it again",
+			"passkey refused: its counter went backwards, so it may have been copied",
+		},
+	},
+	{
+		ID: "ai_masked_value", Name: "AI went after a masked value", Urgency: "high",
+		Description: "The AI model, investigating a finding, searched for a value that masking hid from it, so the finding or its data may carry instructions aimed at the model. The investigation was stopped.",
+		messages: []string{
+			"Investigate with AI stopped: the model searched for a masked value",
+			"AI first pass stopped: the model searched for a masked value",
 		},
 	},
 	{
@@ -107,22 +124,40 @@ var AuditAlerts = []AuditAlert{
 	},
 	{
 		ID: "lockout", Name: "Sign-ins locked out", Urgency: "high",
-		Description: "Too many wrong passwords or codes lock an account, or pause sign-ins from one address.",
-		messages:    failedSignIns,
+		Description: "Too many wrong passwords or codes lock an account or pause sign-ins from one address, or so many sign-ins fail that some are left out of the audit log.",
+		messages:    append(slices.Clone(failedSignIns), recordsLeftOut),
 		prefixes:    []string{addressPaused},
 		check: func(ev audit.Event) bool {
-			return strings.HasPrefix(ev.Message, addressPaused) || field(ev, "locked_out") == "true"
+			return strings.HasPrefix(ev.Message, addressPaused) || ev.Message == recordsLeftOut || field(ev, "locked_out") == "true"
 		},
 	},
 	{
 		ID: "access_change", Name: "Users, roles and two-step sign-in change", Urgency: "high",
-		Description: "A user is added, changed, turned off or deleted, gets another role or a new password, or loses two-step sign-in; or the directory settings change.",
+		Description: "A user is added, changed, turned off or deleted, gets another role or a new password, adds or removes a passkey, makes or uses a recovery code, links a chat account or loses two-step sign-in; the built-in admin is turned on again, renamed or gets a new password; or the directory settings change.",
 		messages: []string{
 			"user created", "user changed", "user deleted", "user disabled", "user enabled", "user role changed",
-			"password reset", "two-step sign-in turned off", "two-step sign-in reset", "authenticator app turned off",
-			"passkeys removed", "directory user's role changed", "directory user lost access", "directory settings changed",
+			"password reset", "password changed", "two-step sign-in turned off", "two-step sign-in reset", "authenticator app turned off",
+			"passkey added", "passkey removed", "passkeys removed", "new recovery codes made", "recovery code used",
+			"chat account linked",
+			"turned the built-in admin on again", "changed the built-in admin's password for every server of the cluster",
+			"renamed the built-in admin for every server of the cluster",
+			"directory user's role changed", "directory user lost access", "directory settings changed",
 		},
 		actions: []string{"users.create"},
+	},
+	{
+		ID: "detection_change", Name: "Detections, exceptions and responses change", Urgency: "high",
+		Description: "Detections are saved or turned off; a content update is uploaded or a lookup table saved; an exception is added or approved for one detection, many or from a finding; sensor rule tuning or behavior baselines change; response actions or playbooks change; or an endpoint is unblocked.",
+		actions: []string{
+			"detection.enable", "detection.save", "detection.exception_add", "detection.scoped_exception_add",
+			"finding.suppress", "respond.change", "playbook.change",
+		},
+		messages: []string{
+			"detection exception approved", "sensor rule tuning saved", "behavior baseline settings saved",
+			"behavior baseline reset", "endpoint unblocked", "content update uploaded", "lookup table saved",
+		},
+		// Turning detections on is no way to hide anything.
+		check: func(ev audit.Event) bool { return ev.Action != "detection.enable" || field(ev, "enabled") != "true" },
 	},
 	{
 		ID: "tenant_change", Name: "Tenants change", Urgency: "high",
@@ -132,22 +167,35 @@ var AuditAlerts = []AuditAlert{
 	},
 	{
 		ID: "token_change", Name: "Tokens made or revoked", Urgency: "medium",
-		Description: "An API, agent, SCIM, metrics or cluster join token is made or revoked.",
+		Description: "An API, agent, SCIM, metrics or cluster join token is made or revoked, or a server is approved to join the cluster, joins it, or is refused because it is not the one expected.",
 		messages: []string{
 			"agent token created", "agent token revoked", "SCIM token created", "metrics scrape token created",
 			"join token made", "join token revoked", "shared agent token accepted again",
+			"server approved to join the cluster",
+			"cluster.approve refused: the fingerprint does not match",
+			"cluster.approve refused: the server would take another member's place",
 		},
-		actions: []string{"api_token.create", "api_token.revoke"},
+		actions: []string{"api_token.create", "api_token.revoke", "cluster.approve", "cluster.join"},
 	},
 	{
 		ID: "settings_change", Name: "Settings change", Urgency: "medium",
-		Description: "Settings, notifications, retention, ticketing, agent collection or the cluster's keys and certificate authority change.",
+		Description: "Settings, notifications, retention, ticketing, agent collection or the cluster's keys and certificate authority change, or the shared settings are exported to files.",
 		messages: []string{
 			"settings saved", "notification settings changed", "retention settings changed", "ticketing connections changed",
 			"agent collection settings changed", "endpoint settings saved", "vulnerability scan settings saved",
 			"accepted the shared settings restored in OpenSearch", "cluster key rotation asked for",
 			"certificate authority chosen for the cluster", "asked to replace the cluster's certificate authority",
+			"exported the shared settings to files", "asked for a rotation of the cluster key",
+			"made a new cluster key and signed the shared settings with it",
+			"asked a server to publish its certificate authority as the cluster's",
+			"published this server's certificate authority as the cluster's, as an admin chose",
+			"gave the cluster its certificate authority's key again", "founded the cluster from the command line",
+			"reset a shared setting to its default for every server of the cluster", "reset one of this server's own settings",
+			"restored the shared settings from this server's copy", "retired the shared settings for a downgrade",
+			"new web address confirmed", "vulnerability scan login saved",
+			"cluster.opensearch-ca: replaced OpenSearch's certificate authority",
 		},
+		actions: []string{"retention.confirm"},
 	},
 	{
 		ID: "deletions", Name: "Deletions", Urgency: "medium",
@@ -157,6 +205,11 @@ var AuditAlerts = []AuditAlert{
 			"sample data remove started", "hunting notebook deleted", "case file removed", "retention run started by hand",
 		},
 		actions: []string{"detection.delete", "intel.feed_delete", "intel.indicator_delete", "cluster.remove"},
+	},
+	{
+		ID: "live_query", Name: "Live queries run on endpoints", Urgency: "medium",
+		Description: "Someone sends a live query to endpoints, which can read their files and registry.",
+		messages:    []string{"live query sent"},
 	},
 	{
 		ID: "admin_signin", Name: "An admin signs in", Urgency: "medium",
