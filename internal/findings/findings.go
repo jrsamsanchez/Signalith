@@ -76,8 +76,11 @@ type Finding struct {
 	RespondedAt *time.Time `json:"responded_at,omitempty"`
 	Created     time.Time  `json:"created"`
 	Updated     time.Time  `json:"updated"`
-	Comments    []Comment  `json:"comments,omitempty"`
-	History     []Change   `json:"history,omitempty"`
+	// AI is the AI first pass's note on the finding: a suggestion for
+	// the analyst, never a change to the finding's triage.
+	AI       *AITriage `json:"ai_triage,omitempty"`
+	Comments []Comment `json:"comments,omitempty"`
+	History  []Change  `json:"history,omitempty"`
 }
 
 // Comment is an analyst note.
@@ -124,7 +127,28 @@ type Filter struct {
 	After *Cursor
 	// Due keeps findings due by a time (see DueWithin).
 	Due *DueWithin
+	// AI keeps findings the AI first pass judged so ("real", "benign",
+	// "unsure"), or with AINone, those it has not looked at.
+	AI []string `json:"ai,omitempty"`
+	// AISince keeps findings the AI first pass looked at, at or after
+	// this time, whatever it made of them.
+	AISince time.Time
 }
+
+// AITriage is what the AI first pass made of a finding. Verdict is
+// "real", "benign" or "unsure"; a pass that failed has Error instead.
+type AITriage struct {
+	Verdict    string    `json:"verdict,omitempty"`
+	Confidence string    `json:"confidence,omitempty"`
+	Summary    string    `json:"summary,omitempty"`
+	Model      string    `json:"model,omitempty"`
+	At         time.Time `json:"at"`
+	Error      string    `json:"error,omitempty"`
+}
+
+// AINone asks a filter for findings the AI first pass has not looked
+// at; the other values are its verdicts.
+const AINone = "none"
 
 // Update is a triage change. Nil fields stay as they are.
 type Update struct {

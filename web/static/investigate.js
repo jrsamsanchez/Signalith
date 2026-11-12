@@ -31,6 +31,36 @@ function invSkipPreview(v) {
   return false;
 }
 
+// aiTriageChip is the queue's tag for the AI first pass's verdict.
+function aiTriageChip(f) {
+  const a = f.ai_triage;
+  if (!a || !a.verdict) return null;
+  const v = INV_VERDICT[a.verdict] || INV_VERDICT.unsure;
+  return el('span', { class: 'badge ai-chip ' + v.badge, title: `AI first pass (a suggestion, not a decision): ${v.label.toLowerCase()}, ${a.confidence || 'low'} confidence` },
+    icon('sparkles', 'icon--xs'), 'AI: ' + v.label.toLowerCase());
+}
+
+// findingFirstPass is the AI first pass's note on a finding's Overview:
+// what the model made of it on its own, as a suggestion only.
+function findingFirstPass(f) {
+  const a = f.ai_triage;
+  if (!a) return null;
+  const when = el('span', { title: fmtTime(a.at) }, ago(a.at));
+  if (a.error) {
+    return el('section', { class: 'section ai-pass' },
+      el('h3', { class: 'section-title' }, 'AI first pass'),
+      el('p', { class: 'dx-hint' }, `The AI model could not look at this finding (${a.error.replace(/\.$/, '')}). `, when, '.'));
+  }
+  const v = INV_VERDICT[a.verdict] || INV_VERDICT.unsure;
+  return el('section', { class: 'section ai-pass' },
+    el('h3', { class: 'section-title' }, 'AI first pass'),
+    el('div', { class: 'ai-pass__note', 'data-tone': v.tone },
+      el('div', { class: 'ai-pass__head' }, el('span', { class: 'badge ' + v.badge }, icon(v.icon, 'icon--xs'), v.label),
+        el('span', { class: 'muted' }, `${a.confidence || 'low'} confidence`)),
+      el('p', { class: 'ai-pass__text' }, a.summary || 'The model gave no summary.')),
+    el('p', { class: 'dx-hint' }, 'A suggestion from ', a.model || 'the AI model', ', ', when, ', made without a person asking. It changed nothing; check it before you act on it.'));
+}
+
 // findingInvestigate is the AI investigation section on a finding's
 // Overview: the last verdict when there is one, else the button.
 function findingInvestigate(f) {
