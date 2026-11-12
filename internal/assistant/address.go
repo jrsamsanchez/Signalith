@@ -23,13 +23,20 @@ import (
 // link-local addresses.
 
 // blockedPrefixes are address ranges no model server uses: link-local
-// (where cloud metadata services answer, such as 169.254.169.254) and
-// AWS's IPv6 metadata range.
+// (where cloud metadata services answer, such as 169.254.169.254), AWS's
+// IPv6 metadata range, Google Cloud's IPv6 metadata address and Alibaba
+// Cloud's metadata address.
 var blockedPrefixes = []netip.Prefix{
 	netip.MustParsePrefix("169.254.0.0/16"),
 	netip.MustParsePrefix("fe80::/10"),
 	netip.MustParsePrefix("fd00:ec2::/32"),
+	netip.MustParsePrefix("fd20:ce::254/128"),
+	netip.MustParsePrefix("100.100.100.200/32"),
 }
+
+// metadataNames are host names of cloud metadata services, refused when
+// a proxy is used and this server cannot resolve them itself.
+var metadataNames = []string{"metadata", "metadata.google.internal", "metadata.goog", "instance-data", "instance-data.ec2.internal"}
 
 // Blocked reports whether a is an address the model is never reached at.
 func Blocked(a netip.Addr) bool {
@@ -113,12 +120,55 @@ func refuseBlocked(_, address string, _ syscall.RawConn) error {
 }
 
 // transport is the model client's transport: Go's default, with
-// connections to blocked addresses refused.
+// connections to blocked addresses refused. Through a proxy (HTTPS_PROXY,
+// HTTP_PROXY and NO_PROXY, see docs/outbound.md) the connection is to the
+// proxy, so the model's host is resolved and checked before the proxy is
+// used (AI-03).
 func transport() *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
 	d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: refuseBlocked}
 	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 		return d.DialContext(ctx, network, addr)
 	}
+	t.Proxy = checkedProxy(http.ProxyFromEnvironment, net.DefaultResolver.LookupNetIP)
 	return t
+}
+
+// checkedProxy returns a Proxy function that uses the proxy from proxy
+// only once the request's host is not a blocked address, as written or
+// as resolved with lookup. A name this server cannot resolve (only the
+// proxy can, say) passes, unless it is a cloud metadata service's name.
+func checkedProxy(proxy func(*http.Request) (*neturl.URL, error),
+	lookup func(ctx context.Context, network, host string) ([]netip.Addr, error)) func(*http.Request) (*neturl.URL, error) {
+	return func(req *http.Request) (*neturl.URL, error) {
+		u, err := proxy(req)
+		if err != nil || u == nil {
+			return u, err
+		}
+		host := strings.TrimSuffix(strings.ToLower(req.URL.Hostname()), ".")
+		blocked := fmt.Errorf("%s is a link-local or cloud metadata address, which no model server uses", host)
+		if a, err := netip.ParseAddr(host); err == nil {
+			if Blocked(a) {
+				return nil, blocked
+			}
+			return u, nil
+		}
+		ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
+		defer cancel()
+		addrs, err := lookup(ctx, "ip", host)
+		if err != nil {
+			for _, n := range metadataNames {
+				if host == n {
+					return nil, blocked
+				}
+			}
+			return u, nil
+		}
+		for _, a := range addrs {
+			if Blocked(a) {
+				return nil, blocked
+			}
+		}
+		return u, nil
+	}
 }

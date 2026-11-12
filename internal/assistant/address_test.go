@@ -5,7 +5,11 @@ package assistant
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"net/http/httptest"
+	"net/netip"
+	neturl "net/url"
 	"strings"
 	"testing"
 )
@@ -21,6 +25,8 @@ func TestModelAddressChecks(t *testing.T) {
 		"http://[fe80::1]:11434/v1",
 		"http://[fd00:ec2::254]/",
 		"http://[::ffff:169.254.169.254]/",
+		"http://[fd20:ce::254]/computeMetadata/v1",
+		"http://100.100.100.200/latest/meta-data",
 	} {
 		if CheckURL(bad) == nil {
 			t.Errorf("CheckURL(%q) passed", bad)
@@ -70,5 +76,48 @@ func TestModelClientRefusesLinkLocal(t *testing.T) {
 	_, err := c.ListModels(context.Background())
 	if err == nil || !strings.Contains(err.Error(), "link-local") {
 		t.Errorf("ListModels to 169.254.169.254: %v", err)
+	}
+}
+
+// AI-03: through a proxy from the environment the connection is to the
+// proxy, so the model's host is checked before the proxy is used.
+func TestModelClientChecksTheHostBehindAProxy(t *testing.T) {
+	proxyURL, _ := neturl.Parse("http://proxy.internal:3128")
+	viaProxy := func(*http.Request) (*neturl.URL, error) { return proxyURL, nil }
+	lookup := func(_ context.Context, _, host string) ([]netip.Addr, error) {
+		switch host {
+		case "evil.example":
+			return []netip.Addr{netip.MustParseAddr("169.254.169.254")}, nil
+		case "gcp6.example":
+			return []netip.Addr{netip.MustParseAddr("fd20:ce::254")}, nil
+		case "models.example":
+			return []netip.Addr{netip.MustParseAddr("203.0.113.9")}, nil
+		}
+		return nil, errors.New("no such host")
+	}
+	p := checkedProxy(viaProxy, lookup)
+	for raw, ok := range map[string]bool{
+		"http://169.254.169.254/latest":            false,
+		"http://100.100.100.200/latest":            false,
+		"http://evil.example/v1":                   false,
+		"http://gcp6.example/v1":                   false,
+		"http://metadata.google.internal/":         false,
+		"https://models.example/v1":                true,
+		"https://only-the-proxy-resolves.example/": true,
+		"http://10.0.0.5:11434/v1":                 true,
+	} {
+		req := httptest.NewRequest("GET", raw, nil)
+		u, err := p(req)
+		if ok && (err != nil || u != proxyURL) {
+			t.Errorf("%s: proxy = %v, %v; want the proxy", raw, u, err)
+		}
+		if !ok && (err == nil || !strings.Contains(err.Error(), "metadata")) {
+			t.Errorf("%s: proxy = %v, %v; want refused", raw, u, err)
+		}
+	}
+	// The client's own transport goes through the check.
+	tr := New(OpenAI, "http://169.254.169.254/v1", "m", "").HTTP.Transport.(*http.Transport)
+	if tr.Proxy == nil {
+		t.Fatal("the model client has no proxy function")
 	}
 }
