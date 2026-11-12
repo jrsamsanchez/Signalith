@@ -847,7 +847,8 @@ These are built in too, and are not part of the report:
   shown as a marked `⟨U+202E⟩`. U+202E, for example, would otherwise make `invoice`,
   U+202E, `fdp.exe` look like `invoiceexe.pdf`. The stored events are unchanged; finding
   titles, which copy values from events and become the titles of new cases, are stored with
-  the marker.
+  the marker. Entity values in chat, mail and webhook alerts and the text of a case report
+  show the marker too; the report's signed data keeps the characters, written as `\u202e`.
 - **Logs**: values in log lines are cut to a sensible length, and the Windows service log
   (`C:\ProgramData\Signalith\signalith.log`) rotates at 10 MB, keeping 5 old files. The Docker
   quick start caps container logs the same way; under systemd, journald limits the log.

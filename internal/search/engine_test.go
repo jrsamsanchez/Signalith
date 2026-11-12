@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strconv"
 	"strings"
@@ -134,6 +135,25 @@ func TestToDateMath(t *testing.T) {
 		if in == "@w" && time.UnixMilli(ms).UTC().Weekday() != time.Sunday {
 			t.Errorf("@w = %v, want a Sunday", time.UnixMilli(ms).UTC())
 		}
+	}
+}
+
+// stats by _time gives _time as events carry it, RFC 3339 text, not the
+// milliseconds OpenSearch keys a date with (SRCH-211).
+func TestStatsByTimeGivesTimeText(t *testing.T) {
+	at := time.Now().UTC().Truncate(time.Millisecond).Add(-time.Hour)
+	fs := &fakeStore{responses: []string{fmt.Sprintf(`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"buckets":[
+		{"key":{"k0":%d,"k1":"web1"},"doc_count":2},{"key":{"k0":null,"k1":"web2"},"doc_count":1}]}}}`, at.UnixMilli()),
+		`{"hits":{"total":{"value":3}},"aggregations":{"groups":{"buckets":[]}}}`}}
+	res, err := (&Engine{Store: fs}).Run(context.Background(), `* | stats count by _time, host | eval d=strftime(_time, "%F")`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Rows) != 2 || res.Rows[0]["_time"] != at.Format(time.RFC3339Nano) || res.Rows[0]["d"] != at.Format("2006-01-02") {
+		t.Errorf("rows = %v, want _time %s", res.Rows, at.Format(time.RFC3339Nano))
+	}
+	if res.Rows[1]["_time"] != nil {
+		t.Errorf("an event without a time = %v", res.Rows[1])
 	}
 }
 
