@@ -188,6 +188,25 @@ signalith report keys
 signalith report revoke-key -reason "the master key was in a leaked backup" 3fa9c1d27b40
 ```
 
+What a signature proves, and what it doesn't:
+
+- **A report is only as authentic as the master key or cluster key is secret.** The
+  report key is made from one of them, so whoever can read `master.key` (or holds the
+  cluster key, as every server of a cluster does) can sign reports, for any tenant and
+  with any date in them. One key signs for every tenant; the tenant a report is for is
+  part of what is signed, and checked.
+- **The server's own key list is no stronger than its state folder.** Someone who can
+  write `report-keys.json` could add a key of their own, so reports they forged would
+  verify on that server. (A cluster's list is in its shared settings, signed with the
+  cluster key.) For a report that matters, such as one handed to an auditor or a court,
+  download the key list once from a server you trust, keep it apart, and check reports
+  with `signalith report verify -keys <that file>` rather than against the server's
+  list of the day.
+- **A signature does not prove when a report was made.** To show that a report existed
+  by a date, keep the SHA-256 the [audit log](audit.md) records for each export, or
+  store the report where it cannot be changed afterwards (write-once storage, or a
+  timestamping service).
+
 The APIs are `POST /api/cases/reports/verify` (the file as the request body),
 `GET /api/cases/reports/keys` (a tenant's users see the keys, not who revoked one or
 why), and `POST /api/cases/reports/keys/{id}/revoke` (admins, with

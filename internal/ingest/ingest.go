@@ -363,6 +363,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	docs := make([]store.IndexedDoc, 0, len(events))
 	var reserved []string
 	ctxOrigin := OriginFrom(ctx)
+	enrolled := cachedEnrolled(enrolledFrom(ctx))
 	// Linux program starts, joined from their audit records, are stored
 	// too. Each takes its ID from its EXECVE record's.
 	for i := range min(len(ids), len(events)) {
@@ -399,6 +400,7 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 				o = ctxOrigin
 			}
 			o.stamp(ev.Fields)
+			o.stampHost(ev.Fields, enrolled)
 			setSource(ev.Fields, o.Intake)
 			switch {
 			case o.TokenID != "":
@@ -509,6 +511,15 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 	if res.FieldsDropped > 0 {
 		p.warn("fields", "some event fields were not indexed (invalid names, too many fields, or too many new field names for one day); their values stay in the raw event",
 			"fields", res.FieldsDropped)
+	}
+	// Each once per index and field (fieldBudget.limitTo), so a sender
+	// whose values another sender's typed out of the index can be told
+	// (ING-07).
+	for _, c := range p.names.takeClashes() {
+		if p.Log != nil {
+			p.Log.Warn("a field's value could not be indexed: the first value of that name sent today gave it another type (a number, say), so values of other kinds are kept in the event but are not searchable by the field",
+				"index", c.Index, "field", c.Field, "typed_by", c.First, "sender", c.Sender)
+		}
 	}
 	if len(reserved) > 0 {
 		p.warn("reserved", "some events carried fields that only Signalith sets, such as the sample-data marker; the events were stored without those fields",

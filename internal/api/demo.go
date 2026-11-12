@@ -4,10 +4,9 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -45,9 +44,13 @@ const demoRoute = "POST /api/demo"
 
 // demoUser and sourceDemo name the demo's visitor (demoPrincipal). The
 // source is what tells it apart: no user of the users file has it, so a
-// local user who happens to be called demo is never taken for it.
+// local user who happens to be called demo is never taken for it. The
+// name holds a colon, which no username does (as apiTokenUser), so what
+// handlers keep by username (the sessions, two-step sign-in, private
+// notebooks and the audit log's "by") is never a real account's
+// (AUTHZ-03).
 const (
-	demoUser   = "demo"
+	demoUser   = "demo:visitor"
 	sourceDemo = "demo"
 )
 
@@ -109,7 +112,7 @@ func (s *Server) demoSessions() *auth.Sessions {
 		s.demoSess = auth.NewSessions(demoIdle)
 		s.demoSess.MaxAge = demoMaxAge
 		s.demoSess.Limit = demoLimit
-		s.demoLimits = tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour}
+		s.demoLimits = tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour, Fresh: 1000, FreshKey: freshDemoKey}
 	})
 	return s.demoSess
 }
@@ -140,16 +143,21 @@ func (s *Server) demoVisitor(r *http.Request) *principal {
 	return p
 }
 
-// searchUser is whose share of the search slots p's searches count
-// against: the user's, or for the demo's visitors, who are all the same
-// user, the session's, so one visitor's slow searches never hold back
-// the others.
-func searchUser(p *principal) string {
+// searchUser is whose share of the search slots p's searches, made in
+// request r, count against: the user's, or for the demo's visitors, who
+// are all the same user, the address they come from (an IPv6 /64), so one
+// visitor's slow searches never hold back the others, and a visitor
+// cannot get more by starting more sessions (SRCH-03). Visitors behind
+// an address that stands for many share one.
+func (s *Server) searchUser(r *http.Request, p *principal) string {
 	if p.Source != sourceDemo {
 		return p.Username
 	}
-	sum := sha256.Sum256([]byte(p.token))
-	return demoUser + ":" + hex.EncodeToString(sum[:6])
+	c := s.client(r)
+	if !c.Addr.IsValid() || c.Shared {
+		return demoUser
+	}
+	return demoUser + "@" + clientaddr.Key(c.Addr).String()
 }
 
 // demoAdminClient reports whether r comes from demo.admin_networks, where
@@ -204,8 +212,27 @@ func writeDemoReadOnly(w http.ResponseWriter) {
 		"error": "The public demo is read-only. Install Signalith to try this: https://signalith.io", "code": "demo_read_only"})
 }
 
+// freshDemoKey is what a visitor's key (an IPv4 address or IPv6 /64)
+// counts as for the sessions kept for new visitors: an IPv6 address's
+// /48, since one site or customer usually has a whole /48 and could
+// otherwise pass as 65,536 new visitors (AUTHRT-05).
+func freshDemoKey(key string) string {
+	a, err := netip.ParseAddr(key)
+	if err != nil || !a.Is6() || a.Is4In6() {
+		return key
+	}
+	if p, err := a.Prefix(48); err == nil {
+		return p.String()
+	}
+	return key
+}
+
 // demoRate limits how often visitors start a session: 10 a minute from
-// one address (an IPv6 /64), 3000 an hour in all.
+// one address (an IPv6 /64), 3000 an hour in all, of which 1000 are kept
+// for addresses that started none in the hour (an IPv6 /48 as one), so a
+// few addresses starting sessions again and again cannot keep new
+// visitors out (AUTHRT-05). Visitors through a shared address, and those
+// the server cannot tell apart, never count as new.
 func (s *Server) demoRate() *tokenRate {
 	s.demoSessions()
 	return &s.demoLimits

@@ -12,7 +12,6 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/agentinv"
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
-	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -93,7 +92,8 @@ func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.
 			return
 		}
 	}
-	from := clientaddr.Parse(r.RemoteAddr)
+	// The client behind a trusted reverse proxy, not the proxy (ING-04).
+	from := s.client(r).Addr
 	s.agents().Note(agentinv.Contact{
 		Name:    name,
 		Address: from.String(),

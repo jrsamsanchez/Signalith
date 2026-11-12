@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"net/netip"
 	"strconv"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/agentproto"
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
 	"github.com/jrsamsanchez/signalith/internal/clientaddr"
+	"github.com/jrsamsanchez/signalith/internal/ingest"
 )
 
 // Host keys (see internal/agenttokens/hosts.go): a Signalith Agent trades
@@ -40,6 +42,65 @@ func (s *Server) agentHostName(r *http.Request, who agenttokens.Identity) (name 
 		return "", false
 	}
 	return name, true
+}
+
+// agentOrigin returns the context of an agent's request with where its
+// events come from (see withOrigin), the computer whose key sent them,
+// and how to tell a computer with a key of its own, so that events whose
+// host is not the computer that sent them are marked
+// (ingest.HostMismatch, ING-03).
+func (s *Server) agentOrigin(r *http.Request, intake string, who agenttokens.Identity) context.Context {
+	return ingest.WithEnrolled(s.withOrigin(r, intake, who), s.tokens().Enrolled)
+}
+
+// agentSender is the address an agent's request body counts against in
+// the receive budget (ingest.Pipeline.ReadBody): the client behind a
+// trusted reverse proxy, not the proxy (ING-04), or none when it stands
+// for many clients.
+func (s *Server) agentSender(r *http.Request) netip.Addr {
+	c := s.client(r)
+	if c.Shared || clientaddr.Shared(c.Addr, s.Config.Server.SharedList()) {
+		return netip.Addr{}
+	}
+	return clientaddr.Key(c.Addr)
+}
+
+// purposeFits reports whether an agent token made for its purpose may
+// send to intake (ING-03): an OpenTelemetry Collector's token sends only
+// OTLP, and a token made for Fluent Bit (Linux, Windows, a network sensor,
+// the Signalith Agent) or for osquery does not. Fluent Bit's route takes
+// no OpenTelemetry or osquery token. A shared token, one made with no
+// purpose, and the Splunk HEC route, which any sender may use, are not
+// limited.
+func purposeFits(intake string, who agenttokens.Identity) bool {
+	if who.Legacy || who.Purpose == "" {
+		return true
+	}
+	switch intake {
+	case ingest.IntakeOTLP:
+		return who.Purpose == agenttokens.PurposeOTel
+	case ingest.IntakeAgent:
+		return who.Purpose != agenttokens.PurposeOTel && who.Purpose != agenttokens.PurposeOsquery
+	}
+	return true
+}
+
+// codePurposeMismatch answers a token made for another kind of agent.
+const codePurposeMismatch = "purpose_mismatch"
+
+// purposeRefused is the answer to a token purposeFits refuses.
+func purposeRefused(intake string, who agenttokens.Identity) string {
+	return "This agent token was made for " + who.Purpose + " agents and cannot send to the " + intake +
+		" intake. On the Add data page, get a configuration for this agent, with a token made for it."
+}
+
+// notePurposeRefused records a token purposeFits refused, for the Health
+// page and the log.
+func (s *Server) notePurposeRefused(r *http.Request, intake string, who agenttokens.Identity) {
+	from := s.client(r).Addr
+	s.Pipeline.NoteRefused(from, ingest.RefusedPurpose)
+	s.Log.Warn("an agent token was used on an intake it was not made for; refused", "token_id", who.ID, "token_name", who.Name,
+		"purpose", who.Purpose, "intake", intake, "host", who.Host, "client", from.String())
 }
 
 // How many new computer keys one line, and the whole server, may hand out

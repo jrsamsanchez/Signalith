@@ -131,6 +131,9 @@ func (r *Recheck) refuse(ctx context.Context, name, reason string) {
 	u, changed, err := r.Store.RefuseDirectoryUser(ctx, name, reason)
 	if err == nil && changed {
 		r.log().Warn("directory user lost access", "audit", true, "user", u.Username, "reason", reason, "by", "directory")
+		if list := r.Docs.TokensMadeBy(u.Username, time.Now()); len(list) > 0 {
+			r.log().Warn(TokensKeptMsg, append([]any{"audit", true, "by", "directory"}, TokensKeptAttrs(u.Username, list)...)...)
+		}
 	}
 }
 

@@ -6,11 +6,9 @@ package api
 import (
 	"errors"
 	"net/http"
-	"net/netip"
 	"strings"
 
 	"github.com/jrsamsanchez/signalith/internal/agenttokens"
-	"github.com/jrsamsanchez/signalith/internal/clientaddr"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
 )
 
@@ -93,7 +91,8 @@ func (s *Server) handleHEC(w http.ResponseWriter, r *http.Request, raw bool) {
 	if !s.hecOn(w) {
 		return
 	}
-	from := clientaddr.Parse(r.RemoteAddr)
+	// The client behind a trusted reverse proxy, not the proxy (ING-04).
+	from := s.client(r).Addr
 	if r.URL.Query().Has("token") {
 		// A token in the address ends up in proxy and access logs.
 		s.Pipeline.NoteRefused(from, ingest.RefusedToken)
@@ -152,12 +151,8 @@ func (s *Server) handleHEC(w http.ResponseWriter, r *http.Request, raw bool) {
 	}
 	defer release()
 	if enc == "gzip" {
-		sender := netip.Addr{}
-		if !clientaddr.Shared(from, s.Config.Server.SharedList()) {
-			sender = clientaddr.Key(from)
-		}
 		var releaseRaw func()
-		body, releaseRaw, err = gunzip(s.Pipeline, body, sender)
+		body, releaseRaw, err = gunzip(s.Pipeline, body, s.agentSender(r))
 		if err != nil {
 			s.hecFailure(w, r, err)
 			return
@@ -171,7 +166,7 @@ func (s *Server) handleHEC(w http.ResponseWriter, r *http.Request, raw bool) {
 		return
 	}
 	defer slot()
-	ctx := s.withOrigin(r, ingest.IntakeHEC, who)
+	ctx := s.agentOrigin(r, ingest.IntakeHEC, who)
 	var res *ingest.Result
 	if raw {
 		res, err = s.Pipeline.IngestHECRaw(ctx, body, meta)

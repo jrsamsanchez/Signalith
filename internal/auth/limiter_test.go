@@ -324,6 +324,7 @@ func TestLimiterKnownAddressEndsWithThePassword(t *testing.T) {
 // only slow that account down.
 func TestLimiterSharedAddress(t *testing.T) {
 	l := NewLimiter()
+	l.MaxPerShared = 1000 // TestLimiterSharedCeiling
 	nat := Client{Address: "203.0.113.5", Shared: true}
 	for i := 0; i < 200; i++ {
 		if f := fail(t, l, nat, fmt.Sprintf("nobody%d", i)); f.LockedOut() {
@@ -351,6 +352,86 @@ func TestLimiterSharedAddress(t *testing.T) {
 	}
 	for _, a := range open {
 		a.Done()
+	}
+}
+
+// AUTHRT-02: a shared address has a ceiling of failures a minute, so it
+// cannot be used to guess across accounts as fast as the server checks
+// passwords. It waits; it is never locked, and other addresses are not
+// held back.
+func TestLimiterSharedCeiling(t *testing.T) {
+	c := &clock{time.Now()}
+	l := NewLimiter()
+	l.Now = c.now
+	l.MaxPerShared = 20
+	nat := Client{Address: "203.0.113.5", Shared: true}
+	for i := range 20 {
+		if f := fail(t, l, nat, fmt.Sprintf("made-up%d", i)); f.LockedOut() {
+			t.Fatalf("failure %d locked something: %+v", i+1, f)
+		}
+		c.t = c.t.Add(time.Second)
+	}
+	// Past the ceiling, attempts are paced to 20 a minute: one every
+	// 3 seconds after the last failure.
+	ok, rf := allowed(l, nat, "made-up-more")
+	if ok || rf.Reason != ReasonBusy || rf.Wait > 3*time.Second {
+		t.Fatalf("past the ceiling: %v %+v", ok, rf)
+	}
+	c.t = c.t.Add(2 * time.Second)
+	fail(t, l, nat, "made-up-paced")
+	if ok, _ := allowed(l, nat, "made-up-more"); ok {
+		t.Fatal("a paced failure did not start the pace again")
+	}
+	if ok, _ := allowed(l, addr("198.51.100.1"), "made-up-more"); !ok {
+		t.Error("another address was held back")
+	}
+	if ok, _ := allowed(l, Client{Address: "198.51.100.2", Shared: true}, "x"); !ok {
+		t.Error("another shared address was held back")
+	}
+	c.t = c.t.Add(time.Minute)
+	if ok, _ := allowed(l, nat, "made-up-more"); !ok {
+		t.Error("still refused a minute later")
+	}
+}
+
+// RT-01/AUTHRT-02: junk-name failures through a shared address must not
+// keep out the people behind it who signed in before: a known browser and
+// an account signed in to from that address are not held to its ceiling.
+// Such an account is still slowed for strangers.
+func TestLimiterSharedCeilingSparesKnownUsers(t *testing.T) {
+	c := &clock{time.Now()}
+	l := NewLimiter()
+	l.Now = c.now
+	l.MaxPerShared = 20
+	nat := Client{Address: "203.0.113.5", Shared: true, Version: "v1"}
+	a, err := l.Begin(nat, "dana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Succeed()
+	for i := range 20 {
+		fail(t, l, nat, fmt.Sprintf("junk%d", i))
+	}
+	if ok, _ := allowed(l, nat, "someone-new"); ok {
+		t.Fatal("the ceiling did not hold a new account name")
+	}
+	if ok, rf := allowed(l, nat, "dana"); !ok {
+		t.Errorf("an account signed in to from the shared address was held back: %+v", rf)
+	}
+	if ok, rf := allowed(l, Client{Address: nat.Address, Shared: true, Browser: "known-browser"}, "erin"); !ok {
+		t.Errorf("a known browser was held back: %+v", rf)
+	}
+	// A new password makes the pair unknown again.
+	if ok, _ := allowed(l, Client{Address: nat.Address, Shared: true, Version: "v2"}, "dana"); ok {
+		t.Error("the pair stayed known after a password change")
+	}
+	// The pair is not known for anything else: dana's strangers' count
+	// still slows her account down.
+	for range l.MaxPerAccount {
+		fail(t, l, nat, "dana")
+	}
+	if ok, rf := allowed(l, nat, "dana"); ok || rf.Reason != ReasonSlowed {
+		t.Errorf("the shared address's known pair skipped the slow-down: %v %+v", ok, rf)
 	}
 }
 
@@ -470,3 +551,25 @@ func TestLimiterBoundsGuessesPerAccount(t *testing.T) {
 // knownAddr is the i-th of 4096 addresses that signed in to the account
 // before, in TestLimiterBoundsGuessesPerAccount.
 func knownAddr(i int) Client { return addr(fmt.Sprintf("10.200.%d.%d", i>>8&15, i&255)) }
+
+// Only the failure that starts an account's slow-down says so.
+func TestFailureSlowStarted(t *testing.T) {
+	l := NewLimiter()
+	c := &clock{time.Now()}
+	l.Now = c.now
+	started := 0
+	for i := range l.MaxPerAccount + 3 {
+		f := fail(t, l, addr(fmt.Sprintf("10.1.%d.1", i)), "carol")
+		if f.SlowStarted {
+			started++
+			if f.Slowed == 0 {
+				t.Error("started a slow-down of nothing")
+			}
+		}
+		c.t = c.t.Add(time.Hour / 2 / time.Duration(l.MaxPerAccount))
+		c.t = c.t.Add(l.slowWait(i+1, l.MaxPerAccount))
+	}
+	if started != 1 {
+		t.Errorf("%d failures started the slow-down, want 1", started)
+	}
+}

@@ -155,15 +155,13 @@ func TestAgentTokensEndToEnd(t *testing.T) {
 		t.Error("the token was stored")
 	}
 
-	// OTLP too.
+	// OTLP takes only a token made for OpenTelemetry, so the Linux agents'
+	// token is refused there (ING-03; TestOTLPRecordsClientBehindProxy
+	// covers what OTLP events record).
 	fos.bulk = nil
-	if code, body := agentSend(t, ts.URL, "/api/otlp/v1/logs", secret, `{"resourceLogs":[{"resource":{"attributes":[{"key":"signalith.token","value":{"stringValue":"forged"}}]},"scopeLogs":[{"logRecords":[{"body":{"stringValue":"hi"}}]}]}]}`,
-		map[string]string{"Content-Type": "application/json"}); code != 200 {
-		t.Fatalf("otlp: %d %s", code, body)
-	}
-	doc = fos.bulk[len(fos.bulk)-1].Doc
-	if doc[ingest.TokenField] != "Linux servers" || doc[ingest.IntakeField] != "otlp" || doc[ingest.SenderField] != "127.0.0.1" {
-		t.Errorf("otlp doc = %v", doc)
+	if code, body := agentSend(t, ts.URL, "/api/otlp/v1/logs", secret, `{"resourceLogs":[{"scopeLogs":[{"logRecords":[{"body":{"stringValue":"hi"}}]}]}]}`,
+		map[string]string{"Content-Type": "application/json"}); code != http.StatusForbidden || len(fos.bulk) != 0 {
+		t.Fatalf("otlp with a linux token: %d %s", code, body)
 	}
 
 	// The list, for an analyst too, never holds the token.

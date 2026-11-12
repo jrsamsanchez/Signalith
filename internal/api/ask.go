@@ -108,14 +108,40 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 			s.Log.Info("question translated with AI", "audit", true, "by", userOf(r), "model", ai.Name(), "sent_to", sentTo, "chars_sent", len(req.Question)+len(res.Query))
 		}
 	}
+	fansOut := false
 	if q, err := query.Parse(resp["query"].(string)); err == nil {
 		resp["query"] = q.String()
 		resp["explanation"] = Explain(q)
+		fansOut = runsMoreSearches(q)
 	}
 	// run tells the Search page whether to run the query at once: the AI
-	// model's, or the translator's when it understood the question.
-	resp["run"] = resp["source"] == "ai" || res.Confidence >= aiThreshold
+	// model's, or the translator's when it understood the question. A
+	// model's query that runs more searches of its own (map, join,
+	// subsearches) waits for the analyst: a hostile or intercepted model
+	// endpoint could otherwise pick an expensive one that runs with the
+	// analyst's limits.
+	resp["run"] = resp["source"] == "ai" && !fansOut || resp["source"] != "ai" && res.Confidence >= aiThreshold
+	if resp["source"] == "ai" && fansOut {
+		resp["run_note"] = "The model's query runs more searches of its own (map, join or a subsearch), so check it and run it yourself."
+	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// runsMoreSearches reports whether q runs searches besides its own: a
+// subsearch in [ ] among its terms or in a where, or a command such as
+// map or join (query.CountSubsearches, which the engine's own subsearch
+// cap counts with). appendpipe counts too: it runs commands over the
+// results again.
+func runsMoreSearches(q *query.Query) bool {
+	if query.CountSubsearches(q) > 0 {
+		return true
+	}
+	for _, c := range q.Commands {
+		if _, ok := c.(*query.AppendPipe); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // AssetHints lets the translator recognize bare user and host names from

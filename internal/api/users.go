@@ -41,7 +41,16 @@ func (s *Server) routeUsers(api *router) {
 
 // audit logs a change someone made, with who and from where. Passwords
 // are never passed here.
+//
+// A public demo's visitor changes nothing, but some of what it may read
+// is audited for users (an evidence report or case file taken away): as
+// for its searches (auditSearch), its lines go only to the server's log,
+// so anonymous visitors cannot grow the audit records (AUTHZ-02).
 func (s *Server) audit(r *http.Request, msg string, args ...any) {
+	if p := principalOf(r); p != nil && p.Source == sourceDemo {
+		s.Log.Info(msg, slices.Concat([]any{"demo", true, "by", userOf(r)}, s.client(r).logAttrs(), args)...)
+		return
+	}
 	// A tenant's server tags every line of its log with the tenant
 	// already; the default tenant's server tags those it writes for one.
 	// The ID logged is the registry's, found by comparing, never a value
@@ -584,15 +593,17 @@ func (s *Server) handleUpdateUser(w http.ResponseWriter, r *http.Request) {
 	if u.Role != cur.Role {
 		s.audit(r, "user role changed", "user", u.Username, "from", cur.Role, "to", u.Role)
 	}
+	out := map[string]any{"user": s.viewUser(u, userOf(r))}
 	if u.Disabled != cur.Disabled {
 		if u.Disabled {
 			ended := s.sessions().EndUser(r.Context(), u.Username, "")
 			s.audit(r, "user disabled", "user", u.Username, "sessions_ended", ended)
+			s.noteTokensKept(r, u.Username, out)
 		} else {
 			s.audit(r, "user enabled", "user", u.Username)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": s.viewUser(u, userOf(r))})
+	writeJSON(w, http.StatusOK, out)
 }
 
 // setBuiltinDisabled turns the built-in admin off or on (PUT
@@ -645,7 +656,11 @@ func (s *Server) setBuiltinDisabled(w http.ResponseWriter, r *http.Request, off 
 			go s.security().run(context.WithoutCancel(r.Context()), s.gatherSecurity, true)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"user": s.builtinView(userOf(r))})
+	out := map[string]any{"user": s.builtinView(userOf(r))}
+	if changed && off {
+		s.noteTokensKept(r, name, out)
+	}
+	writeJSON(w, http.StatusOK, out)
 }
 
 func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
@@ -673,7 +688,9 @@ func (s *Server) handleDeleteUser(w http.ResponseWriter, r *http.Request) {
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.audit(r, "user deleted", "user", u.Username, "source", u.Source, "role", u.Role, "sessions_ended", ended)
 	s.releaseNotebooks(r.Context(), u.Username, userOf(r), u.Tenant == "")
-	writeJSON(w, http.StatusOK, map[string]any{"deleted": u.Username})
+	out := map[string]any{"deleted": u.Username}
+	s.noteTokensKept(r, u.Username, out)
+	writeJSON(w, http.StatusOK, out)
 }
 
 // handleResetPassword gives a local user a temporary password, which they
