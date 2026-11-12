@@ -42,3 +42,8 @@ deploy/helm/signalith/files/* text eol=lf
 # The Signalith Agent's install script: its SHA-256 is checked by the line
 # pasted on each computer, so the same bytes on every system.
 deploy/agent/** text eol=lf
+
+# The pages load these with an integrity hash of their bytes as committed:
+# keep them so on Windows too.
+site/assets/vendor/goatcounter-count.js text eol=lf
+docs/assets/vendor/goatcounter-count.js text eol=lf
