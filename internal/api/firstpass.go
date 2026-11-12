@@ -125,6 +125,7 @@ func (s *Server) firstPass(ctx context.Context, now time.Time, m investigate.Mod
 			note.Error = firstPassError(err)
 		default:
 			note.Verdict, note.Confidence, note.Summary = res.Verdict, res.Confidence, res.Summary
+			note.Injection, note.Caution = res.Injection, res.Caution
 		}
 		if _, merr := s.Findings.Modify(ctx, f.ID, func(x *findings.Finding) (bool, error) {
 			if x.AI != nil {
@@ -142,7 +143,7 @@ func (s *Server) firstPass(ctx context.Context, now time.Time, m investigate.Mod
 		}
 		if res != nil {
 			s.Log.Info("finding looked at by the AI first pass", "audit", true, "by", "ai-first-pass", "finding", f.ID, "model", res.Model,
-				"sent_to", sentTo, "chars_sent", res.Sent, "verdict", res.Verdict)
+				"sent_to", sentTo, "chars_sent", res.Sent, "verdict", res.Verdict, "injection", res.Injection)
 		}
 	}
 	return n, nil
