@@ -134,11 +134,11 @@ func TestAuditTapKeepsOnlyAlertRecords(t *testing.T) {
 	var tap AuditTap
 	tap.Add(audit.Event{Time: t0, Message: "search.run: search run", Action: "search.run"})
 	tap.Add(ev("user deleted", nil))
-	got, truncated, err := tap.AuditRecords(context.Background(), audit.Match{Since: t0}, 10)
+	got, truncated, err := tap.AuditRecords(context.Background(), auditMatch(AuditAlerts, t0), 10)
 	if err != nil || truncated || len(got) != 1 || got[0].Event.Message != "user deleted" || !strings.HasPrefix(got[0].ID, "tap-") {
 		t.Fatalf("got %+v, %v, %v", got, truncated, err)
 	}
-	if again, _, _ := tap.AuditRecords(context.Background(), audit.Match{Since: t0.Add(time.Hour)}, 10); len(again) != 0 {
+	if again, _, _ := tap.AuditRecords(context.Background(), auditMatch(AuditAlerts, t0.Add(time.Hour)), 10); len(again) != 0 {
 		t.Errorf("records before since were read: %+v", again)
 	}
 	for i := range TapSize + 5 {
@@ -146,11 +146,11 @@ func TestAuditTapKeepsOnlyAlertRecords(t *testing.T) {
 		e.Time = t0.Add(time.Duration(i+120) * time.Second)
 		tap.Add(e)
 	}
-	all, truncated, _ := tap.AuditRecords(context.Background(), audit.Match{}, TapSize+10)
+	all, truncated, _ := tap.AuditRecords(context.Background(), auditMatch(AuditAlerts, time.Time{}), TapSize+10)
 	if len(all) != TapSize || truncated || tap.Dropped() != 6 {
 		t.Errorf("kept %d (truncated %v), dropped %d; want %d kept, 6 dropped", len(all), truncated, tap.Dropped(), TapSize)
 	}
-	if few, truncated, _ := tap.AuditRecords(context.Background(), audit.Match{}, 3); len(few) != 3 || !truncated {
+	if few, truncated, _ := tap.AuditRecords(context.Background(), auditMatch(AuditAlerts, time.Time{}), 3); len(few) != 3 || !truncated {
 		t.Errorf("a limit of 3 read %d (truncated %v)", len(few), truncated)
 	}
 }

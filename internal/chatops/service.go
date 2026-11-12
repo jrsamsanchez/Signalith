@@ -222,8 +222,11 @@ func (s *Service) act(ctx context.Context, c notify.Channel, who ChatUser, b not
 			what = run.Approval.What
 		}
 		audit("done", "user", u.Username, "playbook", run.PlaybookName, "finding", run.FindingID, "what", what)
-		s.log().Info("playbook step "+map[bool]string{true: "approved", false: "rejected"}[approve], "audit", true, "by", u.Username,
-			"playbook", run.PlaybookName, "run", run.ID, "finding", run.FindingID, "what", what, "via", who.System)
+		// A click in chat has no address of its own: the chat system's
+		// servers send it, so the chat system stands as its source.
+		s.log().Info(map[bool]string{true: "playbook.approve: playbook step approved", false: "playbook.reject: playbook step rejected"}[approve],
+			append([]any{"audit", true, "by", u.Username, "client", "chat:" + who.System, "target", run.ID,
+				"playbook", run.PlaybookName, "finding", run.FindingID, "what", what, "via", who.System}, who.logAttrs()...)...)
 		if approve {
 			return outcome{done: true, text: fmt.Sprintf("✅ Approved by %s in %s. Signalith runs it next: %s", u.Display(), via, what)}
 		}

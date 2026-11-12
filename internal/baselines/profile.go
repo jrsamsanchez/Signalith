@@ -92,8 +92,24 @@ type Profile struct {
 	HourMean []float64 `json:"hour_mean,omitempty"`
 	HourVar  []float64 `json:"hour_var,omitempty"`
 	HourN    []int64   `json:"hour_n,omitempty"`
+	// HourLast is the bytes of each hour of the day as last applied: for
+	// the hours before this one, today's. A profile written by an older
+	// server has none.
+	HourLast []float64 `json:"hour_last,omitempty"`
+	// Held is an hour that sent as much as the next hour's usual amount,
+	// and so may be that hour's job running early. It adds risk if the
+	// job then runs at its own hour as well.
+	Held *HeldHour `json:"held,omitempty"`
 	// Many marks a fleet profile with more hosts than it names.
 	Many bool `json:"many,omitempty"`
+}
+
+// HeldHour is an hour of data volume held back (see Profile.Held).
+type HeldHour struct {
+	At    time.Time `json:"at"`
+	Bytes float64   `json:"bytes"`
+	// Usual is the usual amount for that hour of the day.
+	Usual float64 `json:"usual"`
 }
 
 // profileKind is the kind of the profile documents.
@@ -182,6 +198,7 @@ func (p *Profile) unlearn(value string) bool {
 	case DataVolume:
 		had := p.Span > 0 || len(p.HourN) > 0
 		p.Mean, p.Var, p.Span, p.HourMean, p.HourVar, p.HourN = 0, 0, 0, nil, nil, nil
+		p.HourLast, p.Held = nil, nil
 		return had
 	case UnusualHour:
 		h, ok := hourOf(value)
@@ -289,6 +306,10 @@ func (p *Profile) hourSample(k int, x float64) {
 	if len(p.HourMean) != 24 || len(p.HourVar) != 24 || len(p.HourN) != 24 {
 		p.HourMean, p.HourVar, p.HourN = make([]float64, 24), make([]float64, 24), make([]int64, 24)
 	}
+	if len(p.HourLast) != 24 {
+		p.HourLast = make([]float64, 24)
+	}
+	p.HourLast[k] = x
 	if p.HourN[k] == 0 {
 		p.HourMean[k], p.HourVar[k], p.HourN[k] = x, 0, 1
 		return
@@ -306,17 +327,20 @@ type usualVolume struct {
 	Mean, SD float64
 	// HourMean is the mean of this hour of the day, and HourN the days
 	// it has seen. HourLimit is the least that is unusual for this hour
-	// of the day and the hours either side, so a nightly job that runs
-	// a little early or late, or a change of daylight saving time, does
-	// not count.
+	// of the day and the hour before, so a nightly job that runs a little
+	// late, or a change of daylight saving time, does not count; but not
+	// when that job already ran at its own hour today, as then this is
+	// not it. Early is the same for the hour after: a job running early
+	// cannot be told from more data until that hour comes (see Held).
 	HourMean  float64
 	HourN     int64
 	HourLimit float64
+	Early     float64
 }
 
 func (p *Profile) usual(h time.Time) usualVolume {
 	q := *p
-	q.HourMean, q.HourVar, q.HourN = slices.Clone(p.HourMean), slices.Clone(p.HourVar), slices.Clone(p.HourN)
+	q.HourMean, q.HourVar, q.HourN, q.HourLast = slices.Clone(p.HourMean), slices.Clone(p.HourVar), slices.Clone(p.HourN), slices.Clone(p.HourLast)
 	q.fillGap(h)
 	u := usualVolume{Mean: q.Mean, SD: math.Sqrt(q.Var)}
 	if len(q.HourN) != 24 {
@@ -324,13 +348,18 @@ func (p *Profile) usual(h time.Time) usualVolume {
 	}
 	k := h.Hour()
 	u.HourMean, u.HourN = q.HourMean[k], q.HourN[k]
-	for d := -1; d <= 1; d++ {
-		j := (k + d + 24) % 24
+	limit := func(j int) float64 {
 		if q.HourN[j] == 0 {
-			continue
+			return 0
 		}
 		m, sd := q.HourMean[j], math.Sqrt(q.HourVar[j])
-		u.HourLimit = max(u.HourLimit, volumeFactor*m, m+volumeSigmas*sd)
+		return max(volumeFactor*m, m+volumeSigmas*sd)
 	}
+	u.HourLimit = limit(k)
+	before := (k + 23) % 24
+	if ranToday := len(q.HourLast) == 24 && q.HourN[before] > 0 && q.HourLast[before] >= q.HourMean[before]/2; !ranToday {
+		u.HourLimit = max(u.HourLimit, limit(before))
+	}
+	u.Early = limit((k + 1) % 24)
 	return u
 }

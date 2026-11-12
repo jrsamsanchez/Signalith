@@ -698,6 +698,14 @@ func (s *Server) triageChanges(ctx context.Context, id string, u findings.Update
 		if need && findings.IsOpen(f.Status) && (u.Disposition == nil || *u.Disposition == "") && f.Disposition == "" {
 			return false, errNeedsDisposition
 		}
+		u := u
+		if u.Owner != nil {
+			o, err := s.ownerFor(*u.Owner, f.Owner, author)
+			if err != nil {
+				return false, err
+			}
+			u.Owner = &o
+		}
 		n := len(f.History)
 		changed := f.Apply(u, author, time.Now().UTC())
 		changes = slices.Clone(f.History[n:])
@@ -724,7 +732,8 @@ func (s *Server) handleUpdateFinding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	f, changes, err := s.triageChanges(r.Context(), r.PathValue("id"), u, userOf(r))
-	if errors.Is(err, errNeedsDisposition) {
+	var unknown errUnknownOwner
+	if errors.Is(err, errNeedsDisposition) || errors.As(err, &unknown) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}

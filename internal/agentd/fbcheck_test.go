@@ -166,6 +166,22 @@ func TestCheckFluentBit(t *testing.T) {
 	if err := checkFluentBit(strings.Replace(byIP, "    tls.ca_file          /etc/signalith-agent/ca.pem\n", "", 1), ip); err == nil {
 		t.Error("vhost without the agent's certificate authority")
 	}
+	// Without the agent's own certificate authority the name must be
+	// checked too, or any certificate a public authority issued would do
+	// (ING-207).
+	noCA := strings.Replace(good, "    tls.ca_file          /etc/signalith-agent/ca.pem\n", "", 1)
+	for _, v := range []string{"", "    tls.verify_hostname Off\n"} {
+		if err := checkFluentBit(noCA+v, r); err == nil || !strings.Contains(err.Error(), "tls.verify_hostname") {
+			t.Errorf("no CA file, %q: %v", v, err)
+		}
+	}
+	if err := checkFluentBit(noCA+"    tls.verify_hostname On\n", r); err != nil {
+		t.Errorf("no CA file, name checked: %v", err)
+	}
+	loop := fbRules{server: "https://127.0.0.1:7779", states: r.states, caFile: r.caFile, goos: "linux"}
+	if err := checkFluentBit(strings.Replace(noCA, "SIEM.example.com", "127.0.0.1", 1), loop); err != nil {
+		t.Errorf("loopback without CA file: %v", err)
+	}
 
 	// Windows: paths do not care about case or the kind of slash.
 	wr := fbRules{server: r.server, states: []string{`C:\ProgramData\Signalith Agent\fluent-bit`},

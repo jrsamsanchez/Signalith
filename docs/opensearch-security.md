@@ -175,6 +175,10 @@ cloned Signalith into:
    - `OpenSearch didn't answer within 30 seconds` (`SocketTimeoutException`) on every
      try: OpenSearch is too slow on this computer right now. Close other programs, or give
      Docker more memory and CPU (below), then do step 1 again.
+   - `OpenSearch did not say whether the snapshot role is mapped`: the step could not ask
+     OpenSearch whether [scheduled snapshots](#snapshot-permissions) are set up, so it
+     loaded nothing rather than take that permission away. It usually means OpenSearch was
+     still starting or too busy to answer; do step 1 again.
    - OpenSearch's own log may say more:
      `docker compose -f deploy/docker/docker-compose.yml logs opensearch`
 3. To load them by hand instead (step 1 does the same by itself, so try it first), run

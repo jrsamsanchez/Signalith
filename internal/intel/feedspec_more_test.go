@@ -4,8 +4,10 @@
 package intel
 
 import (
+	"math"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestFeedSpecMoreProblems(t *testing.T) {
@@ -42,6 +44,9 @@ func TestFeedSpecMoreProblems(t *testing.T) {
 		{"headers", "has no value", false, func(s *FeedSpec) { s.Headers = map[string]string{"X-Key": " "} }},
 		{"headers", "${MISSING_KEY}, which is not set", true, func(s *FeedSpec) { s.Headers = map[string]string{"X-Key": "${MISSING_KEY}"} }},
 		{"password", "${MISSING_PW}, which is not set", true, func(s *FeedSpec) { s.Username, s.Password = "u", "${MISSING_PW}" }},
+		// A YAML .nan or .inf (ING-218).
+		{"weight", "at most 10", false, func(s *FeedSpec) { s.Weight = math.NaN() }},
+		{"weight", "at most 10", false, func(s *FeedSpec) { s.Weight = math.Inf(1) }},
 	} {
 		s := base()
 		c.change(&s)
@@ -68,5 +73,22 @@ func TestFeedSpecMoreProblems(t *testing.T) {
 		if got := sentence(in); got != want {
 			t.Errorf("sentence(%q) = %q", in, got)
 		}
+	}
+}
+
+// TestWeightNotANumber: a weight of NaN is refused like any other weight
+// out of range, for an indicator added by hand or uploaded (ING-218).
+func TestWeightNotANumber(t *testing.T) {
+	now := time.Now()
+	for _, w := range []string{"NaN", "nan", "Inf", "-Inf", "0", "11"} {
+		if _, err := (Input{Value: "192.0.2.4", Weight: w}).Build(now); err == nil || !strings.Contains(err.Error(), "at most 10") {
+			t.Errorf("weight %q: %v", w, err)
+		}
+	}
+	if ind, err := (Input{Value: "192.0.2.4", Weight: "2.5"}).Build(now); err != nil || ind.Weight != 2.5 {
+		t.Errorf("weight 2.5: %v %v", ind.Weight, err)
+	}
+	if _, err := ParseUpload(strings.NewReader("value,weight\n192.0.2.9,NaN\n"), now); err == nil {
+		t.Error("upload with weight NaN accepted")
 	}
 }

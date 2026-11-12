@@ -84,7 +84,8 @@ most 100 tasks.
 
 ## Working a case
 
-Set status, severity and owner as you work. Cases use the same statuses as findings:
+Set status, severity and owner as you work. The owner of a case or a task is a
+Signalith user, or nobody; a name no user has is refused. Cases use the same statuses as findings:
 `new`, `in_progress`, `pending`, `resolved` and `closed`.
 
 When you resolve or close a case, write a resolution. You can also close all of its

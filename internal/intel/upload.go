@@ -92,7 +92,7 @@ func (in Input) Build(now time.Time) (Indicator, error) {
 	}
 	weight := 1.0
 	if w := strings.TrimSpace(in.Weight); w != "" {
-		if weight, err = strconv.ParseFloat(w, 64); err != nil || weight <= 0 || weight > 10 {
+		if weight, err = strconv.ParseFloat(w, 64); err != nil || !(weight > 0 && weight <= 10) { // NaN fails both (ING-218)
 			msgs = append(msgs, fmt.Sprintf("weight %q must be a number above 0 and at most 10 (1 is normal)", in.Weight))
 		}
 	}

@@ -241,6 +241,9 @@ var Registry = []Setting{
 	{Key: "auth.session_max_age", Scope: ScopeCluster, Section: "general", Label: "Sign in again after", Type: TypeDuration,
 		Help:        "Ends every session this long after sign-in, also when Keep me signed in was ticked. From 1h to 30d. NIST SP 800-63B (AAL2) asks for at most 24h.",
 		Placeholder: "24h", EmptyMeans: "24h"},
+	{Key: "auth.keep_signed_in", Scope: ScopeCluster, Section: "general", Label: "Offer Keep me signed in", Type: TypeBool,
+		Help: "Lets people tick Keep me signed in on the sign-in page, so they are not signed out for being idle (they still are after Sign in again after). " +
+			"Turn it off to sign everyone out after Sign out after without use; sessions kept signed in before that stay so until they end."},
 	{Key: "auth.mfa_required", Scope: ScopeCluster, Section: "general", Label: "Require two-step sign-in", Type: TypeChoice,
 		Help: "Who must enter a code from an authenticator app after their password. Everyone can turn it on for themselves from the account menu either way. " +
 			"Someone who has not set it up is asked to right after they sign in. Signing in with a password over the API (HTTP Basic) stops working for them: use an API token instead. " +

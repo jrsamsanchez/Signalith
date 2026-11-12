@@ -222,7 +222,8 @@ func TestMFAKeysWithoutClusterKey(t *testing.T) {
 }
 
 // EndSessions moves a user's session epoch on: their sessions end on
-// every server, and EndUser counts the ones in OpenSearch.
+// every server, their documents kept. EndUser deletes them and counts
+// the ones it ended.
 func TestEndSessions(t *testing.T) {
 	o, a, b, _ := pair(t)
 	ctx := context.Background()
@@ -233,9 +234,14 @@ func TestEndSessions(t *testing.T) {
 	if n := a.sessions.EndUser(ctx, "Carol", c1); n != 1 {
 		t.Errorf("EndUser counts %d other sessions, want 1", n)
 	}
-	if n := a.sessions.EndUser(ctx, "carol", ""); n != 2 {
-		t.Errorf("EndUser counts %d sessions, want 2", n)
+	if n := a.sessions.EndUser(ctx, "carol", ""); n != 1 {
+		t.Errorf("EndUser counts %d sessions, want the 1 left", n)
 	}
+	if n := o.sessionDocs(t, "carol"); n != 0 {
+		t.Errorf("EndUser left %d session documents", n)
+	}
+	c1 = a.signIn("carol", false)
+	c2 = b.signIn("carol", true)
 	if err := a.ub.EndSessions(ctx, "admin", "carol"); err != nil {
 		t.Fatal(err)
 	}

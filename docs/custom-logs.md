@@ -73,7 +73,7 @@ text, and found by searching for its words.
 
 ## Improve it with AI
 
-When an AI model is set up under **Settings → AI assistant** (see [Investigate with AI](investigate.md)), **Improve with AI** asks it to suggest a
+When an AI model is set up under **Settings → Server → AI assistant** (see [Investigate with AI](investigate.md)), **Improve with AI** asks it to suggest a
 better parser, for free text especially. Before you select it, the page says which model
 it uses and where it sends the request. Signalith sends only the first 20 lines of the
 sample (at most 8 KB), the current parser, and the list of data models and formats.

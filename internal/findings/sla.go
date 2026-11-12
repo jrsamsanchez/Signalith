@@ -38,6 +38,16 @@ type Due struct {
 	ResolveLate bool `json:"resolve_late,omitempty"`
 }
 
+// raised is when f was raised, which its due times run from: RaisedAt
+// when a late-run slot raised it after its Created time (the slot's end),
+// so findings a catch-up run raises are not born late; Created otherwise.
+func raised(f *Finding) time.Time {
+	if f.RaisedAt.After(f.Created) {
+		return f.RaisedAt
+	}
+	return f.Created
+}
+
 // DueOf is f's due times at now, or nil when its urgency has no target.
 func (s SLA) DueOf(f *Finding, now time.Time) *Due {
 	u := f.EffectiveUrgency()
@@ -48,7 +58,7 @@ func (s SLA) DueOf(f *Finding, now time.Time) *Due {
 	d := &Due{}
 	open := IsOpen(f.Status)
 	if rt > 0 {
-		by := f.Created.Add(rt).UTC()
+		by := raised(f).Add(rt).UTC()
 		d.RespondBy = &by
 		if f.RespondedAt != nil {
 			d.RespondLate = f.RespondedAt.After(by)
@@ -57,7 +67,7 @@ func (s SLA) DueOf(f *Finding, now time.Time) *Due {
 		}
 	}
 	if st > 0 {
-		by := f.Created.Add(st).UTC()
+		by := raised(f).Add(st).UTC()
 		d.ResolveBy = &by
 		if open {
 			d.ResolveLate = now.After(by)
@@ -86,11 +96,11 @@ func (s SLA) dueBy(f *Finding, at time.Time) bool {
 		return false
 	}
 	u := f.EffectiveUrgency()
-	if rt := s.Respond[u]; rt > 0 && f.RespondedAt == nil && !f.Created.Add(rt).After(at) {
+	if rt := s.Respond[u]; rt > 0 && f.RespondedAt == nil && !raised(f).Add(rt).After(at) {
 		return true
 	}
 	st := s.Resolve[u]
-	return st > 0 && !f.Created.Add(st).After(at)
+	return st > 0 && !raised(f).Add(st).After(at)
 }
 
 // automationPrefix starts the author of changes that automation makes

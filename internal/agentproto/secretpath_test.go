@@ -26,6 +26,33 @@ func TestSecretPath(t *testing.T) {
 		{`C:\WINDOWS\SYSTEM~1\config\SAM`, "windows", true},
 		{`C:\x.log:stream`, "windows", true},
 		{`\\server\share\x.log`, "windows", true},
+
+		// Credential files of users and services (ING-217).
+		{"/home/alice/.aws/credentials", "linux", true},
+		{"/home/*/.aws/credentials", "linux", true},
+		{"/home/*/.netrc", "linux", true},
+		{"/home/bob/.netrc", "linux", true},
+		{"/home/*/.ssh/*", "linux", true},
+		{"/home/*/.kube/config", "linux", true},
+		{"/home/bob/.bash_history", "linux", true},
+		{"/etc/krb5.keytab", "linux", true},
+		{"/etc/wireguard/wg0.conf", "linux", true},
+		{"/etc/wireguard/*.conf", "linux", true},
+		{"/etc/kubernetes/admin.conf", "linux", true},
+		{"/etc/letsencrypt/live/*/privkey.pem", "linux", true},
+		{"/etc/sssd/sssd.conf", "linux", true},
+		{"/var/lib/samba/private/secrets.tdb", "linux", true},
+		{"/etc/mysql/debian.cnf", "linux", true},
+		{"/etc/openvpn/*", "linux", true},
+		{"/srv/vpn/client.ovpn", "linux", true},
+		{"/home/app/logs/app.log", "linux", false},
+		{"/var/log/openvpn.log", "linux", false},
+		{`C:\Users\*\.aws\credentials`, "windows", true},
+		{`C:\Users\bob\AppData\Roaming\Microsoft\Credentials\*`, "windows", true},
+		{`C:\Users\bob\AppData\Local\Google\Chrome\User Data\Default\Login Data`, "windows", true},
+		{`C:\inetpub\wwwroot\web.config`, "windows", true},
+		{`C:\inetpub\logs\LogFiles\W3SVC1\*.log`, "windows", false},
+		{`C:\Users\bob\AppData\Local\App\app.log`, "windows", false},
 	} {
 		if got := SecretPath(c.p, c.goos); got != c.want {
 			t.Errorf("SecretPath(%q, %s) = %v", c.p, c.goos, got)

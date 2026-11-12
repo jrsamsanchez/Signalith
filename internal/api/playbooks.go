@@ -35,9 +35,11 @@ func (s *Server) routePlaybooks(api *router) {
 	// What a playbook does decides what Signalith changes by itself.
 	api.admin("GET /api/playbooks", s.handlePlaybooks)
 	api.sensitive("PUT /api/playbooks", s.handlePlaybooksSave)
-	// Approving is analyst work, like running an action by hand.
+	// Approving is analyst work, like running an action by hand, and
+	// asks for the password or code again like it. Rejecting changes
+	// nothing elsewhere, so it does not.
 	api.analyst("GET /api/playbooks/runs", s.handlePlaybookRuns)
-	api.analyst("POST /api/playbooks/runs/{id}/approve", s.handlePlaybookApprove)
+	api.analystSensitive("POST /api/playbooks/runs/{id}/approve", s.handlePlaybookApprove)
 	api.analyst("POST /api/playbooks/runs/{id}/reject", s.handlePlaybookReject)
 }
 
@@ -184,7 +186,7 @@ func (s *Server) handlePlaybooksSave(w http.ResponseWriter, r *http.Request) {
 			on++
 		}
 	}
-	s.Log.Info("playbooks changed", "audit", true, "by", userOf(r), "playbooks", len(list), "on", on)
+	s.audit(r, "playbook.change: playbooks changed", "playbooks", len(list), "on", on)
 	writeJSON(w, http.StatusOK, s.playbooksView(r, list, nil))
 }
 
@@ -261,11 +263,11 @@ func (s *Server) decidePlaybookRun(w http.ResponseWriter, r *http.Request, appro
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	verb := "rejected"
+	action, verb := "playbook.reject", "rejected"
 	if approve {
-		verb = "approved"
+		action, verb = "playbook.approve", "approved"
 	}
-	s.Log.Info("playbook step "+verb, "audit", true, "by", user, "playbook", run.PlaybookName, "run", run.ID,
+	s.audit(r, action+": playbook step "+verb, "target", run.ID, "playbook", run.PlaybookName,
 		"finding", run.FindingID, "what", run.Approval.What)
 	writeJSON(w, http.StatusOK, run)
 }

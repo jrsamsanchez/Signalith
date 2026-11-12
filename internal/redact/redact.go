@@ -13,10 +13,16 @@ import (
 // Mask replaces a hidden value.
 const Mask = "***"
 
+// secretNames are fragments of names whose values are hidden, in URLs
+// and in free text alike: api_key, access_token, password, sessionid,
+// signature and the like.
+var secretNames = []string{"key", "token", "secret", "pass", "pwd", "credential", "session", "cookie", "jwt", "bearer", "signature"}
+
 // secretParams are fragments of query parameter names whose values are
-// hidden: api_key, apikey, access_token, X-Amz-Signature, password and
-// the like.
-var secretParams = []string{"key", "token", "secret", "pass", "pwd", "auth", "sig", "credential", "session", "cookie", "jwt", "bearer", "code"}
+// hidden: secretNames, and fragments too common in prose to hide in free
+// text ("status code: 500", "auth: failed", "signalith_sender: ..."),
+// such as code, auth and X-Amz-Signature's sig.
+var secretParams = append([]string{"auth", "sig", "code"}, secretNames...)
 
 // URL returns s safe to show or log: any user name and password become
 // "***", and so do the values of query parameters whose names suggest a

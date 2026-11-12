@@ -53,6 +53,8 @@ type historySummary struct {
 	Trigger    string                     `json:"trigger,omitempty"`
 	By         string                     `json:"by,omitempty"`
 	Frameworks []compliancehist.Framework `json:"frameworks,omitempty"`
+	// Chain says the record before this one was deleted or changed.
+	Chain string `json:"chain,omitempty"`
 }
 
 func (s *Server) handleComplianceHistory(w http.ResponseWriter, r *http.Request) {
@@ -70,12 +72,18 @@ func (s *Server) handleComplianceHistory(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadGateway, errors.New("the compliance history could not be read; try again"))
 		return
 	}
+	have := make(map[string]string, len(list))
+	for _, rec := range list {
+		have[rec.ID] = rec.SHA256
+	}
+	get := func(id string) (*compliancehist.Signed, error) { return s.ComplianceHistory.Get(r.Context(), id) }
 	out := make([]historySummary, 0, len(list))
 	for _, rec := range list {
 		c := compliancehist.Check(rec, keys)
 		sum := historySummary{}
 		if rec := c.Record; rec != nil {
 			sum.Taken, sum.Trigger, sum.By = &rec.Taken, rec.Trigger, rec.By
+			sum.Chain = compliancehist.BrokenLink(rec, have, get)
 			for _, f := range rec.Frameworks {
 				f.Controls = nil
 				sum.Frameworks = append(sum.Frameworks, f)
@@ -161,8 +169,18 @@ func (s *Server) handleTakeComplianceRecord(w http.ResponseWriter, r *http.Reque
 // takeComplianceRecord records the compliance report now; r is nil for
 // the monthly record.
 func (s *Server) takeComplianceRecord(ctx context.Context, r *http.Request, id, trigger, by string) (*compliancehist.Checked, error) {
+	// Each record names the one before it, so one deleted later shows.
+	list, err := s.ComplianceHistory.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	keys, err := s.historyKeys(ctx)
+	if err != nil {
+		return nil, err
+	}
 	rep := s.complianceReportAt(ctx, r, true)
 	rec := compliancehist.FromReport(rep, id, trigger, by, s.serverName(), s.Version, s.conf().OpenSearch.IndexPrefix)
+	rec.PrevID, rec.PrevSHA256 = compliancehist.Previous(list, keys)
 	// A server with a report key signs every record: when signing fails
 	// for now, no record is stored, and the monthly job tries again in an
 	// hour rather than keep the month unsigned for good (SEC-527-2).

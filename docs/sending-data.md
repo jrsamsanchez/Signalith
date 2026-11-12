@@ -140,7 +140,8 @@ again shortly. Senders behind one proxy or NAT can be listed in `server.shared_a
 A batch has 2 minutes to arrive; one still arriving at least 16 KB every 30 seconds gets
 more time, up to 10 minutes, so slow links work. A batch that stalls or takes longer is
 refused with 408 and a message saying to send smaller batches (a lower `Flush` in Fluent
-Bit's `[SERVICE]` section), and the server log notes it.
+Bit's `[SERVICE]` section), and the server log notes it. On the OTLP route it is refused
+with 503 and `Retry-After` instead, which the OpenTelemetry Collector retries.
 
 Each event keeps its own time unless that is older than `ingest.max_event_age` (a week
 by default, or the shortest retention period if shorter) or more than an hour ahead. Then it is filed
@@ -159,16 +160,19 @@ be in any zone, and reading it as the server's would file the event hours off. S
 event takes the collector's time instead (Fluent Bit's `date`, the OpenTelemetry record's
 time, the HEC event's `time`, or when Signalith received it), and the time as the host
 wrote it is kept in `device_clock` (for example `2026-10-11T09:15:02`, with the year
-guessed). A time with a zone name other than UTC or GMT that the server's own zone doesn't
-use, such as `2026-10-11 09:15:02 XYZ`, is not trusted either: the receive time is used.
+guessed). The same goes for a JSON record's `date` or `@timestamp` and a Windows event's
+`TimeCreated` written without a zone, such as `2026-10-11 09:15:02`. A time with a zone
+name other than UTC or GMT that the server's own zone doesn't use, such as
+`2026-10-11 09:15:02 XYZ`, is not trusted either: the receive time is used.
 
 Field names that senders choose (JSON keys, syslog structured data, CEF extensions) are
 limited so they cannot fill OpenSearch's mapping: at most 200 fields per event, names of
 up to 128 letters, digits and `_ - @ : /` in at most 5 dot-separated parts, and at most
 1,000 new names per daily index each time Signalith starts. With several servers, those
 1,000 are shared among the servers that stored events in the last 10 minutes (at least
-100 each), and no server adds new names to a day whose index already has 2,100 fields
-(see [Servers](servers.md#field-names-when-several-servers-receive-events)). Fields Signalith itself
+100 each). One sender (an agent token, or an address without one) gets at most half of
+a server's share, so it cannot leave none for the others. No server adds new names to a
+day whose index already has 2,100 fields (see [Servers](servers.md#field-names-when-several-servers-receive-events)). Fields Signalith itself
 produces are always kept, so an event is never lost to extra fields. Fields left out are
 counted in the event's `dropped_fields` (search `dropped_fields>0`), their values stay in
 `_raw`, and the Health page and `/api/health` show the totals under `ingest`

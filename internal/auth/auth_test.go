@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -149,6 +150,40 @@ func TestEndUser(t *testing.T) {
 		t.Errorf("ended %d", n)
 	}
 	if _, ok := s.Lookup(b); !ok {
+		t.Error("ben's session ended")
+	}
+}
+
+// A user's list of sessions marks the current one, names each by a hash
+// rather than its token, and ends one by that name, only the user's own.
+func TestListAndEnd(t *testing.T) {
+	s := NewSessions(time.Hour)
+	mine := s.Start(NewSession{User: "ann", Client: "192.0.2.7", Method: "local"})
+	other := s.Create("ann", true)
+	ben := s.Create("ben", false)
+	list := s.List("ANN", mine)
+	if len(list) != 2 || !list[0].Current || list[0].Client != "192.0.2.7" || list[1].Current || !list[1].Remember {
+		t.Fatalf("list = %+v", list)
+	}
+	for _, ss := range list {
+		h := hash(mine)
+		if ss.ID == "" || strings.Contains(mine+other, ss.ID) || strings.Contains(string(h[:]), ss.ID) {
+			t.Errorf("the list gives away a token: %+v", ss)
+		}
+	}
+	if s.End("ben", list[1].ID) {
+		t.Error("ended another user's session")
+	}
+	if !s.End("ann", list[1].ID) || s.End("ann", list[1].ID) {
+		t.Error("End did not end the session once")
+	}
+	if _, ok := s.Lookup(other); ok {
+		t.Error("the ended session still works")
+	}
+	if _, ok := s.Lookup(mine); !ok {
+		t.Error("the current session ended")
+	}
+	if _, ok := s.Lookup(ben); !ok {
 		t.Error("ben's session ended")
 	}
 }

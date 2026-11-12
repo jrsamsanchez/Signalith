@@ -111,6 +111,55 @@ func TestEveryRouteHasARole(t *testing.T) {
 	}
 }
 
+// notForTokens are viewer or analyst GET routes checked and kept from API
+// tokens (see tokenRoutes).
+var notForTokens = []string{
+	// A person's own browser sessions; an API token has none.
+	"GET /api/me/sessions",
+}
+
+// TestTokenRoutesOnlyRead fails when a GET route a viewer or an analyst
+// may use is neither in tokenRoutes nor in notForTokens. Such a route is
+// refused to API tokens until someone checks that it changes nothing (no
+// write, no message sent, no job started) and lists it; a route that
+// changes something must not be a GET. It also fails when tokenRoutes
+// names a route that is not registered, is for admins (no token is one),
+// asks for the password again, or is not a GET besides the two reviewed
+// POST reads.
+func TestTokenRoutesOnlyRead(t *testing.T) {
+	_, s := newRoleServer(t)
+	roles, recheck := map[string]users.Role{}, map[string]bool{}
+	for _, r := range s.routes {
+		roles[r.Pattern], recheck[r.Pattern] = r.Role, r.Recheck
+		method, _, _ := strings.Cut(r.Pattern, " ")
+		if (method != http.MethodGet && method != http.MethodHead) || r.Role == users.Admin || r.Unclassified {
+			continue
+		}
+		if !tokenRoutes[r.Pattern] && !slices.Contains(notForTokens, r.Pattern) {
+			t.Errorf("%s is new to API tokens: check that it changes nothing, then add it to tokenRoutes (apitokens.go), "+
+				"or to notForTokens to keep it from them", r.Pattern)
+		}
+	}
+	for p := range tokenRoutes {
+		role, ok := roles[p]
+		switch {
+		case !ok:
+			t.Errorf("tokenRoutes lists %s, which is not a route", p)
+		case role == users.Admin:
+			t.Errorf("tokenRoutes lists %s, an admin route, and no API token is an admin", p)
+		case recheck[p]:
+			t.Errorf("tokenRoutes lists %s, which asks a person for the password again", p)
+		case !strings.HasPrefix(p, "GET ") && p != "POST /api/search" && p != "POST /api/parse":
+			t.Errorf("tokenRoutes lists %s, which is not a read", p)
+		}
+	}
+	for _, p := range notForTokens {
+		if tokenRoutes[p] {
+			t.Errorf("%s is in both tokenRoutes and notForTokens", p)
+		}
+	}
+}
+
 // The role table in docs/users.md lists every route under its role,
 // itself or as "every `/api/<prefix>` route".
 func TestUsersDocListsEveryRoute(t *testing.T) {
