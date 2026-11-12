@@ -240,6 +240,10 @@ func configFlag(fs *flag.FlagSet) *string {
 	return fs.String("c", defaultConfigPath(), "config file")
 }
 
+// newPasswordEnv is the environment variable signalith init and signalith
+// passwd take the built-in admin's new password from.
+const newPasswordEnv = "SIGNALITH_NEW_PASSWORD"
+
 func cmdInit(args []string) error {
 	fs := flag.NewFlagSet("init", flag.ExitOnError)
 	path := configFlag(fs)
@@ -252,7 +256,8 @@ func cmdInit(args []string) error {
 	osCert := fs.String("opensearch-cert", "", "certificate file Signalith signs in to OpenSearch with (opensearch.cert_file)")
 	osKey := fs.String("opensearch-key", "", "that certificate's key file (opensearch.key_file)")
 	osInsecure := fs.Bool("opensearch-allow-insecure-http", false, "allow the OpenSearch username and password over plain http to another machine (sets opensearch.allow_insecure_http; prefer https)")
-	password := fs.String("admin-password", "", "admin password (default: generate one)")
+	password := fs.String("admin-password", "", "deprecated: a password on the command line is kept in the shell history and shown to other users of this machine in the process list; "+
+		"give the admin password in the "+newPasswordEnv+" environment variable instead (default: generate one)")
 	// Plain syslog is unencrypted and anyone who can reach the port can
 	// send fake events, so a new install takes syslog over TLS only.
 	// Installers that want it pass an address, such as 0.0.0.0:514.
@@ -293,12 +298,21 @@ func cmdInit(args []string) error {
 	c.Syslog.UDP = *syslogUDP
 	c.Syslog.TCP = *syslogTCP
 	c.Syslog.TLS = *syslogTLS
-	pw := *password
+	// The admin password comes from the environment, as for signalith
+	// passwd, so that it is in no command line. -admin-password still
+	// works, with a warning.
+	pw, from := *password, "-admin-password"
+	if pw != "" {
+		fmt.Fprintln(os.Stderr, "Warning: -admin-password is deprecated: the password is now in this shell's history and was visible in the process list. "+
+			"Give it in the "+newPasswordEnv+" environment variable instead, and change this one with signalith passwd.")
+	} else if pw = os.Getenv(newPasswordEnv); pw != "" {
+		from = newPasswordEnv
+	}
 	generated := pw == ""
 	if generated {
 		pw = config.RandomToken(9)
 	} else if err := config.CheckNewPassword(c.Auth.AdminUser, pw); err != nil {
-		return fmt.Errorf("-admin-password: %w", err)
+		return fmt.Errorf("%s: %w", from, err)
 	}
 	h, err := config.HashPassword(pw)
 	if err != nil {
@@ -671,7 +685,7 @@ func cmdPasswd(args []string) error {
 	// has neither.
 	useServiceEnv(*path, os.Stdout)
 	svcPassword := serviceGives(*path, "SIGNALITH_ADMIN_PASSWORD_FILE", "SIGNALITH_ADMIN_PASSWORD")
-	pw := os.Getenv("SIGNALITH_NEW_PASSWORD")
+	pw := os.Getenv(newPasswordEnv)
 	if pw == "" {
 		var err error
 		if pw, err = readNewPassword(os.Stdin, os.Stderr); err != nil {
@@ -1801,7 +1815,7 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		Assets:            lists,
 		Intel:             indicators,
 		Feeds:             feeds,
-		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer, AuditFrom: r.auditFromFunc()},
+		Notify:            &api.Notify{Settings: notes, Deliveries: deliveries, Sender: senders, Server: sampleServer, AuditFrom: r.auditFromFunc(), AuditWarning: dispatcher.AuditWarning},
 		Dashboards:        boards,
 		Cases:             cstore,
 		CaseFiles:         cfiles,

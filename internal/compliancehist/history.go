@@ -43,6 +43,11 @@ type Record struct {
 	Frameworks   []Framework  `json:"frameworks"`
 	Capabilities []Capability `json:"capabilities"`
 	Notes        []string     `json:"notes,omitempty"`
+	// PrevID and PrevSHA256 name the newest record the history held when
+	// this one was taken, so a record deleted later shows as a broken
+	// link (see BrokenLink). Records taken before chaining have neither.
+	PrevID     string `json:"prev_id,omitempty"`
+	PrevSHA256 string `json:"prev_sha256,omitempty"`
 }
 
 // Framework is one framework's score and its controls' statuses.
@@ -54,11 +59,14 @@ type Framework struct {
 	Controls []Control                 `json:"controls,omitempty"`
 }
 
-// Control is one control's status, and the note an admin left on it.
+// Control is one control's status, and the note an admin left on it:
+// who left it and when.
 type Control struct {
-	ID     string            `json:"id"`
-	Status compliance.Status `json:"status"`
-	Note   string            `json:"note,omitempty"`
+	ID         string            `json:"id"`
+	Status     compliance.Status `json:"status"`
+	Note       string            `json:"note,omitempty"`
+	AttestedBy string            `json:"attested_by,omitempty"`
+	AttestedAt *time.Time        `json:"attested_at,omitempty"`
 }
 
 // Capability is one of Signalith's capabilities, as the report found it.
@@ -75,8 +83,12 @@ func FromReport(rep *compliance.Report, id, trigger, by, server, version, tenant
 		fw := Framework{ID: f.ID, Name: f.Name, Score: f.Score, Counts: f.Counts}
 		for _, c := range f.Controls {
 			ctl := Control{ID: c.ID, Status: c.Status}
-			if c.Attestation != nil {
-				ctl.Note = c.Attestation.Note
+			if a := c.Attestation; a != nil {
+				ctl.Note, ctl.AttestedBy = a.Note, a.By
+				if !a.At.IsZero() {
+					at := a.At.UTC()
+					ctl.AttestedAt = &at
+				}
 			}
 			fw.Controls = append(fw.Controls, ctl)
 		}
@@ -199,6 +211,49 @@ func Check(s *Signed, keys func(id string) (*reportkeys.Key, bool)) *Checked {
 	}
 	out.Record = &r
 	return out
+}
+
+// Previous returns the ID and SHA-256 of the newest record in list whose
+// signature matches, by its signed time, for the next record to name;
+// empty when there is none. An unsigned record is never named: anyone who
+// can write to OpenSearch could have put it there.
+func Previous(list []*Signed, keys func(id string) (*reportkeys.Key, bool)) (id, sum string) {
+	var taken time.Time
+	for _, s := range list {
+		c := Check(s, keys)
+		if c.Record == nil {
+			continue
+		}
+		if id == "" || c.Record.Taken.After(taken) {
+			id, sum, taken = s.ID, s.SHA256, c.Record.Taken
+		}
+	}
+	return id, sum
+}
+
+// BrokenLink says why the record r names as the one before it is not in
+// the history as it was, or "" when it is (or r names none). have maps
+// the IDs of the records at hand to their SHA-256; get reads one that is
+// not at hand, as a list holds only the newest records.
+func BrokenLink(r *Record, have map[string]string, get func(id string) (*Signed, error)) string {
+	if r == nil || r.PrevID == "" {
+		return ""
+	}
+	sum, ok := have[r.PrevID]
+	if !ok {
+		s, err := get(r.PrevID)
+		switch {
+		case errors.Is(err, ErrNotFound):
+			return fmt.Sprintf("the record before it, %s, is no longer in the history: it was deleted", r.PrevID)
+		case err != nil:
+			return ""
+		}
+		sum = s.SHA256
+	}
+	if sum != r.PrevSHA256 {
+		return fmt.Sprintf("the record before it, %s, is not the one it was when this record was taken: it was changed or replaced", r.PrevID)
+	}
+	return ""
 }
 
 // ErrNotFound is a record the history does not have.

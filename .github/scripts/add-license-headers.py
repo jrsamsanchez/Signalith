@@ -37,6 +37,9 @@ def files():
     for path in out.splitlines():
         if "/testdata/" in path or path.startswith("testdata/"):
             continue
+        # Third-party files kept as published, with their own licence notice.
+        if "/vendor/" in path:
+            continue
         for ext in STYLES:
             if path.endswith(ext):
                 yield path, ext

@@ -25,7 +25,10 @@ Ideas and requests are welcome as
 :   Finished and waiting for the next release: a [sign-in notice](sign-in-notice.md)
     on the sign-in page, with an optional step that asks people to agree to it, and
     [audit alerts](notifications.md#audit-alerts) that tell admins about sign-ins,
-    lockouts and changes to Signalith itself.
+    lockouts and changes to Signalith itself; a list of your
+    [signed-in sessions](users.md#signing-in) with a way to end them, and an admin's
+    **Sign out everywhere** for a user; and the password asked again before a
+    [response action](response-actions.md) runs.
 
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
@@ -56,7 +59,7 @@ command.
 
 **Proof**
 
-- [ ] A seven-day lab run, at small-team size and with three servers, that loses no
+- [x] A seven-day lab run, at small-team size and with three servers, that loses no
   accepted event, raises no late detection, and keeps disk and memory flat.
 - [ ] Five installs outside the lab running for 30 days, two of them with real Windows
   computers, listed by name with their permission.

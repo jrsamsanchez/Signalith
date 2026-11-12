@@ -40,8 +40,10 @@ func TestPlaybooksFlow(t *testing.T) {
 	sender := &countingSender{}
 	runs := playbooks.NewMemory()
 	var srv *Server
+	var logs logBuffer
 	ts, _ := newTestServerWith(t, func(s *Server) {
 		srv = s
+		s.Log = slog.New(slog.NewTextHandler(&logs, nil))
 		s.Users = users.NewMemory()
 		for name, role := range map[string]users.Role{"vera": users.Viewer, "andy": users.Analyst, "bea": users.Analyst} {
 			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: name, Role: role, Password: "role-password"}); err != nil {
@@ -124,6 +126,15 @@ func TestPlaybooksFlow(t *testing.T) {
 	id1, id2 := playbooks.RunID("F-1", "bf"), playbooks.RunID("F-2", "bf")
 	if code, body := doAs(t, ts, "andy", "role-password", "POST", "/api/playbooks/runs/"+id1+"/approve", `{"note":"confirmed with the user"}`); code != 200 || body["status"] != "approved" {
 		t.Fatalf("approve = %d %v", code, body)
+	}
+	// The decision's audit line has an action and the address it came
+	// from, as every other audit line (SRCH-219).
+	if l := auditLine(t, logs.String(), `msg="playbook.approve: playbook step approved"`); !strings.Contains(l, "by=andy") ||
+		!strings.Contains(l, "client=127.0.0.1") || !strings.Contains(l, "target="+id1) {
+		t.Errorf("approve audit line: %s", l)
+	}
+	if l := auditLine(t, logs.String(), `msg="playbook.change: playbooks changed"`); !strings.Contains(l, "client=127.0.0.1") {
+		t.Errorf("playbooks audit line: %s", l)
 	}
 	code, body = doAs(t, ts, "bea", "role-password", "POST", "/api/playbooks/runs/"+id1+"/approve", "")
 	if code != 409 || body["error"] != "It was already approved by andy." || body["code"] != "decided" {

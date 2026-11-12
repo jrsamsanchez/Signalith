@@ -47,16 +47,28 @@ var (
 	linuxDenied = []string{"/etc/fluent-bit/", "/var/lib/fluent-bit/", "/etc/td-agent-bit/", "/etc/signalith/", "/var/lib/signalith/",
 		"/etc/signalith-agent/", "/var/lib/signalith-agent/", "/etc/signalith-sensor/",
 		"/etc/shadow", "/etc/gshadow", "/etc/shadow-", "/etc/gshadow-", "/etc/sudoers", "/etc/sudoers.d/", "/etc/ssh/", "/root/",
-		"/proc/", "/sys/", "/dev/", "/etc/ssl/private/", "/etc/pki/"}
+		"/proc/", "/sys/", "/dev/", "/etc/ssl/private/", "/etc/pki/",
+		// Credential files of users, services and tools (ING-217).
+		"/home/*/.ssh/", "/home/*/.aws/", "/home/*/.kube/", "/home/*/.docker/", "/home/*/.gnupg/", "/home/*/.azure/",
+		"/home/*/.config/gcloud/", "/home/*/.netrc", "/home/*/.pgpass", "/home/*/.my.cnf", "/home/*/.git-credentials",
+		"/home/*/.bash_history", "/home/*/.zsh_history", "/home/*/.mysql_history", "/home/*/.psql_history",
+		"/etc/krb5.keytab", "/etc/wireguard/", "/etc/kubernetes/", "/etc/letsencrypt/", "/etc/sssd/", "/etc/openvpn/",
+		"/etc/mysql/debian.cnf", "/var/lib/samba/private/"}
 	windowsDenied = []string{"?:/program files/fluent-bit/", "?:/programdata/fluent-bit/", "?:/programdata/signalith/", "?:/program files/signalith/",
 		"?:/programdata/signalith agent/", "?:/program files/signalith agent/",
-		"?:/windows/system32/config/", "?:/windows/ntds/", "?:/users/*/.ssh/", "?:/programdata/ssh/"}
+		"?:/windows/system32/config/", "?:/windows/ntds/", "?:/users/*/.ssh/", "?:/programdata/ssh/",
+		// Credential files of users, services and browsers (ING-217).
+		"?:/users/*/.aws/", "?:/users/*/.kube/", "?:/users/*/.docker/", "?:/users/*/.azure/",
+		"?:/users/*/appdata/roaming/microsoft/credentials/", "?:/users/*/appdata/local/microsoft/credentials/",
+		"?:/users/*/appdata/roaming/microsoft/protect/", "?:/users/*/appdata/local/google/chrome/user data/",
+		"?:/users/*/appdata/local/microsoft/edge/user data/", "?:/users/*/appdata/roaming/mozilla/firefox/profiles/",
+		"?:/inetpub/wwwroot/web.config"}
 )
 
 // secretPath reports whether p names, or as a pattern can match, a denied
 // file or something in a denied folder, or a key file.
 func secretPath(p string, deny []string) bool {
-	if ext := strings.ToLower(path.Ext(p)); ext == ".key" || ext == ".pfx" || ext == ".p12" || ext == ".kdbx" {
+	if ext := strings.ToLower(path.Ext(p)); ext == ".key" || ext == ".pfx" || ext == ".p12" || ext == ".kdbx" || ext == ".keytab" || ext == ".ovpn" {
 		return true
 	}
 	for _, d := range deny {
@@ -81,7 +93,12 @@ func secretPath(p string, deny []string) bool {
 			}
 			continue
 		}
+		// The pattern matches the file, or the file, named for every
+		// user (/home/*/.netrc), matches the path.
 		if m, _ := path.Match(p, d); m || p == d {
+			return true
+		}
+		if m, _ := path.Match(d, p); m {
 			return true
 		}
 	}

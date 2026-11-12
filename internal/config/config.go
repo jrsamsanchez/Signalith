@@ -849,6 +849,10 @@ type Auth struct {
 	// signed in or not: from 1h to 30d, default 24h (NIST SP 800-63B asks
 	// for a new sign-in at least every 24 hours at AAL2).
 	SessionMaxAge string `yaml:"session_max_age,omitempty"`
+	// KeepSignedIn offers "Keep me signed in" on the sign-in page, which
+	// keeps a session through idle periods (still ending it at
+	// SessionMaxAge). Unset means on (see KeepSignedInOn).
+	KeepSignedIn *bool `yaml:"keep_signed_in,omitempty"`
 	// UsersFile holds the users added on the Users page. Default
 	// users.json in lookups.dir; directory.json (directory sign-in
 	// settings from the Users page) goes in the same folder.
@@ -871,6 +875,12 @@ type Auth struct {
 	// Notice is the sign-in notice, set on the Sign-in notice tab of
 	// Settings.
 	Notice Notice `yaml:"notice,omitempty"`
+}
+
+// KeepSignedInOn reports whether a sign-in may ask to be kept through
+// idle periods (auth.keep_signed_in, true unless set false).
+func (c *Config) KeepSignedInOn() bool {
+	return c.Auth.KeepSignedIn == nil || *c.Auth.KeepSignedIn
 }
 
 // MFARequiredMode returns auth.mfa_required: off, admins or everyone.
@@ -3287,6 +3297,8 @@ const header = `# Signalith configuration.
 # auth.session_timeout  sign the web UI out after this long idle (default 1h)
 # auth.session_max_age  sign the web UI out this long after sign-in, even when kept
 #                    signed in (default 24h; 1h to 30d)
+# auth.keep_signed_in  false hides "Keep me signed in": every session then signs
+#                    out after session_timeout without use
 # auth.mfa_required     who must use two-step sign-in: off, admins or everyone
 # auth.users_file    where Users page accounts are kept (default users.json in lookups.dir)
 # auth.ldap          optional LDAP / Active Directory sign-in; usually set up on the Users

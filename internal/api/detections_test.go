@@ -74,7 +74,7 @@ func TestDetectionsCRUD(t *testing.T) {
 }
 
 func TestDetectionTestAndRunRaiseFindings(t *testing.T) {
-	ts, _ := newTestServer(t)
+	ts, _ := newTestServerWith(t, withUsers(t, "sam"))
 	code, body := do(t, ts, "POST", "/api/detections/test",
 		`{"title":"Failures from $src$","query":"datamodel=Authentication action=failure | stats count by src | where count >= 10","lookback":"1h"}`, true)
 	if code != 200 {

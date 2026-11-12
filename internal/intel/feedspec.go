@@ -190,7 +190,7 @@ func (s *FeedSpec) Problems(env bool) []FeedProblem {
 	} else if iv > 0 && age < iv {
 		add("max_age", "max_age must be at least the interval, or indicators expire between downloads")
 	}
-	if s.Weight < 0 || s.Weight > 10 {
+	if !(s.Weight >= 0 && s.Weight <= 10) { // NaN fails both (ING-218)
 		add("weight", "weight must be above 0 and at most 10 (1 is normal)")
 	}
 	names := make([]string, 0, len(s.Headers))

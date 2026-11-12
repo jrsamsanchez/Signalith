@@ -381,3 +381,43 @@ func TestSensorFieldsAreKnown(t *testing.T) {
 		}
 	}
 }
+
+// TestOneSenderCannotSpendTheNameBudget: one agent token may add at most
+// its share of a daily index's new field names, so another sender's new
+// fields still land after it has sent thousands (ING-216).
+func TestOneSenderCannotSpendTheNameBudget(t *testing.T) {
+	b := &countingBulk{keep: true}
+	p := &Pipeline{Store: b, Prefix: "sig", Now: func() time.Time { return now }}
+	from := func(token string) context.Context {
+		return WithOrigin(context.Background(), Origin{Intake: IntakeAgent, TokenID: token, Sender: "192.0.2.1"})
+	}
+	var recs []map[string]any
+	for i := range 10 {
+		r := map[string]any{"user": "u"}
+		for j := range 150 {
+			r[fmt.Sprintf("junk_%d_%d", i, j)] = "x"
+		}
+		recs = append(recs, r)
+	}
+	if _, err := p.Ingest(from("aaaaaaaaaaaa"), "app", recs); err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, d := range b.docs {
+		for k := range d.Doc {
+			if !KnownField(k) {
+				names[k] = true
+			}
+		}
+	}
+	if len(names) != maxNewNamesPerIndex/senderShare {
+		t.Errorf("one token added %d names, want %d", len(names), maxNewNamesPerIndex/senderShare)
+	}
+	b.docs = nil
+	if _, err := p.Ingest(from("bbbbbbbbbbbb"), "app", []map[string]any{{"order_id": "42", "tenant_code": "x"}}); err != nil {
+		t.Fatal(err)
+	}
+	if d := b.docs[0].Doc; d["order_id"] != "42" || d["tenant_code"] != "x" || d["dropped_fields"] != nil {
+		t.Errorf("another token's fields: %v", d)
+	}
+}

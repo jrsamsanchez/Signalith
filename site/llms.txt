@@ -14,7 +14,7 @@ Key facts:
 - Triage and response: findings queue, risk-based alerting with asset and identity context and behavior baselines, threat intel feeds (STIX/TAXII 2.1), investigation cases with two-way Jira and ServiceNow tickets, an attack storyline that shows one intrusion's ATT&CK tactics and timeline, hunting notebooks, Investigate with AI, response actions and playbooks with an approval step, notifications to email, webhooks, Slack and Teams with buttons to acknowledge findings and approve steps.
 - AI tools: a read-only MCP server so AI assistants can search and read findings with a scoped API token.
 - Security by default: HTTPS, secured OpenSearch, encrypted secrets and archives, per-agent tokens on a separate agent port, roles, LDAP/Active Directory and OpenID Connect and SAML 2.0 sign-in with SCIM provisioning, two-step sign-in with passkeys or an authenticator app, tamper-evident audit log, expiring API tokens, prompt-injection defenses in the AI features, built-in security check.
-- Also: vulnerability scanning (Nmap with CVE matching ranked by CISA KEV and EPSS, optional credentialed OpenVAS with SSH, Windows, VMware ESXi and SNMP logins), a first-use setup guide, compliance mapping (NIST SP 800-53, CIS Controls v8, PCI DSS 4.0, ISO/IEC 27001, HIPAA, SOC 2), data retention with archives.
+- Also: vulnerability scanning (Nmap with CVE matching ranked by CISA KEV and EPSS, optional credentialed OpenVAS with SSH, Windows, VMware ESXi and SNMP logins), a first-use setup guide, compliance mapping for eight frameworks (NIST SP 800-53, CIS Controls v8, PCI DSS 4.0.1, ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR), data retention with archives.
 
 Limits to know (October 2026):
 

@@ -238,6 +238,13 @@ func checkFluentBit(conf string, r fbRules) error {
 				return fmt.Errorf("%s: tls.ca_file must be the agent's own %s", where, r.caFile[0])
 			}
 		}
+		// With the computer's trusted authorities, tls.verify alone only
+		// checks who issued the certificate, so any certificate they issued
+		// would do: the name must be checked too (Fluent Bit's default is
+		// not to). Over loopback nothing sits in between (ING-207).
+		if ip := net.ParseIP(host); len(ca) == 0 && (ip == nil || !ip.IsLoopback()) && !fbOn(one("tls.verify_hostname")) {
+			return fmt.Errorf("%s: without the agent's own tls.ca_file it must check the certificate's name (tls.verify_hostname On)", where)
+		}
 		// Another name to check the certificate against only with the
 		// agent's own certificate authority, for a server reached by its
 		// address: with the computer's trusted authorities it would let

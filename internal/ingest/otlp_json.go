@@ -95,13 +95,16 @@ func walkOTLPJSON(body []byte, build bool, fn func(l *otlpLog, size int, bad *Bo
 			return err
 		}
 		for _, sl := range rl.ScopeLogs {
+			// Every record's event carries its resource and its scope's
+			// name, so both count with each record.
+			scope := otlpScope(sl.Scope.Name)
 			for _, raw := range sl.LogRecords {
 				n++
-				l, bad := jsonLogRecord(raw, n, resource, sl.Scope.Name, build)
+				l, bad := jsonLogRecord(raw, n, resource, scope, build)
 				if bad != nil {
 					l = nil
 				}
-				if err := fn(l, len(raw)+len(rl.Resource), bad); err != nil {
+				if err := fn(l, len(raw)+len(rl.Resource)+len(scope), bad); err != nil {
 					return err
 				}
 			}

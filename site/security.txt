@@ -1,0 +1,8 @@
+# How to report a security problem in Signalith (RFC 9116).
+# Please report privately, with GitHub's private vulnerability reporting.
+Contact: https://github.com/jrsamsanchez/signalith/security/advisories/new
+Expires: 2027-11-11T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://signalith.io/.well-known/security.txt
+Canonical: https://signalith.io/security.txt
+Policy: https://github.com/jrsamsanchez/signalith/blob/main/SECURITY.md

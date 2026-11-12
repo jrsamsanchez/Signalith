@@ -299,6 +299,44 @@ func TestDetectionsOffOrWithoutScheduler(t *testing.T) {
 	}
 }
 
+// A detection counts as evidence once it ran on its schedule without an
+// error, not only because it is on with data arriving (SRCH-220).
+func TestDetectionEvidenceNeedsASuccessfulRun(t *testing.T) {
+	ac7 := func(s *Snapshot) Evidence {
+		t.Helper()
+		return control(t, Evaluate(s, nil), "nist-800-53", "AC-7").Evidence[1]
+	}
+	set := func(s *Snapshot, last time.Time, failed bool) {
+		for i := range s.Detections {
+			s.Detections[i].RunKnown, s.Detections[i].LastRun, s.Detections[i].LastFailed = true, last, failed
+		}
+	}
+	s := full()
+	set(s, now.Add(-time.Hour), true)
+	if e := ac7(s); e.Status != Partial || !strings.Contains(e.Detail, "none ran successfully") {
+		t.Errorf("every run failed = %s %q", e.Status, e.Detail)
+	}
+	s = full()
+	set(s, time.Time{}, false)
+	if e := ac7(s); e.Status != Partial {
+		t.Errorf("never ran = %s %q", e.Status, e.Detail)
+	}
+	s = full()
+	set(s, now.Add(-30*24*time.Hour), false)
+	if e := ac7(s); e.Status != Partial {
+		t.Errorf("last ran a month ago = %s %q", e.Status, e.Detail)
+	}
+	s = full()
+	set(s, now.Add(-time.Hour), false)
+	if e := ac7(s); e.Status != Met || !strings.Contains(e.Detail, "ran successfully") {
+		t.Errorf("ran an hour ago = %s %q", e.Status, e.Detail)
+	}
+	// Without the run state the evidence says it does not know.
+	if e := ac7(full()); e.Status != Met || !strings.Contains(e.Detail, "could not be read") {
+		t.Errorf("run state unknown = %s %q", e.Status, e.Detail)
+	}
+}
+
 func TestTaggedDetections(t *testing.T) {
 	s := empty()
 	s.SchedulerOn = true
