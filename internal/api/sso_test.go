@@ -337,6 +337,14 @@ func TestSSONextStaysHere(t *testing.T) {
 		"/%2F%2Fevil.example":   "/",
 		"/\r\nSet-Cookie: x=1":  "/",
 		"/a\"><script>":         "/a%22%3E%3Cscript%3E",
+		// WEB-06: checked as the browser resolves the path.
+		"/./api/logout":    "/",
+		"/x/../api/users":  "/",
+		"/.//evil.example": "/evil.example",
+		"/login/":          "/",
+		"/Login":           "/",
+		"/API/users":       "/",
+		"/a/./b/?q=1#x":    "/a/b?q=1#x",
 	} {
 		if got := localPath(in); got != want {
 			t.Errorf("localPath(%q) = %q, want %q", in, got, want)

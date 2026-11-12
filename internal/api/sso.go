@@ -13,6 +13,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -121,7 +122,13 @@ func localPath(next string) string {
 	}
 	u, err := url.Parse(next)
 	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || u.Opaque != "" || !strings.HasPrefix(u.Path, "/") ||
-		strings.HasPrefix(u.Path, "//") || strings.HasPrefix(u.Path, "/api/") || u.Path == "/login" {
+		strings.HasPrefix(u.Path, "//") {
+		return "/"
+	}
+	// Checked and used as the browser resolves it: /./api/x is /api/x,
+	// and /.//host is /host (WEB-06).
+	u.Path, u.RawPath = path.Clean(u.Path), ""
+	if p := strings.ToLower(u.Path); strings.HasPrefix(p, "//") || p == "/api" || strings.HasPrefix(p, "/api/") || p == "/login" {
 		return "/"
 	}
 	out := u.EscapedPath()
