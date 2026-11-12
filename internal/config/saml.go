@@ -48,6 +48,11 @@ type SAML struct {
 	CreateUsers *bool `yaml:"create_users,omitempty"`
 	// ButtonLabel is the sign-in page's button.
 	ButtonLabel string `yaml:"button_label,omitempty"`
+	// MFAContext, with auth.mfa_required set to everyone, is the
+	// authentication context class asked for (RequestedAuthnContext) and
+	// required of the assertion, such as AD FS's multipleauthn
+	// (AUTH-209).
+	MFAContext string `yaml:"mfa_context,omitempty"`
 }
 
 // MaxSAMLMetadataXML is the most metadata that can be pasted.
@@ -169,6 +174,9 @@ func (c *Config) samlProblems() []string {
 	}
 	if len(s.ButtonLabel) > 60 {
 		add("button_label", "keep the button label to 60 characters")
+	}
+	if s.MFAContext != "" && !attributePattern.MatchString(s.MFAContext) {
+		add("mfa_context", "%q is not an authentication context class, like http://schemas.microsoft.com/claims/multipleauthn", s.MFAContext)
 	}
 	if on && s.DefaultRole != "viewer" && len(s.AdminGroups)+len(s.AnalystGroups)+len(s.ViewerGroups) == 0 {
 		add("admin_groups", "map at least one group to a role, or let people in no mapped group in as viewers; otherwise nobody can sign in")

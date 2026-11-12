@@ -413,7 +413,8 @@ works: Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden, Auth
 others. It works for local users, the built-in admin and directory users. Users who
 sign in with single sign-on get their second step from their identity provider, and
 Signalith does not ask again, so require it there: **Require two-step sign-in** does
-not reach them.
+not reach them by itself. With it set to `everyone`, Signalith can also check that the
+provider asked for a second step: see [Two-step sign-in at the provider](sso.md#two-step-sign-in-at-the-provider).
 
 **Turn it on.** Open the user menu (your name, top right) and choose **Two-step
 sign-in**. Add a passkey (see [Passkeys](#passkeys)), or under **Authenticator app**

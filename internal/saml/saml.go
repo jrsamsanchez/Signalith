@@ -84,6 +84,9 @@ type SP struct {
 	// ACSURL is the assertion consumer service, where the provider posts
 	// responses.
 	ACSURL string
+	// AuthnContext, when set, is the authentication context class a
+	// sign-in asks for (RequestedAuthnContext, exact).
+	AuthnContext string
 }
 
 // readXML reads an XML document, refusing DTDs (and so entities, which
@@ -356,6 +359,11 @@ func RedirectURL(idp *IdP, sp SP, req Request) (string, error) {
 	ar.CreateElement("saml:Issuer").SetText(sp.EntityID)
 	np := ar.CreateElement("samlp:NameIDPolicy")
 	np.CreateAttr("AllowCreate", "true")
+	if sp.AuthnContext != "" {
+		rac := ar.CreateElement("samlp:RequestedAuthnContext")
+		rac.CreateAttr("Comparison", "exact")
+		rac.CreateElement("saml:AuthnContextClassRef").SetText(sp.AuthnContext)
+	}
 	raw, err := doc.WriteToBytes()
 	if err != nil {
 		return "", err
