@@ -304,6 +304,30 @@ func TestSplunkPackSeverities(t *testing.T) {
 	}
 }
 
+// Every Splunk anomaly rule adds the risk its authors give it, never the
+// default for a rule without a score (SRCH-212).
+func TestSplunkAnomalyRiskScores(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, scores := 0, map[int]int{}
+	for _, d := range ds {
+		if d.Origin == nil || d.Origin.Pack != "splunk" || !slices.Contains(d.Tags, "anomaly") {
+			continue
+		}
+		n++
+		scores[d.Risk.Score]++
+		if d.Risk.Score == 25 {
+			t.Errorf("%s adds the default risk score", d.ID)
+		}
+	}
+	t.Logf("splunk anomaly scores: %v", scores)
+	if n < 100 || scores[20] < n/2 {
+		t.Errorf("%d anomaly rules, scores %v", n, scores)
+	}
+}
+
 // The starter set is 100 to 150 high and critical pack rules that read
 // only what hosts send as installed (BUY-03).
 func TestStarterSet(t *testing.T) {
@@ -336,6 +360,50 @@ func TestStarterSet(t *testing.T) {
 				t.Errorf("%s: %s", id, tag)
 			}
 		}
+	}
+}
+
+// Pack rules that read only Security events Windows does not audit by
+// default are tagged as needing an audit policy, and rules that also read
+// an event it audits are not (SRCH-213).
+func TestPackRulesNeedAuditPolicy(t *testing.T) {
+	_, ds, err := Packs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]*Detection{}
+	n := map[string]int{}
+	for _, d := range ds {
+		byID[d.ID] = d
+		if slices.Contains(d.Tags, NeedsAuditPolicy) {
+			n[d.Origin.Pack]++
+			if slices.ContainsFunc(d.Tags, func(t string) bool { return strings.HasPrefix(t, "needs-") && t != NeedsAuditPolicy }) {
+				t.Errorf("%s has two needs tags: %v", d.ID, d.Tags)
+			}
+		}
+	}
+	t.Logf("rules needing an audit policy: %v", n)
+	if n["sigmahq"] < 40 || n["splunk"] < 20 {
+		t.Errorf("rules needing an audit policy: %v", n)
+	}
+	for id, want := range map[string]bool{
+		"sigma-win-security-iso-mount":                               true,  // 4663
+		"sigma-win-security-admin-share-access":                      true,  // 5140
+		"sigma-win-security-susp-scheduled-task-creation":            true,  // 4698
+		"splunk-executable-file-written-in-administrative-smb-share": true,  // 5145
+		"sigma-win-security-audit-log-cleared":                       false, // 1102, always logged
+	} {
+		d := byID[id]
+		if d == nil {
+			t.Errorf("%s: no such pack rule", id)
+			continue
+		}
+		if got := slices.Contains(d.Tags, NeedsAuditPolicy); got != want {
+			t.Errorf("%s: tags %v, want %s %v", id, d.Tags, NeedsAuditPolicy, want)
+		}
+	}
+	if needsAuditPolicy([]string{"4624", "4663"}) || needsAuditPolicy(nil) || !needsAuditPolicy([]string{"5140", "5145"}) {
+		t.Error("needsAuditPolicy reads a rule's events wrongly")
 	}
 }
 

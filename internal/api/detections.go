@@ -45,6 +45,9 @@ func (s *Server) routeDetections(api *router) {
 	api.admin("POST /api/detections/test", s.handleTestDetection)
 	s.routeDetectionDrafts(api)
 	api.admin("POST /api/detections/sigma", s.handleSigma)
+	// Reading a shared file of detections or Sigma rules for review; it
+	// saves nothing.
+	api.admin("POST /api/detections/convert", s.handleReadRules)
 	api.admin("POST /api/detections/enable", s.handleEnableDetections)
 	api.admin("PUT /api/detections/{id}", s.handlePutDetection)
 	api.admin("DELETE /api/detections/{id}", s.handleDeleteDetection)
@@ -155,6 +158,10 @@ type detectionView struct {
 
 func (s *Server) handleListDetections(w http.ResponseWriter, r *http.Request) {
 	if !s.detectionsReady(w) {
+		return
+	}
+	if r.URL.Query().Get("format") == "yaml" {
+		s.exportDetections(w, r, s.Detections.List())
 		return
 	}
 	states, serr := s.Scheduler.StatusCtx(r.Context())
@@ -505,6 +512,17 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 	if e := v.Get("entity"); e != "" {
 		flt.EntityValues = []string{e}
 	}
+	// ai=benign keeps findings the AI first pass judged likely benign;
+	// none, those it gave no verdict.
+	if ai := splitList(v.Get("ai")); len(ai) > 0 {
+		for _, a := range ai {
+			if !slices.Contains([]string{"real", "benign", "unsure", findings.AINone}, a) {
+				writeError(w, http.StatusBadRequest, errors.New("ai must be real, benign, unsure or none"))
+				return
+			}
+		}
+		flt.AI = ai
+	}
 	sla := s.findingSLA()
 	if due := v.Get("due"); due != "" {
 		// due=overdue keeps findings late now; due=1h also those due
@@ -604,6 +622,10 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 	if len(list) == limit {
 		// There may be more: next continues after the last one.
 		resp["next"] = findings.CursorOf(list[len(list)-1]).Encode()
+	}
+	if s.conf().Assistant.FirstPass && s.model() != nil {
+		// The queue then offers its filter on the AI first pass's notes.
+		resp["ai_first_pass"] = true
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/snapshots"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
@@ -414,6 +415,20 @@ func checkOpenSearchRole(f *Facts) *Check {
 	}
 	if slices.ContainsFunc(o.AuthRoles, func(r string) bool { return r == "all_access" || r == "security_manager" }) || slices.Contains(o.AuthBackend, "admin") {
 		return &Check{State: Attention, Line: "Signalith signs in to OpenSearch as " + user + ", which can do anything there. If its password or key leaked, so would all of OpenSearch.", Fix: fix}
+	}
+	if !f.Config.Backup.Snapshots && slices.Contains(o.AuthRoles, snapshots.Role) {
+		// An install from before 0.4.0 kept the role mapped from the start
+		// (DEP-209).
+		step := "If you do not want scheduled snapshots, take the role away: on an OpenSearch from signalith opensearch install (the Windows installer and the Linux packages), run signalith opensearch snapshot-role off as an administrator; on your own OpenSearch, remove the " + snapshots.Role + " role mapping."
+		switch {
+		case f.Docker:
+			step = "If you do not want scheduled snapshots, take the role away: docker compose -f deploy/docker/docker-compose.yml exec opensearch sh snapshot.sh unregister. The repository and its snapshots stay."
+		case f.Kubernetes:
+			step = "If you do not want scheduled snapshots, take the role away: set opensearch.snapshotRole: false in the Helm chart's values and upgrade the release."
+		}
+		return &Check{State: Attention,
+			Line: "Signalith signs in to OpenSearch as " + user + ", which has the " + snapshots.Role + " role and so may delete snapshots, although scheduled snapshots are off. If its password or key leaked, so could your snapshots.",
+			Fix:  &Fix{Steps: []string{step}, Docs: doc(docBackupRole)}}
 	}
 	return &Check{State: Good, Line: "Signalith signs in to OpenSearch as " + user + ", an account without admin rights."}
 }

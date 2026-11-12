@@ -414,3 +414,49 @@ func TestSAMLReplayOnAnotherServer(t *testing.T) {
 		t.Errorf("after the record works again = %d %s %s", resp.StatusCode, resp.Header.Get("Location"), body)
 	}
 }
+
+// With two-step sign-in required of everyone and a two-step sign-in
+// context set, the sign-in asks the provider for that context, and only
+// an assertion that names it lets someone in (AUTH-209).
+func TestSAMLRequiresSecondFactorFromProvider(t *testing.T) {
+	const multi = "http://schemas.microsoft.com/claims/multipleauthn"
+	for _, tc := range []struct {
+		name    string
+		mode    string
+		context string
+		change  func(r *samltest.Response)
+		asks    bool
+		want    string // sso_error, or "" for signed in
+	}{
+		{name: "password only", mode: "everyone", context: multi, asks: true, want: "mfa"},
+		{name: "context class", mode: "everyone", context: multi, asks: true, change: func(r *samltest.Response) { r.AuthnContext = multi }},
+		{name: "methods attribute", mode: "everyone", context: multi, asks: true,
+			change: func(r *samltest.Response) { r.Attributes[samlAuthnMethods] = []string{"pwd", multi} }},
+		{name: "another class", mode: "everyone", context: multi, asks: true,
+			change: func(r *samltest.Response) { r.AuthnContext = "urn:oasis:names:tc:SAML:2.0:ac:classes:X509" }, want: "mfa"},
+		{name: "no context set", mode: "everyone"},
+		{name: "admins only", mode: "admins", context: multi},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, s, idp := newSAMLServer(t, func(c *config.SAML) { c.MFAContext = tc.context })
+			s.Config.Auth.MFARequired = tc.mode
+			sp := samlSP(s.conf())
+			resp := send(t, "GET", ts.URL+"/api/auth/saml/start", "", nil)
+			loc, _ := url.Parse(resp.Header.Get("Location"))
+			raw, _ := base64.StdEncoding.DecodeString(loc.Query().Get("SAMLRequest"))
+			xml, _ := io.ReadAll(flate.NewReader(bytes.NewReader(raw)))
+			if asked := strings.Contains(string(xml), `<samlp:RequestedAuthnContext Comparison="exact"><saml:AuthnContextClassRef>`+multi+`</saml:AuthnContextClassRef>`); asked != tc.asks {
+				t.Errorf("request asks for the context: %v, want %v: %s", asked, tc.asks, xml)
+			}
+			id, relay, ck := samlStart(t, ts, "")
+			r := idp.Honest(sp.EntityID, sp.ACSURL, id, time.Now())
+			if tc.change != nil {
+				tc.change(&r)
+			}
+			got, _, sess := samlPost(t, ts, idp.Respond(t, r), relay, ck)
+			if samlError(got) != tc.want || (tc.want == "") != (sess != nil) {
+				t.Errorf("got %d %s, want sso_error=%q", got.StatusCode, got.Header.Get("Location"), tc.want)
+			}
+		})
+	}
+}

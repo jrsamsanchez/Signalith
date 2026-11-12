@@ -55,6 +55,15 @@ type Rule struct {
 			Score int    `yaml:"score"`
 		} `yaml:"entity"`
 	} `yaml:"finding"`
+	// IntermediateFindings is where anomaly rules give their risk score
+	// (they add risk without raising a finding of their own).
+	IntermediateFindings struct {
+		Entities []struct {
+			Field string `yaml:"field"`
+			Type  string `yaml:"type"`
+			Score int    `yaml:"score"`
+		} `yaml:"entities"`
+	} `yaml:"intermediate_findings"`
 	RBA struct {
 		Message     string `yaml:"message"`
 		RiskObjects []struct {
@@ -120,12 +129,14 @@ type Rule struct {
 	opt    ParseOptions
 }
 
-// Score is the risk the rule assigns, 0 when it names none.
+// Score is the risk the rule assigns, 0 when it names none: the
+// highest of its finding's, its intermediate findings' (anomaly rules)
+// and its older rba risk objects' scores.
 func (r *Rule) Score() int {
-	if r.Finding.Entity.Score > 0 {
-		return r.Finding.Entity.Score
+	best := r.Finding.Entity.Score
+	for _, e := range r.IntermediateFindings.Entities {
+		best = max(best, e.Score)
 	}
-	best := 0
 	for _, o := range r.RBA.RiskObjects {
 		best = max(best, o.Score)
 	}

@@ -264,3 +264,36 @@ func TestDiscoveryCached(t *testing.T) {
 		t.Errorf("fetched %d times", n)
 	}
 }
+
+func TestClaimsMFA(t *testing.T) {
+	for _, tc := range []struct {
+		amr  any
+		want bool
+	}{
+		{nil, false},
+		{[]any{"pwd"}, false},
+		{"mfa", true},
+		{[]any{"pwd", "mfa"}, true},
+		{[]any{"pwd", "otp"}, true},
+		{[]any{"pwd", "hwk"}, true},
+		{[]any{"pwd", "user"}, false},
+		{[]any{"pwd", "pin"}, false},
+		{[]any{"pwd", "otp", "MFA"}, true},
+		{[]any{"hwk", "user"}, true},
+		{[]any{"otp", "sms"}, true},
+		{[]any{"pwd", "PWD"}, false},
+		{[]any{"pwd", "fed"}, false},
+		{[]any{"pwd", "wia"}, false},
+		{[]any{"pwd", "kba"}, false},
+		{[]any{"pwd", "sms"}, false},
+		{[]any{"fed", "wia", "kba"}, false},
+	} {
+		c := oidc.Claims{}
+		if tc.amr != nil {
+			c["amr"] = tc.amr
+		}
+		if got := c.MFA(); got != tc.want {
+			t.Errorf("amr %v: MFA() = %v, want %v", tc.amr, got, tc.want)
+		}
+	}
+}

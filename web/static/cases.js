@@ -423,7 +423,7 @@ async function caseCall(id, path, body, method, errTitle = 'Couldn’t update th
 }
 
 function draftFor(id) {
-  if (!caseState.drafts[id]) caseState.drafts[id] = { mode: 'note', note: '', query: null, earliest: '-24h', reason: '' };
+  if (!caseState.drafts[id]) caseState.drafts[id] = { mode: 'note', note: '', query: null, earliest: '-24h', reason: '', filter: '' };
   return caseState.drafts[id];
 }
 
@@ -758,6 +758,8 @@ function timelineCard(c, linked) {
     const text = note.value;
     const done = busy(noteBtn, 'Adding…');
     draft.note = '';
+    // What was just added shows, whatever the timeline was filtered to.
+    if (draft.filter !== 'note') draft.filter = '';
     if (await caseCall(c.id, '/entries', { kind: 'note', text }, 'POST', 'Couldn’t add the note')) {
       const n = $('cn-text');
       if (n) n.focus();
@@ -797,6 +799,7 @@ function timelineCard(c, linked) {
     }
     draft.reason = '';
     draft.mode = 'note';
+    if (draft.filter !== 'search') draft.filter = '';
     if (caseState.open === c.id) showCase(c.id);
   });
 
@@ -834,6 +837,7 @@ function timelineCard(c, linked) {
       return;
     }
     draft.mode = 'note';
+    if (draft.filter !== 'file') draft.filter = '';
     refreshCaseCount();
     if (caseState.open === c.id) showCase(c.id);
   });
@@ -855,27 +859,66 @@ function timelineCard(c, linked) {
   setMode(draft.mode);
 
   const entries = c.entries || [];
-  const sorted = [
-    ...entries.map((e) => ({ t: e.time, node: entryNode(c, e, linked) })),
-    ...(c.history || []).filter((h) => h.field !== 'created').map((h) => ({ t: h.time, h, node: historyNode(h) })),
-  ].sort((a, b) => new Date(b.t) - new Date(a.t));
-  // Three or more field changes in a row fold into one line.
-  const items = [];
-  for (let i = 0; i < sorted.length;) {
-    let j = i;
-    while (j < sorted.length && sorted[j].h) j++;
-    if (j - i >= 3) items.push(changeRun(sorted.slice(i, j)));
-    else sorted.slice(i, Math.max(j, i + 1)).forEach((x) => items.push(x.node));
-    i = Math.max(j, i + 1);
-  }
-  items.push(tlItem({ kind: 'created', icon: 'briefcase', time: c.created, text: [el('b', {}, c.created_by || 'Someone'), ' opened the case'] }));
+  const history = (c.history || []).filter((h) => h.field !== 'created');
+  const list = el('ol', { class: 'timeline c-entries', id: 'ct-list', 'aria-labelledby': 'ct-head' });
+  const show = () => {
+    const only = draft.filter;
+    const sorted = [
+      ...entries.filter((e) => !only || tlGroup(e.kind) === only).map((e) => ({ t: e.time, node: entryNode(c, e, linked) })),
+      ...(!only || only === 'change' ? history.map((h) => ({ t: h.time, h, node: historyNode(h) })) : []),
+    ].sort((a, b) => new Date(b.t) - new Date(a.t));
+    // Three or more field changes in a row fold into one line, unless
+    // only changes are shown.
+    const items = [];
+    for (let i = 0; i < sorted.length;) {
+      let j = i;
+      while (j < sorted.length && sorted[j].h) j++;
+      if (j - i >= 3 && only !== 'change') items.push(changeRun(sorted.slice(i, j)));
+      else sorted.slice(i, Math.max(j, i + 1)).forEach((x) => items.push(x.node));
+      i = Math.max(j, i + 1);
+    }
+    if (!only || only === 'change') items.push(tlItem({ kind: 'created', icon: 'briefcase', time: c.created, text: [el('b', {}, c.created_by || 'Someone'), ' opened the case'] }));
+    list.replaceChildren(...items);
+  };
+  const filter = tlFilter(entries, history.length, draft, show);
+  show();
 
   return el('section', { class: 'card c-timeline', 'aria-labelledby': 'ct-head' },
     el('div', { class: 'card__head' },
       el('div', {}, el('h3', { class: 'card__title', id: 'ct-head' }, 'Timeline ', el('span', { class: 'count' }, String(entries.length)))),
       can('analyst') ? el('div', { class: 'card__actions' }, seg) : null),
     can('analyst') ? el('div', { class: 'c-compose' }, noteForm, searchForm, fileForm) : null,
-    el('ol', { class: 'timeline c-entries' }, ...items));
+    filter, list);
+}
+
+// TL_GROUPS are the timeline filters: one per kind of entry, in the order
+// shown, and the case's field changes last.
+const TL_GROUPS = [
+  ['note', 'Notes', 'message-square-text'], ['file', 'Files', 'paperclip'], ['search', 'Searches', 'search'],
+  ['event', 'Events', 'pin'], ['finding', 'Findings', 'shield-alert'], ['action', 'Actions', 'zap'],
+  ['notebook', 'Notebooks', 'notebook-pen'], ['change', 'Changes', 'history'],
+];
+const tlGroup = (kind) => (TL_GROUPS.some(([k]) => k === kind) && kind !== 'change' ? kind : 'other');
+
+// tlFilter is the row of filters over the timeline: All, then each kind
+// the case has, with its count, so notes and files are one click away
+// however busy the timeline is. Nothing to choose from shows nothing.
+function tlFilter(entries, changes, draft, show) {
+  const counts = { change: changes };
+  for (const e of entries) counts[tlGroup(e.kind)] = (counts[tlGroup(e.kind)] || 0) + 1;
+  const groups = TL_GROUPS.filter(([k]) => counts[k]);
+  if (draft.filter && !counts[draft.filter]) draft.filter = '';
+  if (groups.length < 2) return null;
+  const seg = el('div', { class: 'seg seg--sm c-tl-filter__seg', role: 'group', 'aria-label': 'Show on the timeline' });
+  const set = (k) => {
+    draft.filter = k;
+    seg.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.filter === k)));
+    show();
+  };
+  const btn = (k, label, ic, n) => el('button', { type: 'button', 'data-filter': k, 'aria-pressed': String((draft.filter || '') === k), 'aria-controls': 'ct-list', onclick: () => set(k) },
+    ic ? icon(ic) : null, label, n === undefined ? null : el('span', { class: 'c-tl-filter__n num' }, String(n)));
+  seg.append(btn('', 'All'), ...groups.map(([k, label, ic]) => btn(k, label, ic, counts[k])));
+  return el('div', { class: 'c-tl-filter' }, seg);
 }
 
 // tlItem draws one timeline row: a dot, what happened, when, and an
