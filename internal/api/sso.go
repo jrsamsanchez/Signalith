@@ -141,7 +141,8 @@ func localPath(next string) string {
 // answer, and is always written to the audit log. One that names nobody
 // can be made by anyone, not signed in, as often as they like (a link
 // to the start page, a callback with made-up text): it is written at
-// most once a minute for each address, with how many there were since,
+// most once a minute for each address (an IPv6 /64 counting as one),
+// with how many there were since, and 60 times a minute in all,
 // and not at all while single sign-on is off, so it can neither flood
 // the audit log nor crowd out the audit alerts.
 func (s *Server) ssoFail(w http.ResponseWriter, r *http.Request, code, user, detail string) {
@@ -151,7 +152,9 @@ func (s *Server) ssoFail(w http.ResponseWriter, r *http.Request, code, user, det
 		c := s.conf()
 		n := 0
 		if c.OIDCOn() || c.SAMLOn() {
-			n = s.ssoRefused.note(s.client(r).Addr.String(), time.Now())
+			var skipped int
+			n, skipped = s.ssoRefused.noteAll(s.client(r).key(), time.Now())
+			s.logSkipped("failed single sign-ons", skipped)
 		}
 		if audited = n > 0; audited {
 			attrs = append(attrs, "failures", n)
@@ -166,37 +169,72 @@ func (s *Server) ssoFail(w http.ResponseWriter, r *http.Request, code, user, det
 }
 
 // ssoFailsAMinute is the most failed single sign-ons that name no user
-// written to the audit log in a minute, from all addresses together.
+// written to the audit log in a minute, from all addresses together; and
+// the same for refused SCIM tokens and metrics scrapes.
 const ssoFailsAMinute = 60
 
-// ssoRefusals limits the audit records of failed single sign-ons that
-// name no user: one a minute for each address, as for refused SCIM
-// tokens, and ssoFailsAMinute in all, as one sender may have many
-// addresses.
+// ssoRefusals limits the audit records of refusals anyone can cause
+// (failed single sign-ons that name no user, refused SCIM tokens and
+// scrapes, failed sign-ins): one a minute for each client, an IPv6 /64
+// counting as one, and ssoFailsAMinute in all, as one sender may have
+// many addresses (noteUpTo sets other limits). What the total keeps
+// out is counted, and reported once the minute is over (noteAll), so
+// the audit log says that records are missing.
 type ssoRefusals struct {
 	by    scimRefusals
 	mu    sync.Mutex
 	since time.Time
 	count int
+	// skipped is how many the total kept out this minute, and unsaid
+	// how many it kept out in the minute before, not yet reported.
+	skipped int
+	unsaid  int
 }
 
-// note counts a failure from addr, and returns how many to log now (0 to
+// note counts a refusal from key, and returns how many to log now (0 to
 // log nothing).
-func (f *ssoRefusals) note(addr string, now time.Time) int {
-	n := f.by.note(addr, now)
-	if n == 0 {
-		return 0
-	}
+func (f *ssoRefusals) note(key string, now time.Time) int {
+	n, _ := f.noteAll(key, now)
+	return n
+}
+
+// noteAll is note, and also returns how many refusals the total kept out
+// of the audit log in the minute before, once, for the caller to write
+// in one record (Server.logSkipped).
+func (f *ssoRefusals) noteAll(key string, now time.Time) (n, skipped int) {
+	return f.noteUpTo(key, now, 1, ssoFailsAMinute)
+}
+
+// noteUpTo is noteAll with up to perKey records a minute for a client and
+// perMinute in all.
+func (f *ssoRefusals) noteUpTo(key string, now time.Time, perKey, perMinute int) (n, skipped int) {
+	n = f.by.noteUpTo(key, now, perKey)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if now.Sub(f.since) >= time.Minute {
-		f.since, f.count = now, 0
+	if now.Sub(f.since) >= time.Minute || now.Before(f.since) {
+		f.unsaid += f.skipped
+		f.since, f.count, f.skipped = now, 0, 0
 	}
-	if f.count >= ssoFailsAMinute {
-		return 0
+	skipped, f.unsaid = f.unsaid, 0
+	if n == 0 {
+		return 0, skipped
+	}
+	if f.count >= perMinute {
+		f.skipped += n
+		return 0, skipped
 	}
 	f.count++
-	return n
+	return n, skipped
+}
+
+// logSkipped writes one audit record saying that n of what (failed
+// single sign-ons, say) were not written to the audit log in the minute
+// before, as there were too many; it writes nothing for 0.
+func (s *Server) logSkipped(what string, n int) {
+	if n > 0 {
+		s.Log.Warn("audit records left out", "audit", true, "what", what, "count", n,
+			"reason", "too many in a minute, from all addresses together")
+	}
 }
 
 // handleSSOStart sends the browser to the identity provider.

@@ -628,12 +628,12 @@ func TestUntrustedForwardedForInLocks(t *testing.T) {
 		signInWith(t, c.a.client, c.a.url, attempt{user: "jlee", pass: "wrong", xff: fmt.Sprintf("203.0.113.%d", i)})
 	}
 	cid, secret := c.a.docs.ClusterID(), c.a.docs.Hub().Keys().Active().LockKey()
-	peer := clusterauth.LockID(cid, auth.ScopeAddressAccount, auth.LockKey(secret, "p\x00127.0.0.1\x00jlee"))
+	peer := clusterauth.LockID(cid, auth.ScopeAddressAccount, auth.LockKey(secret, "p\x00127.0.0.1\x00"+auth.AccountKey("jlee")))
 	waitFor(t, "the lock of the peer's address", func() bool {
 		return c.fake.Source(memberPrefix+"_runtime", peer) != nil
 	})
 	for i := 0; i < 5; i++ {
-		named := clusterauth.LockID(cid, auth.ScopeAddressAccount, auth.LockKey(secret, fmt.Sprintf("p\x00203.0.113.%d\x00jlee", i)))
+		named := clusterauth.LockID(cid, auth.ScopeAddressAccount, auth.LockKey(secret, fmt.Sprintf("p\x00203.0.113.%d\x00%s", i, auth.AccountKey("jlee"))))
 		if c.fake.Source(memberPrefix+"_runtime", named) != nil {
 			t.Errorf("a lock for the forwarded address 203.0.113.%d", i)
 		}

@@ -342,8 +342,9 @@ type Server struct {
 	samlReplays          saml.Replays // SAML assertions used, until they expire
 	samlEntity           atomic.Value // the SAML provider's entity ID, from its metadata
 	samlLoading          atomic.Bool  // whether its metadata is being read for samlIssuerOK
-	scimRefused          scimRefusals // when a refused SCIM token was last logged, by address
+	scimRefused          ssoRefusals  // refused SCIM tokens, to limit their audit records
 	ssoRefused           ssoRefusals  // failed single sign-ons that name no user, to limit their audit records
+	signInFailed         ssoRefusals  // failed password sign-ins, to limit their audit records (access.go)
 	creds                credCache    // recently checked Basic credentials
 	passkeyChallenges    challengeSet // passkey challenges answered on this server
 	routes               []route      // every API route and its role, from Handler
@@ -411,7 +412,7 @@ type Server struct {
 	// metricsRefused the log of refused scrape tokens, and metricsSlow
 	// keeps what scrapes ask OpenSearch for a little while (metrics.go).
 	metricsRate    tokenRate
-	metricsRefused scimRefusals
+	metricsRefused ssoRefusals
 	metricsSlow    metricsCache
 }
 

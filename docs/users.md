@@ -285,7 +285,15 @@ still being checked count too, so a burst of parallel guesses cannot get past th
 limit. Wrong directory passwords count; an unreachable directory does not. Basic
 auth, **Test a user** with a password, and **Change password** share these limits.
 An IPv6 address is counted with the rest of its /64 network, since one computer can
-usually use any address in it.
+usually use any address in it. A username over 256 bytes or a password over 1,024
+bytes is refused at once, as a wrong one, without being checked, counted or logged.
+
+Each failed sign-in is written to the audit log, up to 10 a minute from one address
+and 120 a minute from all of them together, so someone sending made-up names from
+many addresses cannot flood it. A record past the first in a minute counts the
+failures since the address's last record (`failures`). One that locks or slows
+anything down is always written, and when the total left records out, the first
+record of the next minute, *"audit records left out"*, says how many.
 Servers that share their users share these limits too (see
 [Failed sign-in limits on several servers](#failed-sign-in-limits-on-several-servers)).
 
@@ -338,6 +346,12 @@ that, list the address on the **Settings** page:
   under **Proxies and gateways** (`server.shared_addresses`). Wrong passwords from
   that address are counted for each account only, so it is never refused as a whole,
   and one person's wrong passwords never affect another account.
+
+Such an address has one limit of its own: after 300 wrong passwords in a minute,
+further sign-ins through it wait (`429` with `Retry-After`) until the oldest is a
+minute old. Nothing is locked. Trusted reverse proxies without **Client address
+header** make every visitor one such client, so `signalith validate`, the server log
+at start and the **Health** page warn about it.
 
 When an address is refused as a whole, the server log says so and names these
 settings.

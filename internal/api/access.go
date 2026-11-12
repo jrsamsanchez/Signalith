@@ -677,6 +677,30 @@ func (s *Server) beginAttempt(r *http.Request, from clientInfo, account, browser
 	return a, err
 }
 
+// signInFailsAMinute is the most failed sign-ins written to the audit
+// log in a minute from all clients together, and signInFailsPerClient
+// from one client (an IPv4 address or IPv6 /64). Anyone can fail a
+// sign-in with a made-up name, and a sender with many addresses, or
+// behind a shared one, is held back by no per-address limit.
+const (
+	signInFailsAMinute   = 120
+	signInFailsPerClient = 10
+)
+
+// auditSignInFailure says whether a failed sign-in goes to the audit log,
+// as how many of the client's failures the record stands for (0: none):
+// always when it locked or slowed something down (the audit alerts tell
+// of lockouts), else within signInFailsPerClient and signInFailsAMinute.
+// What the total leaves out is said in one record (logSkipped).
+func (s *Server) auditSignInFailure(from clientInfo, f auth.Failure) int {
+	n, skipped := s.signInFailed.noteUpTo(from.key(), time.Now(), signInFailsPerClient, signInFailsAMinute)
+	s.logSkipped("failed sign-ins", skipped)
+	if n == 0 && f.LockedOut() {
+		n = 1
+	}
+	return n
+}
+
 // noteFailure logs what a wrong password led to beyond the failure
 // itself: an address locked for every account may be many people behind
 // one proxy or NAT, which can be listed so that it never is.
@@ -689,6 +713,14 @@ func (s *Server) noteFailure(from clientInfo, f auth.Failure) {
 	}
 }
 
+// The longest username and password signIn checks, in bytes: past any
+// name an account can have, and past users.MaxPasswordLength characters
+// in any script.
+const (
+	maxSignInName     = 256
+	maxSignInPassword = 4 * users.MaxPasswordLength
+)
+
 // signIn checks a username and password for the sign-in page or Basic
 // auth: the built-in admin first, then local users, then the directory.
 // A local username is never looked up in the directory. Wrong passwords
@@ -697,6 +729,13 @@ func (s *Server) noteFailure(from clientInfo, f auth.Failure) {
 func (s *Server) signIn(r *http.Request, name, password string, step secondFactor, method string) (*principal, error) {
 	from := s.client(r)
 	name = strings.TrimSpace(name)
+	if len(name) > maxSignInName || len(password) > maxSignInPassword {
+		// No account has such a name or password: refused before the
+		// limits, the password check and the audit log, so a guesser
+		// cannot make the server keep or write what was sent.
+		s.Log.Debug("sign-in refused: username or password too long", slices.Concat(from.logAttrs(), []any{"method", method})...)
+		return nil, errWrongCredentials
+	}
 	attempt, err := s.beginAttempt(r, from, name, "")
 	if err != nil {
 		return nil, err
@@ -725,8 +764,16 @@ func (s *Server) signIn(r *http.Request, name, password string, step secondFacto
 			// that may not sign in: no guess was refused.
 			attempt.Done()
 		}
-		s.Log.Warn("sign-in failed", slices.Concat([]any{"audit", true, "user", name}, from.logAttrs(),
-			[]any{"method", method, "reason", reason, "locked_out", f.LockedOut()})...)
+		attrs := slices.Concat([]any{"user", name}, from.logAttrs(), []any{"method", method, "reason", reason, "locked_out", f.LockedOut()})
+		if n := s.auditSignInFailure(from, f); n > 0 {
+			if n > 1 {
+				// This client's failures since its last record.
+				attrs = append(attrs, "failures", n)
+			}
+			s.Log.Warn("sign-in failed", slices.Concat([]any{"audit", true}, attrs)...)
+		} else {
+			s.Log.Debug("sign-in failed", attrs...)
+		}
 		s.noteFailure(from, f)
 		return nil, err
 	}
