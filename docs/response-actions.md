@@ -15,7 +15,7 @@ Every run goes the same way:
    is disruptive unless an admin says otherwise; "enable" (undo) actions are not
    by default.
 3. A confirm step says exactly what will happen, for example *Disable the AD account
-   jdoe in corp.example.com.* Nothing runs before the analyst confirms. If they have not
+   jdoe in corp.example.com.* Nothing runs before the analyst confirms. From the release after 0.4.0, if they have not
    entered their password (or a two-step code or passkey) in the last 5 minutes,
    Signalith asks for it first, so nobody at a computer left signed in, or holding a
    stolen session, can run an action (see [Confirming it's you](users.md#confirming-its-you)).
