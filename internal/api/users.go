@@ -25,6 +25,7 @@ func (s *Server) routeUsers(api *router) {
 	s.routeMFA(api)
 	s.routePasskeys(api)
 	s.routeRecheck(api)
+	s.routeSessions(api)
 
 	api.admin("GET /api/users", s.handleListUsers)
 	api.sensitive("POST /api/users", s.handleCreateUser)
@@ -193,7 +194,7 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		if err != nil {
 			s.Log.Warn("password changed, but no new session could be started; sign in again with the new password", "user", p.Username, "err", err)
 		} else {
-			s.setSessionCookie(w, r, token, p.remember)
+			s.setSessionCookie(w, r, token, p.remember && s.conf().KeepSignedInOn())
 			s.sessions().Delete(r.Context(), p.token)
 			keep = token
 		}
@@ -317,6 +318,9 @@ func (s *Server) viewUser(u users.User, me string) userView {
 	if v.MFA && !v.You {
 		v.Actions = append(v.Actions, "reset_mfa")
 	}
+	if !v.You && !v.Disabled {
+		v.Actions = append(v.Actions, "end_sessions")
+	}
 	return v
 }
 
@@ -348,6 +352,9 @@ func (s *Server) builtinView(me string) userView {
 	v.MFA = s.userStore().MFAOn(name)
 	if v.MFA && !v.You {
 		v.Actions = append(v.Actions, "reset_mfa")
+	}
+	if !v.You && !v.Disabled {
+		v.Actions = append(v.Actions, "end_sessions")
 	}
 	return v
 }

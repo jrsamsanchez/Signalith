@@ -353,3 +353,32 @@ func TestInitTurnsOnHTTPS(t *testing.T) {
 		t.Errorf("syslog.tls %v %v", c2, err)
 	}
 }
+
+// signalith init takes the admin password from SIGNALITH_NEW_PASSWORD, as
+// signalith passwd does, so that it is in no command line; a weak one is
+// refused by that name, and nothing is generated.
+func TestInitTakesAdminPasswordFromEnvironment(t *testing.T) {
+	t.Setenv("SIGNALITH_PUBLIC_URL", "")
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "from-the-environment")
+	path := filepath.Join(t.TempDir(), "signalith.yaml")
+	out := captureStdout(t, func() {
+		if err := cmdInit([]string{"-c", path}); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if strings.Contains(out, "from-the-environment") {
+		t.Errorf("init printed the password it was given:\n%s", out)
+	}
+	c, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.CheckPassword(c.Auth.AdminUser, "from-the-environment") {
+		t.Error("the password from the environment does not sign in")
+	}
+	t.Setenv("SIGNALITH_NEW_PASSWORD", "short")
+	err = cmdInit([]string{"-c", filepath.Join(t.TempDir(), "signalith.yaml")})
+	if err == nil || !strings.Contains(err.Error(), "SIGNALITH_NEW_PASSWORD") {
+		t.Errorf("a weak password from the environment: %v", err)
+	}
+}

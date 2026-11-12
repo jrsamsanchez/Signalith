@@ -18,15 +18,15 @@ published and you are credited unless you ask not to be.
 ## Supported versions
 
 Security fixes go to the `main` branch and to the latest release: the newest
-minor version (0.3 now, starting with v0.3.0), as a new patch release. Older
-releases, such as 0.2, are not patched, so please upgrade to the latest release
+minor version (0.4 now, starting with v0.4.0), as a new patch release. Older
+releases, such as 0.3, are not patched, so please upgrade to the latest release
 to get a fix.
 
 | Version          | Gets security fixes |
 | ---------------- | ------------------- |
 | `main`           | Yes                 |
-| 0.3.x (latest)   | Yes                 |
-| 0.2.x and older  | No                  |
+| 0.4.x (latest)   | Yes                 |
+| 0.3.x and older  | No                  |
 
 Each release's files and container image are signed, and you can check that
 what you downloaded is what GitHub Actions built: see

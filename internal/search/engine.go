@@ -647,11 +647,13 @@ func (e *Engine) compilePlan(q *query.Query, whole bool) (*Plan, error) {
 
 	p.Mode, p.post = "events", cmds
 	size := o.DefaultEvents
-	if needsAllEvents(cmds) {
+	if n, ok := leadingHead(cmds); ok {
+		// A head after commands that work row by row, or on the rows
+		// above (accum), needs only that many events.
+		size = min(n, o.MaxEvents)
+	} else if needsAllEvents(cmds) {
 		size = o.MaxEvents
 		p.SampleLimit = size
-	} else if n, ok := leadingHead(cmds); ok {
-		size = min(n, o.MaxEvents)
 	} else if whole {
 		size = o.MaxEvents
 		p.SampleLimit = size
@@ -662,7 +664,9 @@ func (e *Engine) compilePlan(q *query.Query, whole bool) (*Plan, error) {
 }
 
 // needsAllEvents reports whether later commands look at the whole event set
-// (sorting, filtering or aggregating), not just the newest few.
+// (sorting, filtering, aggregating, totalling or reshaping), not just the
+// newest few. TestEveryCommandSaysWhichEventsItNeeds holds every command
+// to its answer here.
 func needsAllEvents(cmds []query.Command) bool {
 	for _, c := range cmds {
 		switch c := c.(type) {
@@ -673,6 +677,13 @@ func needsAllEvents(cmds []query.Command) bool {
 			if !c.Left {
 				return true
 			}
+		case *query.AddTotals:
+			// The row of column totals adds up every event.
+			if c.Col {
+				return true
+			}
+		case *query.Reverse, *query.Uniq, *query.Accum, *query.Transpose, *query.Untable, *query.XYSeries, *query.Map, *query.Return, *query.Timechart:
+			return true
 		case *query.Sort, *query.Where, *query.Stats, *query.Top, *query.Dedup, *query.EventStats, *query.Transaction,
 			*query.StreamStats, *query.Regex, *query.AppendPipe, *query.Chart, *query.Tail, *query.MVCombine, *query.FieldSummary,
 			*query.Concurrency, *query.Contingency, *query.Format, *query.MakeContinuous, *query.Geostats, *query.Outlier, *query.Timewrap, *query.Cluster, *query.AnomalyDetection, *query.Correlate, *query.Predict, *query.KMeans, *query.OutputLookup:
@@ -853,6 +864,7 @@ func (e *Engine) execute(ctx context.Context, q *query.Query) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	evaluatorFor(ctx).sub.mark(res)
 	res.TookMS = time.Since(start).Milliseconds()
 	if loc := zoneOf(q.TimeZone); loc != time.UTC {
 		res.TimeZone = loc.String()

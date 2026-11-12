@@ -84,7 +84,7 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	body, release, err := s.readBatch(w, r)
 	if err != nil {
-		fail(s.batchFailure(r, err))
+		fail(s.otlpBatchFailure(r, err))
 		return
 	}
 	defer release()

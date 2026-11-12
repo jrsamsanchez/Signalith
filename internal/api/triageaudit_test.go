@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/intel"
+	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
 // wantAudit checks that the log has an audit line with msg, by admin,
@@ -35,6 +37,7 @@ func TestTriageAndCaseChangesAreAudited(t *testing.T) {
 	var logs logBuffer
 	var store findings.Store
 	ts, _ := newTestServerWith(t, func(s *Server) {
+		withUsers(t, "bob", "carol")(s)
 		s.Log = slog.New(slog.NewTextHandler(&logs, nil))
 		store = s.Findings
 	})
@@ -177,4 +180,123 @@ func TestIntelChangesAreAudited(t *testing.T) {
 			t.Errorf("an audit line holds the feed's key: %s", l)
 		}
 	}
+}
+
+// withUsers gives a test server a user store with analysts of these names.
+func withUsers(t *testing.T, names ...string) func(*Server) {
+	return func(s *Server) {
+		s.Users = users.NewMemory()
+		for _, name := range names {
+			if _, err := s.Users.Create(context.Background(), users.NewUser{Username: name, Role: users.Analyst, Password: "role-password"}); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+}
+
+// Ticking off, changing and removing a case's tasks, and exporting its
+// report, are audit lines with an action and the case as their target
+// (SRCH-214, SRCH-215).
+func TestCaseTaskChangesAreAudited(t *testing.T) {
+	var logs logBuffer
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		withUsers(t, "ana")(s)
+		s.Log = slog.New(slog.NewTextHandler(&logs, nil))
+	})
+	_, out := do(t, ts, "POST", "/api/cases", `{"title":"Phish"}`, true)
+	id := out["case"].(map[string]any)["id"].(string)
+	code, out := do(t, ts, "POST", "/api/cases/"+id+"/tasks", `{"titles":["Isolate the host","Reset the password"]}`, true)
+	if code != http.StatusCreated {
+		t.Fatalf("add = %d %v", code, out)
+	}
+	task := out["tasks"].([]any)[0].(map[string]any)["id"].(string)
+	wantAudit(t, &logs, "case.task_add:", "target="+id, `titles="Isolate the host; Reset the password"`)
+	if code, out := do(t, ts, "PATCH", "/api/cases/"+id+"/tasks/"+task, `{"done":true,"owner":"ANA"}`, true); code != 200 {
+		t.Fatalf("tick = %d %v", code, out)
+	}
+	wantAudit(t, &logs, "case.task_update:", "target="+id, "task="+task, "owner:  -> ana", "done: false -> true", "done_by=admin")
+	if code, out := do(t, ts, "DELETE", "/api/cases/"+id+"/tasks/"+task, "", true); code != 200 {
+		t.Fatalf("remove = %d %v", code, out)
+	}
+	wantAudit(t, &logs, "case.task_remove:", "target="+id, "task="+task, `title="Isolate the host"`, "done=true")
+	if resp, _ := get(t, ts, "/api/cases/"+id+"/report"); resp.StatusCode != 200 {
+		t.Fatalf("report = %d", resp.StatusCode)
+	}
+	wantAudit(t, &logs, "case.report_export:", "target="+id, "format=html")
+}
+
+// An owner is a user Signalith knows, spelt as their name is, or nobody;
+// an owner given before owners were checked can still be saved
+// (SRCH-218).
+func TestOwnersMustBeKnownUsers(t *testing.T) {
+	var store findings.Store
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		withUsers(t, "ana")(s)
+		store = s.Findings
+	})
+	now := time.Now().Add(-time.Hour)
+	for _, f := range []*findings.Finding{
+		{ID: "f-1", Title: "Brute force", Severity: "medium", Status: findings.StatusNew, Created: now, Updated: now},
+		{ID: "f-old", Title: "Brute force", Severity: "medium", Status: findings.StatusInProgress, Owner: "Old Name", Created: now, Updated: now},
+	} {
+		if err := store.Create(context.Background(), f); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if code, out := do(t, ts, "PATCH", "/api/findings/f-1", `{"owner":"anna"}`, true); code != 400 || !strings.Contains(fmt.Sprint(out["error"]), `no user is named "anna"`) {
+		t.Errorf("a misspelt owner = %d %v", code, out)
+	}
+	if code, out := do(t, ts, "PATCH", "/api/findings/f-1", `{"owner":"Ana"}`, true); code != 200 || out["owner"] != "ana" {
+		t.Errorf("a known owner = %d %v", code, out)
+	}
+	if code, out := do(t, ts, "PATCH", "/api/findings/f-1", `{"owner":""}`, true); code != 200 || out["owner"] != nil && out["owner"] != "" {
+		t.Errorf("unassign = %d %v", code, out)
+	}
+	if code, out := do(t, ts, "PATCH", "/api/findings/f-old", `{"owner":"Old Name","comment":"still on it"}`, true); code != 200 || out["owner"] != "Old Name" {
+		t.Errorf("an owner set before the check = %d %v", code, out)
+	}
+	if code, out := do(t, ts, "POST", "/api/findings/bulk", `{"ids":["f-1"],"update":{"owner":"nobody-here"}}`, true); code != 200 || out["updated"] != float64(0) {
+		t.Errorf("bulk to an unknown owner = %d %v", code, out)
+	}
+
+	if code, out := do(t, ts, "POST", "/api/cases", `{"title":"Phish","owner":"bob"}`, true); code != 400 {
+		t.Errorf("case for an unknown owner = %d %v", code, out)
+	}
+	code, out := do(t, ts, "POST", "/api/cases", `{"title":"Phish","owner":"ADMIN"}`, true)
+	if code != 201 || out["case"].(map[string]any)["owner"] != "admin" {
+		t.Fatalf("case for the built-in admin = %d %v", code, out)
+	}
+	c := out["case"].(map[string]any)
+	id := c["id"].(string)
+	if code, out := do(t, ts, "PATCH", "/api/cases/"+id, `{"owner":"bob"}`, true); code != 400 {
+		t.Errorf("case to an unknown owner = %d %v", code, out)
+	}
+	if code, out := do(t, ts, "PATCH", "/api/cases/"+id, `{"owner":"ana"}`, true); code != 200 || out["case"].(map[string]any)["owner"] != "ana" {
+		t.Errorf("case to a known owner = %d %v", code, out)
+	}
+	_, out = do(t, ts, "POST", "/api/cases/"+id+"/tasks", `{"titles":["Call the user"]}`, true)
+	task := out["tasks"].([]any)[0].(map[string]any)["id"].(string)
+	if code, out := do(t, ts, "PATCH", "/api/cases/"+id+"/tasks/"+task, `{"owner":"bob"}`, true); code != 400 {
+		t.Errorf("task to an unknown owner = %d %v", code, out)
+	}
+	if code, out := do(t, ts, "PATCH", "/api/cases/"+id+"/tasks/nope", `{"owner":"bob"}`, true); code != 404 {
+		t.Errorf("unknown task = %d %v", code, out)
+	}
+}
+
+// Building a storyline reads activity about whoever it names, and is an
+// audit line like a search (SRCH-217); so is exporting an evidence report
+// (SRCH-222).
+func TestStorylineAndEvidenceExportAreAudited(t *testing.T) {
+	t.Setenv("SIGNALITH_STATE_DIR", t.TempDir())
+	var logs logBuffer
+	ts, _ := newTestServerWith(t, func(s *Server) { s.Log = slog.New(slog.NewTextHandler(&logs, nil)) })
+	if code, out := do(t, ts, "GET", "/api/storyline?type=user&object=alice&since=7d", "", true); code != 200 {
+		t.Fatalf("storyline = %d %v", code, out)
+	}
+	wantAudit(t, &logs, "search.storyline:", "anchor=entity", "target=alice", "type=user", `seeds="user=alice"`, "outcome=ok", "client=")
+	if resp, _ := get(t, ts, "/api/compliance/export?framework=pci-dss&format=csv"); resp.StatusCode != 200 {
+		t.Fatalf("export = %d", resp.StatusCode)
+	}
+	wantAudit(t, &logs, "compliance.export:", "target=pci-dss", "format=csv", "client=")
 }

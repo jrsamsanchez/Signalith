@@ -96,3 +96,41 @@ func TestDueFilter(t *testing.T) {
 		t.Errorf("due within 10m: %v", got)
 	}
 }
+
+// A finding a late run raised for a missed slot is timed from when it was
+// raised, not from its slot's end (Created), so catch-up findings are not
+// late the moment they appear; the queue's due filter agrees (SRCH-216).
+func TestDueTimesRunFromWhenRaised(t *testing.T) {
+	sla := DefaultSLA()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	slot := now.Add(-3 * 24 * time.Hour)
+	caughtUp := Finding{ID: "caught-up", Urgency: "critical", Status: StatusNew, Slot: &slot, Created: slot, RaisedAt: now.Add(-5 * time.Minute)}
+	onTime := Finding{ID: "on-time", Urgency: "critical", Status: StatusNew, Created: now.Add(-20 * time.Minute), RaisedAt: now.Add(-20*time.Minute + time.Second)}
+	d := sla.DueOf(&caughtUp, now)
+	if d == nil || d.RespondLate || d.ResolveLate || !d.RespondBy.Equal(caughtUp.RaisedAt.Add(15*time.Minute)) {
+		t.Errorf("caught-up finding due %+v", d)
+	}
+	if d := sla.DueOf(&onTime, now); d == nil || !d.RespondLate {
+		t.Errorf("a finding raised on time is due %+v", d)
+	}
+	for name, mk := range modifyStores(t) {
+		s, _, _ := mk()
+		for _, f := range []Finding{caughtUp, onTime} {
+			f := f
+			if err := s.Create(context.Background(), &f); err != nil {
+				t.Fatal(err)
+			}
+		}
+		l, _, err := s.Search(context.Background(), Filter{Due: &DueWithin{SLA: sla, Now: now}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for _, f := range l {
+			ids = append(ids, f.ID)
+		}
+		if !slices.Equal(ids, []string{"on-time"}) {
+			t.Errorf("%s: overdue = %v", name, ids)
+		}
+	}
+}

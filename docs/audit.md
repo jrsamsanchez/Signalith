@@ -31,7 +31,9 @@ server picked, if one is) was changed or removed; see [Tamper evidence](#tamper-
 Events hold personal data such as user names and addresses, so reading them is audited
 like changing a setting. Each search run from the Search page, the API, an API token or
 the MCP server, each dashboard run, each panel preview, each notebook search, each search
-added to an investigation and each look at a field's top values writes a line with:
+added to an investigation, each look at a field's top values and each storyline built
+(`search.storyline`, naming its anchor, the users, systems and addresses it started from
+and how many searches it ran) writes a line with:
 
 - who ran it (`by`), their tenant, how they signed in (`method`: session, basic or token,
   and `token_id`) and from which address (`client`);
@@ -74,6 +76,13 @@ action and what its line holds:
 | `case.entry_add`, `case.entry_remove` | A note, search or event added to or removed from a case's timeline | the case, the `entry` and its `kind`; on removal also who added it and when (`added_by`, `added`) and its text or query (up to 500 characters each) |
 | `case.ticket_open` | A ticket opened for a case in a ticketing system (or queued for the server that opens them) | the case (`target`), the `connection`, its `system`, the `ticket` key, and whether it was `queued` |
 | `case.entity_add` | An entity added to a case | the case and the `entity` |
+| `case.task_add`, `case.task_update`, `case.task_remove` | Tasks added to a case, a task changed (title, owner, ticked off or reopened) or removed | the case (`target`), the `task` and its `title`; `changes` with old and new values and who ticked it off (`done_by`) when changed; its `owner` and whether it was `done` when removed |
+| `case.template_save` | An admin saved the case templates | how many `templates` |
+| `case.file_attach`, `case.file_download`, `case.file_remove` | A file attached to a case, downloaded or removed | the case (`target`), the `file`, its `name`, `size` and `sha256`; on download whether it was `intact` |
+| `case.report_export`, `case.report_verify`, `case.report_key_revoke` | A case report exported, a report file checked, or a report key revoked | the case (`target`), the `format`, the report's `sha256` and `key`; for a check its `status` or error; for a revoked key the key (`target`) and the `reason` |
+| `playbook.change`, `playbook.approve`, `playbook.reject` | Playbooks saved, or a playbook step approved or rejected (on the Approvals page or from chat) | how many `playbooks` and how many are `on`; for a decision the run (`target`), the `playbook`, the `finding` and `what` the step does. A decision from chat has `chat:<system>` as its address |
+| `respond.change`, `respond.test` | Response actions saved, or one tested | the `actions`; for a test the action (`target`), its `kind`, whether a request was `sent` and whether it was `ok` |
+| `compliance.export` | A compliance evidence report exported | the framework (`target`), the `format` and when the report was `generated` |
 | `intel.indicator_add`, `intel.indicator_delete` | An indicator added by hand or deleted | the value (`target`), its `type`, `source`, `weight`, `expires`, `tags` and `indicator` ID |
 | `intel.indicator_upload` | Indicators uploaded from a file | how many, how many of each type, and the first 20 values |
 | `intel.feed_add`, `intel.feed_change`, `intel.feed_delete` | A feed added (on the page or from the catalog), changed or deleted | the `feed`, its `url`, `kind`, `collection`, `format`, `type`, `interval`, `max_age`, `weight` and `enabled`; a change also lists its `changes` with old and new values; a deletion how many indicators went with it |

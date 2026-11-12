@@ -121,7 +121,8 @@ var renameStep func(step int) error
 // that is not the built-in admin refuses it; (2) the cluster document
 // records the new name, and the old one as BuiltinPrev, so both names'
 // documents are the built-in admin meanwhile; (3) the new name's
-// document is made with the old one's password; (4) the old one's is
+// document is made as a copy of the old one's (its password, whether it
+// is turned off, its two-step sign-in and passkeys); (4) the old one's is
 // deleted, which ends its sessions on every server; (5) BuiltinPrev is
 // cleared. A rename under way to another name is finished first. It
 // returns the name before, "" when it was the name already.
@@ -190,9 +191,17 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 		if !found || prev.Source != users.SourceBuiltin {
 			return "", fmt.Errorf("the built-in admin %s is missing, so its password cannot be carried over; set one with signalith passwd once the rename is done", old)
 		}
-		now := time.Now().UTC()
-		_, err := list.Create(ctx, by, name, &UserBody{Username: name, Role: users.Admin, Source: users.SourceBuiltin,
-			PasswordHash: prev.PasswordHash, SessionEpoch: 1, Created: now, Updated: now})
+		// The new document is the old one under the new name: whether it
+		// is turned off, its two-step sign-in (the key is sealed for
+		// users.BuiltinMFAField, whatever the name) and its passkeys carry
+		// over with the password, as do fields a newer version keeps. A
+		// rename must never turn the built-in admin on again or leave it
+		// with a password only.
+		nb := *prev
+		nb.Username, nb.Role, nb.Source = name, users.Admin, users.SourceBuiltin
+		nb.SessionEpoch = prev.SessionEpoch + 1
+		nb.Updated = time.Now().UTC()
+		_, err := list.Create(ctx, by, name, &nb)
 		if err != nil && !errors.Is(err, store.ErrExists) {
 			return "", err
 		}

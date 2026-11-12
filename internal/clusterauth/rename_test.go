@@ -8,6 +8,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
@@ -70,5 +71,103 @@ func TestRenameBuiltin(t *testing.T) {
 	}
 	if prev, err := a.docs.RenameBuiltin(ctx, "test", "root"); err != nil || prev != "" {
 		t.Errorf("a rename to the same name: %q %v", prev, err)
+	}
+}
+
+// A rename keeps everything that guards the built-in admin's sign-in: a
+// built-in admin turned off stays off under the new name, and its
+// two-step sign-in and passkeys go with it. A server watching sees the
+// rename, and no password change or turning on.
+func TestRenameBuiltinKeepsOffAndTwoStep(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("kim", users.Admin)
+	const secret = "JBSWY3DPEHPK3PXP"
+	if err := a.ub.ChangeBuiltinMFA(ctx, "admin", func(*users.MFA) (*users.MFA, bool, error) {
+		return &users.MFA{Secret: secret, Recovery: []string{"r1", "r2"}, Since: time.Now().UTC(),
+			Handle: []byte("handle"), Passkeys: []users.Passkey{{Name: "key one"}}}, false, nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if changed, err := a.store.SetBuiltinDisabled(ctx, true); err != nil || !changed {
+		t.Fatalf("turn off = %v, %v", changed, err)
+	}
+	if _, err := a.docs.Users().Mutate(ctx, "test", "admin", func(v *UserBody) error {
+		v.MustChangePassword = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.cycle()
+	before, _, _ := b.docs.BuiltinUser()
+	var seen []BuiltinChange
+	w := &BuiltinWatch{Docs: b.docs, Report: func(c BuiltinChange) { seen = append(seen, c) }}
+	w.Check()
+
+	if prev, err := a.docs.RenameBuiltin(ctx, "cli:root", "siemroot"); err != nil || prev != "admin" {
+		t.Fatalf("rename: %q %v", prev, err)
+	}
+	a.cycle()
+	b.cycle()
+	w.Check()
+	for _, s := range []*server{a, b} {
+		after, _, ok := s.docs.BuiltinUser()
+		if !ok || after.Username != "siemroot" {
+			t.Fatalf("%s: built-in admin %+v %v", s.name, after, ok)
+		}
+		if !after.Disabled || !s.store.BuiltinDisabled() {
+			t.Errorf("%s: the rename turned the built-in admin on again", s.name)
+		}
+		if after.PasswordHash != before.PasswordHash || !after.MustChangePassword {
+			t.Errorf("%s: password hash or must-change flag not carried over", s.name)
+		}
+		if after.SessionEpoch <= before.SessionEpoch {
+			t.Errorf("%s: session epoch %d, was %d", s.name, after.SessionEpoch, before.SessionEpoch)
+		}
+		m := s.ub.BuiltinMFA()
+		if m == nil || m.Problem != "" || m.Secret != secret || len(m.Recovery) != 2 ||
+			string(m.Handle) != "handle" || len(m.Passkeys) != 1 || m.Passkeys[0].Name != "key one" {
+			t.Errorf("%s: two-step sign-in after the rename = %+v", s.name, m)
+		}
+	}
+	if len(seen) != 1 || seen[0].What != BuiltinRenamed || seen[0].User != "siemroot" || seen[0].From != "admin" ||
+		seen[0].By.User != "cli:root" || seen[0].By.Node != "siem-a" {
+		t.Errorf("the watching server saw %+v, want one rename by cli:root on siem-a", seen)
+	}
+}
+
+// A server watching the built-in admin sees a password set and the
+// built-in admin turned on from another server's command line, with who
+// did it.
+func TestBuiltinWatchSeesPasswordAndOnAgain(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("kim", users.Admin)
+	if changed, err := a.store.SetBuiltinDisabled(ctx, true); err != nil || !changed {
+		t.Fatalf("turn off = %v, %v", changed, err)
+	}
+	b.cycle()
+	var seen []BuiltinChange
+	w := &BuiltinWatch{Docs: b.docs, Report: func(c BuiltinChange) { seen = append(seen, c) }}
+	w.Check()
+	w.Check()
+	if len(seen) != 0 {
+		t.Fatalf("nothing changed, saw %+v", seen)
+	}
+	if err := a.docs.SetBuiltinHash(ctx, "cli:root", "$2a$04$another"); err != nil {
+		t.Fatal(err)
+	}
+	if on, err := a.ub.ChangeBuiltinDisabled(ctx, "cli:root", false, nil); err != nil || !on {
+		t.Fatalf("turn on = %v, %v", on, err)
+	}
+	b.cycle()
+	w.Check()
+	if len(seen) != 2 || seen[0].What != BuiltinPassword || seen[1].What != BuiltinEnabled {
+		t.Fatalf("saw %+v, want a password change and turned on", seen)
+	}
+	for _, c := range seen {
+		if c.User != "admin" || c.By.User != "cli:root" || c.By.Node != "siem-a" {
+			t.Errorf("%+v, want admin by cli:root on siem-a", c)
+		}
 	}
 }

@@ -55,7 +55,7 @@ add `-explain` to see the compiled request. `signalith ask "failed logins from
 | `"a.b"=value`, `"a{}" IN (x, y)` | A field name in quotes, as Splunk writes names with dots or braces |
 | `word` or `"a phrase"` | Text in the raw event (`_raw`). A word matches a whole word, or the start of a name with dots or underscores (`mimikatz` finds `mimikatz.exe`), but not text inside a word: use `*katz*` for that |
 | `NOT term`, `( ... )` | Negation and grouping |
-| `[ \| inputlookup owners \| fields user ]` | A subsearch. It runs first, and each of its result rows becomes a term: `field=value` for each of the row's fields (fields that start with `_` are skipped), ANDed within a row, ORed across rows, as in Splunk. A subsearch with no rows matches nothing, so `NOT [ ... ]` keeps everything. It may give at most 1,000 values; narrow it with `fields`, `dedup` or `head` |
+| `[ \| inputlookup owners \| fields user ]` | A subsearch. It runs first, and each of its result rows becomes a term: `field=value` for each of the row's fields (fields that start with `_` are skipped), ANDed within a row, ORed across rows, as in Splunk. A subsearch with no rows matches nothing, so `NOT [ ... ]` keeps everything. A plain event search inside it takes up to `search.max_events` events, the newest, and the result is marked *Sampled* when more match. Rows that repeat the same values count once; it may give at most 1,000 values, so narrow it with `fields`, `dedup` or `head` |
 | `a OR b` | Either. As in SPL, OR binds tighter than the implicit AND, so `x a OR b` means `x AND (a OR b)` |
 | `earliest=-7d@d latest=now` | Time range; overrides the UI time picker |
 
@@ -136,7 +136,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `abstract` | `abstract maxlines=3` | Shortens each event's `_raw` to its `maxlines=` (5) lines with the most words, in order, with `...` in front of a line that follows left-out lines. `maxterms=` (1000) caps the words counted on a line. `excerpt` is the same command |
 | `highlight` | `highlight failed root` | Accepted so Splunk searches run as written; the results stay as they are |
 | `iplocation` | `iplocation src` | Adds where each address is, from a GeoIP database an admin adds ([GeoIP database](https://github.com/jrsamsanchez/signalith/blob/main/docs/lookups.md#geoip-database-for-iplocation)): `City`, `Region`, `Country`, `lat` and `lon`; `allfields=true` adds `Continent`, `MetroCode` and `Timezone`. `prefix=src_` starts each name with `src_`, and `lang=de` gives names in another language where the database has them. An address the database lists gets every field, empty where it has no value, as in Splunk; private addresses and ones it does not list get none |
-| `map` | `map maxsearches=20 search="search EventCode=4624 TargetLogonId=$TargetLogonId$"` | Runs the search once for each of the first rows (10 unless `maxsearches=` says, at most 100 in a query), with each `$field$` replaced by that row's value, and gives the rows of all those searches. A value is always one value: outside quotes it is quoted unless it is a number or a plain name, and inside quotes it is escaped, so no value can add conditions or commands. A row missing a field the search names runs no search. `$$` is a `$`. The search cannot use `join`, `append`, `appendpipe` or `map`, and gets the outer time range unless it sets its own |
+| `map` | `map maxsearches=20 search="search EventCode=4624 TargetLogonId=$TargetLogonId$"` | Runs the search once for each of the first rows (10 unless `maxsearches=` says, at most 100 in a query), with each `$field$` replaced by that row's value, and gives the rows of all those searches. A value is always one value: outside quotes it is quoted unless it is a number or a plain name, and inside quotes it is escaped, so no value can add conditions or commands. A row missing a field the search names runs no search. `$$` is a `$`. The search cannot use `join`, `append`, `appendpipe` or `map`, and gets the outer time range unless it sets its own. Each search takes up to `search.max_events` events, and the result is marked *Sampled* when more match |
 | `accum` | `accum bytes AS total_bytes` | Sets the running total of a number field over the rows so far (into the field itself unless `AS` names another). Rows without a number get no total |
 | `delta` | `delta count AS change p=1` | Sets `delta(count)`, or the `AS` name, to the field's number minus the number `p=` rows earlier (default 1), counting only rows that have a number, up to `p=10000` |
 | `autoregress` | `autoregress count p=1-3` | Copies a field from earlier rows: `count_p1` from the row before, `count_p2` from two rows before, and so on (`p=` is one number or a range, at most 100 fields; `AS` names the field when `p=` is one number) |
@@ -256,7 +256,9 @@ compares text case-sensitively as Splunk's `where` does: `where action="Failure"
 Regular expressions use RE2 syntax and are case-sensitive unless they start with `(?i)`.
 To keep one search from exhausting the server, a value `eval` builds can be up to 1 MB
 (a multivalue field counts all its values), expressions build at most 256 MB across all
-rows and commands of one search, a multivalue field holds up to 10,000 values, one
+rows and commands of one search, a multivalue field holds up to 10,000 values (each
+value counts 48 bytes besides its text toward the 256 MB, on every row that holds it, so
+about five million short values fit in one search), one
 expression has at most 10,000 terms, and one search evaluates at most 500 million
 expression steps (about 100 steps for each of 20 assignments over 100,000 events fits
 with room to spare).
@@ -334,8 +336,10 @@ The AI assistant can also be set on the **Settings** page (see
   `where` written as an expression, wherever they are.
 - An event search without `stats` returns the newest 100 events, or up to
   `search.max_events` (10,000 by default and at most, the most OpenSearch returns for one
-  search) when later commands need to sort, filter, de-duplicate, join or aggregate them
-  all, and inside a `join`, `append`, `union`, `multisearch` or `set` subsearch. When
+  search) when later commands need to sort, filter, de-duplicate, join, aggregate, total
+  or reshape them all (`addcoltotals`, `addtotals col=t`, `accum`, `reverse`, `uniq`,
+  `transpose`, `untable`, `xyseries`, `map` among them), and inside a subsearch: one among
+  the search terms, `join`, `append`, `union`, `multisearch`, `set`, or a `map` search. When
   more events match than that, those commands
   see only the newest ones and the result is marked *Sampled* (Explain says so too, as
   do dashboard panels, notebook and case searches, and a detection's **Last run**). To

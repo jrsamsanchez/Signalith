@@ -5,8 +5,10 @@ package audit
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -83,5 +85,67 @@ func TestTapSeesAuditLinesWhileTheSinkIsOff(t *testing.T) {
 	log.Info("user deleted", "audit", true)
 	if len(got) != 1 {
 		t.Errorf("the tap was called after it was removed")
+	}
+}
+
+// pagedIndex answers Matching's searches like OpenSearch does, for n
+// matching events: oldest first, size and search_after.
+type pagedIndex struct{ n int }
+
+func (f pagedIndex) Search(_ context.Context, _ string, body map[string]any) (map[string]any, error) {
+	start := 0
+	if after, ok := body["search_after"].([]any); ok {
+		// The sort value comes back as it was remarshalled.
+		n, _ := strconv.Atoi(fmt.Sprint(after[0]))
+		start = n + 1
+	}
+	hits := []any{}
+	for i := start; i < f.n && len(hits) < body["size"].(int); i++ {
+		hits = append(hits, map[string]any{"_index": "x_audit", "_id": fmt.Sprint("d", i),
+			"_source": Event{Message: "single sign-on failed", Seq: int64(i)}, "sort": []any{i}})
+	}
+	return map[string]any{"hits": map[string]any{"hits": hits}}, nil
+}
+
+// A limit that is a multiple of the page size used to end the reading
+// without looking for one more event, and say there were no more.
+func TestMatchingSaysWhenThereAreMoreAtAnyLimit(t *testing.T) {
+	const n = 3*matchPage + 100
+	m := Match{Messages: []string{"single sign-on failed"}}
+	for _, limit := range []int{1, matchPage - 1, matchPage, matchPage + 1, 2 * matchPage, 3 * matchPage, n - 1, n, n + 1, 4 * matchPage} {
+		hits, truncated, err := Matching(context.Background(), pagedIndex{n}, "x", m, limit)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(hits) != min(limit, n) || truncated != (limit < n) {
+			t.Errorf("%d events match, limit %d: read %d, truncated %v", n, limit, len(hits), truncated)
+		}
+	}
+	// As many as a whole number of pages, and a limit of just that.
+	if hits, truncated, _ := Matching(context.Background(), pagedIndex{2 * matchPage}, "x", m, 2*matchPage); len(hits) != 2*matchPage || truncated {
+		t.Errorf("exactly the limit: read %d, truncated %v", len(hits), truncated)
+	}
+}
+
+func TestMatchSelectsLikeMatching(t *testing.T) {
+	at := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	m := Match{Since: at, Messages: []string{"user deleted"}, MessagePrefixes: []string{"sign-ins from"}, Actions: []string{"users.create"}, ActionPrefixes: []string{"tenants."}}
+	for _, c := range []struct {
+		ev   Event
+		want bool
+	}{
+		{Event{Time: at, Message: "user deleted"}, true},
+		{Event{Time: at.Add(-time.Second), Message: "user deleted"}, false},
+		{Event{Time: at, Message: "sign-ins from this address are paused"}, true},
+		{Event{Time: at, Message: "x", Action: "users.create"}, true},
+		{Event{Time: at, Message: "x", Action: "tenants.add"}, true},
+		{Event{Time: at, Message: "single sign-on failed"}, false},
+	} {
+		if got := m.Selects(c.ev); got != c.want {
+			t.Errorf("%+v: selected %v, want %v", c.ev, got, c.want)
+		}
+	}
+	if (Match{}).Selects(Event{Message: "user deleted"}) {
+		t.Error("an empty match selected a record")
 	}
 }

@@ -156,7 +156,10 @@ scripts. Applying a file that changes nothing says so and writes nothing.
   policies, feeds and directory sign-in, as a change of them in a server's
   `signalith.yaml` would.
 - A changed `auth.admin_user` renames the built-in admin for every server: it signs in
-  under the new name with the same password, and its sessions end. A user that already
+  under the new name with the same password and the same two-step sign-in (its
+  authenticator app, recovery codes and passkeys), and its sessions end. A built-in
+  admin that is turned off stays off. The server that runs the cluster's jobs writes a
+  `user changed` audit record for the rename. A user that already
   has the new name stops it. If the command is stopped part way, run it again to finish.
   This is the only way to rename it: a changed `auth.admin_user` in one server's
   `signalith.yaml` is only listed on the Servers page.

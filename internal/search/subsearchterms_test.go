@@ -5,6 +5,7 @@ package search
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -80,7 +81,7 @@ func TestSubsearchTermsLimit(t *testing.T) {
 	var b strings.Builder
 	b.WriteString("v\n")
 	for i := range maxSubsearchTerms + 1 {
-		b.WriteString("x" + strings.Repeat("y", i%5) + string(rune('a'+i%26)) + "\n")
+		b.WriteString("x" + strconv.Itoa(i) + "\n")
 	}
 	e := lookupEngine(t)
 	if _, err := e.Lookups.Put("big", []byte(b.String())); err != nil {
@@ -88,6 +89,24 @@ func TestSubsearchTermsLimit(t *testing.T) {
 	}
 	if _, err := e.Run(context.Background(), `* [| inputlookup big]`); err == nil || !strings.Contains(err.Error(), "narrow it") {
 		t.Errorf("err = %v", err)
+	}
+	// Rows that repeat a value make one term, so many events with few
+	// distinct values fit.
+	b.Reset()
+	b.WriteString("v\n")
+	for i := range 5 * maxSubsearchTerms {
+		b.WriteString("x" + strconv.Itoa(i%7) + "\n")
+	}
+	if _, err := e.Lookups.Put("repeats", []byte(b.String())); err != nil {
+		t.Fatal(err)
+	}
+	fs := &fakeStore{responses: []string{`{"hits":{"total":{"value":0},"hits":[]}}`}}
+	e.Store = fs
+	if _, err := e.Run(context.Background(), `* [| inputlookup repeats]`); err != nil {
+		t.Fatalf("repeated values: %v", err)
+	}
+	if got := strings.Count(asJSON(fs.bodies[0]["query"]), `"x`); got != 7 {
+		t.Errorf("the search holds %d values, want the 7 distinct ones: %s", got, asJSON(fs.bodies[0]["query"]))
 	}
 }
 

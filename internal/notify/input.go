@@ -152,7 +152,13 @@ var (
 // as the new settings. It returns *InputError for settings to fix,
 // ErrChanged when the settings changed since in.Revision, and the file's
 // error when it cannot be read.
-func (m *Manager) Save(in Input) (Settings, error) {
+func (m *Manager) Save(in Input) (Settings, error) { return m.SaveAfter(in, nil) }
+
+// SaveAfter is Save, but first calls before, when not nil, with the
+// settings as they are and as they are about to be: once the input was
+// found good, and before anything changes. Sending goes on by the
+// settings as they are until before returns, so it should not take long.
+func (m *Manager) SaveAfter(in Input, before func(cur, next Settings)) (Settings, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.load()
@@ -165,6 +171,9 @@ func (m *Manager) Save(in Input) (Settings, error) {
 	s, probs := merge(m.cur, in, m.now)
 	if len(probs) > 0 {
 		return Settings{}, &InputError{Problems: probs}
+	}
+	if before != nil {
+		before(m.cur.clone(), s.clone())
 	}
 	if err := m.save(s); err != nil {
 		return Settings{}, err

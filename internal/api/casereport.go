@@ -120,9 +120,9 @@ func (s *Server) handleCaseReport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if signed.KeyID != "" {
-		s.audit(r, "case report exported", "case", c.ID, "format", format, "sha256", rep.SHA256, "key", signed.KeyID)
+		s.audit(r, "case.report_export: case report exported", "target", c.ID, "format", format, "sha256", rep.SHA256, "key", signed.KeyID)
 	} else {
-		s.audit(r, "case report exported", "case", c.ID, "format", format, "sha256", rep.SHA256, "unsigned", why)
+		s.audit(r, "case.report_export: case report exported", "target", c.ID, "format", format, "sha256", rep.SHA256, "unsigned", why)
 	}
 	name := "signalith-case-report." + format
 	if caseFileID.MatchString(c.ID) {
@@ -149,18 +149,18 @@ func (s *Server) handleCaseReport(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleVerifyCaseReport(w http.ResponseWriter, r *http.Request) {
 	data, err := io.ReadAll(http.MaxBytesReader(w, r.Body, casereport.MaxSize+1))
 	if err != nil || len(data) > casereport.MaxSize {
-		s.audit(r, "case report verify failed", "err", "too large")
+		s.audit(r, "case.report_verify: case report verify failed", "err", "too large")
 		writeError(w, http.StatusRequestEntityTooLarge, fmt.Errorf("a case report is at most %d MiB", casereport.MaxSize>>20))
 		return
 	}
 	if s.ReportKeys == nil {
-		s.audit(r, "case report verify failed", "err", "no report keys")
+		s.audit(r, "case.report_verify: case report verify failed", "err", "no report keys")
 		writeError(w, http.StatusServiceUnavailable, errors.New("this server keeps no report keys"))
 		return
 	}
 	ks, err := s.ReportKeys.List(r.Context())
 	if err != nil {
-		s.audit(r, "case report verify failed", "err", "the report keys could not be read: "+err.Error())
+		s.audit(r, "case.report_verify: case report verify failed", "err", "the report keys could not be read: "+err.Error())
 		s.Log.Warn("the report keys could not be read", "err", err)
 		writeError(w, http.StatusBadGateway, errors.New("the report keys could not be read; try again"))
 		return
@@ -190,11 +190,11 @@ func (s *Server) handleVerifyCaseReport(w http.ResponseWriter, r *http.Request) 
 	}
 	if err != nil {
 		out["error"] = err.Error()
-		s.audit(r, "case report verify failed", "key", keyID, "status", status, "err", err.Error())
+		s.audit(r, "case.report_verify: case report verify failed", "key", keyID, "status", status, "err", err.Error())
 		writeJSON(w, http.StatusOK, out)
 		return
 	}
-	s.audit(r, "case report verified", "case", res.Report.Case.ID, "sha256", res.Report.SHA256, "key", keyID, "key_status", res.KeyStatus)
+	s.audit(r, "case.report_verify: case report verified", "target", res.Report.Case.ID, "sha256", res.Report.SHA256, "key", keyID, "key_status", res.KeyStatus)
 	writeJSON(w, http.StatusOK, out)
 }
 
@@ -257,6 +257,6 @@ func (s *Server) handleRevokeCaseReportKey(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusBadGateway, err)
 		return
 	}
-	s.audit(r, "case report key revoked", "key", id, "reason", reason)
+	s.audit(r, "case.report_key_revoke: case report key revoked", "target", id, "reason", reason)
 	s.handleCaseReportKeys(w, r)
 }

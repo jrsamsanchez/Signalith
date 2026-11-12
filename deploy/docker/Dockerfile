@@ -1,4 +1,6 @@
-FROM golang:1.27.1@sha256:162be5298a40ed317005c8339c6de4d10d3eef336d66dc8e9259b03ab9d3a6d2 AS build
+# The same Go as go.mod, which CI's vulnerability check runs with
+# (TestImageBuildsWithTheGoInGoMod).
+FROM golang:1.26.11@sha256:7af425da11f4fc1a9308eb704369e3f6d1c44e35bac0f874a59ade3f20fdc07e AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
