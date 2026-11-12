@@ -122,7 +122,8 @@
       el('span', { class: 'empty__icon' }, icon('list-checks')),
       el('div', { class: 'empty__title' }, 'No playbooks yet'),
       el('p', { class: 'empty__text' }, manage()
-        ? 'A playbook does the first steps for you when a detection fires: tell the team, block an address once an analyst approves, open a case.'
+        ? el('span', {}, 'A playbook does the first steps for you when a detection fires: tell the team, block an address once an analyst approves, open a case. To just get an email or chat message when findings come in, add a rule on ',
+          el('a', { href: '#notify', 'data-page': 'notify' }, 'Notifications'), '.')
         : 'Playbooks are set up on the server that runs the background jobs.'),
       manage() ? el('div', { class: 'pb-starts' }, ...starts.map((s) => el('button', { class: 'pb-start', type: 'button',
         onclick: () => openEditor(null, { steps: s.steps, name: s.steps.length ? s.title : '' }) },

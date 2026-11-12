@@ -3,7 +3,8 @@ name: CI alerts
 # started by hand), this opens an issue for it, or adds the new failure to
 # the one already open, so a red main or a red nightly is never missed.
 # When that workflow next succeeds on main, the issue is closed with a
-# link to the green run. Pull requests are left out: their checks show on
+# link to the green run, except for the nightly fuzz and load tests, whose
+# issues stay open until a fix closes them. Pull requests are left out: their checks show on
 # the pull request itself.
 on:
   workflow_run:
@@ -60,9 +61,20 @@ jobs:
           title="Red on main: $WORKFLOW"
           open=$(gh issue list --state open --label ci-red --search "\"$title\" in:title" --json number,title \
             --jq "map(select(.title == \"$title\")) | .[0].number // empty")
+          # A nightly fuzz or load test failure can pass the next night by
+          # luck (fuzzing is random, timings vary) with nothing fixed, so
+          # their issues stay open until the fix closes them ("Fixes #N"):
+          # for fuzz, a commit that adds the failing input under
+          # testdata/fuzz with the fix.
+          stays_open=false
+          case "$WORKFLOW" in "Nightly fuzz"|"Nightly load test") stays_open=true ;; esac
           if [ "$CONCLUSION" = success ]; then
             if [ -n "$open" ]; then
-              gh issue close "$open" --comment "Green again on main at ${SHA::7}: $RUN_URL"
+              if [ "$stays_open" = true ]; then
+                gh issue comment "$open" --body "Green on main at ${SHA::7} ($RUN_URL), but this stays open until a fix closes it."
+              else
+                gh issue close "$open" --comment "Green again on main at ${SHA::7}: $RUN_URL"
+              fi
             fi
             exit 0
           fi
@@ -71,8 +83,13 @@ jobs:
             gh issue comment "$open" --body "Failed again. $body"
           else
             gh label create ci-red --color B60205 --description "A workflow is failing on main" --force >/dev/null
+            if [ "$stays_open" = true ]; then
+              closes="Close it with the fix (\"Fixes #N\"); for fuzz, commit the failing input from the run's fuzz-failures artifact under testdata/fuzz with it."
+            else
+              closes="This issue closes itself when $WORKFLOW next succeeds on main."
+            fi
             gh issue create --title "$title" --label ci-red \
               --body "$body
 
-          This issue closes itself when $WORKFLOW next succeeds on main."
+          $closes"
           fi

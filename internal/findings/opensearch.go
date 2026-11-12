@@ -55,7 +55,11 @@ func properties() map[string]any {
 		"responded_at": map[string]any{"type": "date"},
 		"result":       notIndexed, "entities": notIndexed, "comments": notIndexed, "history": notIndexed,
 		"context": notIndexed,
-		"query":   map[string]any{"type": "keyword", "index": false},
+		"ai_triage": map[string]any{"properties": map[string]any{
+			"verdict": kw, "confidence": kw, "model": kw, "at": map[string]any{"type": "date"},
+			"summary": map[string]any{"type": "text", "index": false}, "error": map[string]any{"type": "text", "index": false},
+		}},
+		"query": map[string]any{"type": "keyword", "index": false},
 	}
 }
 
@@ -333,6 +337,24 @@ func filterQuery(flt Filter) map[string]any {
 	}
 	if flt.DetectionID != "" {
 		fs = append(fs, map[string]any{"term": map[string]any{"detection_id": flt.DetectionID}})
+	}
+	if len(flt.AI) > 0 {
+		should := []any{}
+		var verdicts []string
+		for _, v := range flt.AI {
+			if v == AINone {
+				should = append(should, map[string]any{"bool": map[string]any{"must_not": []any{map[string]any{"exists": map[string]any{"field": "ai_triage.at"}}}}})
+			} else {
+				verdicts = append(verdicts, v)
+			}
+		}
+		if len(verdicts) > 0 {
+			should = append(should, map[string]any{"terms": map[string]any{"ai_triage.verdict": verdicts}})
+		}
+		fs = append(fs, map[string]any{"bool": map[string]any{"minimum_should_match": 1, "should": should}})
+	}
+	if !flt.AISince.IsZero() {
+		fs = append(fs, map[string]any{"range": map[string]any{"ai_triage.at": map[string]any{"gte": flt.AISince.UTC().Format(time.RFC3339Nano)}}})
 	}
 	if flt.Sample != nil {
 		if *flt.Sample == "" {
