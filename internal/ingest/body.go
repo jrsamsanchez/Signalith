@@ -61,11 +61,12 @@ func badBody(format string, args ...any) *BodyError {
 // single object. The whole body is checked against the limits above first,
 // so a refused request (a *BodyError) writes nothing. Records are then
 // decoded and written in batches; if OpenSearch fails part way, the
-// batches already written stay. Each record's document ID comes from the
-// tag, the whole body and the record's place in it, so when the sender
-// sends the same request again (Fluent Bit does on the 503 this leads
-// to), records already stored count as duplicates instead of being
-// stored twice.
+// batches already written stay, and what they stored is returned with the
+// error, so the token that sent them is credited with it (ING-02). Each
+// record's document ID comes from the sending token, the tag, the whole
+// body and the record's place in it, so when the sender sends the same
+// request again (Fluent Bit does on the 503 this leads to), records
+// already stored count as duplicates instead of being stored twice.
 func (p *Pipeline) IngestBody(ctx context.Context, tag string, body []byte) (*Result, error) {
 	if isKubernetesTag(tag) || bytes.Contains(body[:min(len(body), 256)], []byte(`"EventList"`)) {
 		// A Kubernetes API server's audit webhook posts its events as one
@@ -90,7 +91,13 @@ func (p *Pipeline) IngestBody(ctx context.Context, tag string, body []byte) (*Re
 	}
 	batch := make([]Event, 0, min(n, batchEvents))
 	ids := make([]string, 0, cap(batch))
+	// The agent token that sent the request is part of the seed, as for
+	// OTLP, so the same bytes from another sender can't take its records'
+	// IDs (ING-06).
 	seed := bodySeed(tag, body)
+	if id := OriginFrom(ctx).TokenID; id != "" {
+		seed = bodySeed("token\x00"+id+"\x00"+tag, body)
+	}
 	size, done := 0, 0
 	flush := func() error {
 		for i := range batch {
@@ -127,13 +134,13 @@ func (p *Pipeline) IngestBody(ctx context.Context, tag string, body []byte) (*Re
 		size += len(raw)
 		if len(batch) >= batchEvents || size >= batchBytes {
 			if err := flush(); err != nil {
-				return nil, err
+				return total, err
 			}
 		}
 	}
 	if len(batch) > 0 {
 		if err := flush(); err != nil {
-			return nil, err
+			return total, err
 		}
 	}
 	return total, nil
