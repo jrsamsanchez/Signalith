@@ -65,8 +65,22 @@ func New(provider, url, model, apiKey string) *Client {
 	if id, ok := ModelID(provider, model); ok {
 		model = id
 	}
-	return &Client{Provider: provider, URL: BaseURL(provider, url), Model: strings.TrimSpace(model), APIKey: apiKey,
-		HTTP: &http.Client{Timeout: 3 * time.Minute, CheckRedirect: sameOriginRedirects, Transport: transport()}}
+	base := BaseURL(provider, url)
+	return &Client{Provider: provider, URL: base, Model: strings.TrimSpace(model), APIKey: apiKey,
+		HTTP: &http.Client{Timeout: 3 * time.Minute, CheckRedirect: sameOriginRedirects, Transport: transport(PlainRemote(base))}}
+}
+
+// AllowPlainHTTP lets a client whose address is plain http reach a
+// public address too (assistant.allow_insecure_http). By default such a
+// client connects only to this computer and private addresses, as the
+// model's host resolves when connecting (AI-02).
+func (c *Client) AllowPlainHTTP() {
+	if c == nil {
+		return
+	}
+	if _, ok := c.HTTP.Transport.(*http.Transport); ok {
+		c.HTTP.Transport = transport(false)
+	}
 }
 
 // BaseURL is the address requests are made under: Anthropic's paths

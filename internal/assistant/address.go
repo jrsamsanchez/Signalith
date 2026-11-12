@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	neturl "net/url"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -87,12 +88,14 @@ func PlainRemote(raw string) bool {
 	return err != nil || !a.Unmap().IsLoopback()
 }
 
-// Insecure reports whether raw is plain http beyond the local network:
-// to a public address or a dotted name, which is refused unless allowed.
-// Plain http to this computer, to a private address (RFC 1918, or an IPv6
-// unique local address in fd00::/8) or to a single-label name (such as
-// ollama, a Docker service or a LAN host) is the usual way to reach a
-// model on your own hardware, and only warned about (PlainRemote).
+// Insecure reports whether raw is plain http to a public IP address,
+// which is refused unless allowed. Plain http to this computer or to a
+// private address (RFC 1918, or an IPv6 unique local address in fd00::/8)
+// is the usual way to reach a model on your own hardware, and only warned
+// about (PlainRemote). A name (ollama, ollama.lan,
+// gpu01.corp.example, ollama.svc.cluster.local) cannot be judged from the
+// address: the model client decides on the address it resolves to, each
+// time it connects (LocalOnly), and refuses a public one.
 func Insecure(raw string) bool {
 	if !PlainRemote(raw) {
 		return false
@@ -100,46 +103,121 @@ func Insecure(raw string) bool {
 	u, _ := neturl.Parse(strings.TrimSpace(raw))
 	h := strings.TrimSuffix(u.Hostname(), ".")
 	if a, err := netip.ParseAddr(h); err == nil {
-		a = a.Unmap()
-		return !a.IsPrivate()
+		return !localAddr(a)
 	}
-	return strings.Contains(h, ".")
+	return false
 }
 
+// PlainName reports whether raw is plain http to a name other than
+// localhost, which the model client allows only while it resolves to
+// this computer or a private address.
+func PlainName(raw string) bool {
+	if !PlainRemote(raw) {
+		return false
+	}
+	u, _ := neturl.Parse(strings.TrimSpace(raw))
+	_, err := netip.ParseAddr(strings.TrimSuffix(u.Hostname(), "."))
+	return err != nil
+}
+
+// localAddr reports whether a is this computer or a private address,
+// where plain http to a model is allowed.
+func localAddr(a netip.Addr) bool {
+	a = a.Unmap()
+	return a.IsLoopback() || a.IsPrivate()
+}
+
+// ErrPlainPublic refuses plain http to a model at a public address.
+var ErrPlainPublic = errors.New("is a public address, and the AI model's address is plain http: questions, events and the model's answers " +
+	"would cross the internet unencrypted. Use https://, or, to accept the risk, turn on Allow plain http (assistant.allow_insecure_http)")
+
+// plainPublic is ErrPlainPublic for host.
+func plainPublic(host string) error { return fmt.Errorf("%s %w", host, ErrPlainPublic) }
+
 // refuseBlocked stops a connection to a blocked address, whatever name
-// resolved to it.
-func refuseBlocked(_, address string, _ syscall.RawConn) error {
-	host, _, err := net.SplitHostPort(address)
-	if err != nil {
-		return err
+// resolved to it, and with localOnly one to an address that is not this
+// computer or a private one.
+func refuseBlocked(localOnly bool) func(_, address string, _ syscall.RawConn) error {
+	return func(_, address string, _ syscall.RawConn) error {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			return err
+		}
+		a, err := netip.ParseAddr(host)
+		if err != nil {
+			return fmt.Errorf("unexpected address %q", address)
+		}
+		if Blocked(a) {
+			return fmt.Errorf("%s is a link-local or cloud metadata address, which no model server uses", host)
+		}
+		if localOnly && !localAddr(a) {
+			return plainPublic(host)
+		}
+		return nil
 	}
-	if a, err := netip.ParseAddr(host); err == nil && Blocked(a) {
-		return fmt.Errorf("%s is a link-local or cloud metadata address, which no model server uses", host)
-	}
-	return nil
 }
 
 // transport is the model client's transport: Go's default, with
-// connections to blocked addresses refused. Through a proxy (HTTPS_PROXY,
-// HTTP_PROXY and NO_PROXY, see docs/outbound.md) the connection is to the
-// proxy, so the model's host is resolved and checked before the proxy is
-// used (AI-03).
-func transport() *http.Transport {
+// connections to blocked addresses refused, and with localOnly (a plain
+// http model address, AI-02) connections to anything but this computer
+// and private addresses, as resolved when connecting. Through a proxy
+// (HTTPS_PROXY, HTTP_PROXY and NO_PROXY, see docs/outbound.md) the
+// connection is to the proxy, so the model's host is resolved and checked
+// before the proxy is used (AI-03).
+func transport(localOnly bool) *http.Transport {
 	t := http.DefaultTransport.(*http.Transport).Clone()
-	d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: refuseBlocked}
+	d := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: refuseBlocked(localOnly)}
+	// The proxy itself may be anywhere: checkedProxy checked the model's
+	// host before it was used.
+	toProxy := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: refuseBlocked(false)}
+	var mu sync.Mutex
+	proxies := map[string]bool{}
 	t.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+		mu.Lock()
+		viaProxy := proxies[strings.ToLower(addr)]
+		mu.Unlock()
+		if viaProxy {
+			return toProxy.DialContext(ctx, network, addr)
+		}
 		return d.DialContext(ctx, network, addr)
 	}
-	t.Proxy = checkedProxy(http.ProxyFromEnvironment, net.DefaultResolver.LookupNetIP)
+	check := checkedProxy(http.ProxyFromEnvironment, net.DefaultResolver.LookupNetIP, localOnly)
+	t.Proxy = func(req *http.Request) (*neturl.URL, error) {
+		u, err := check(req)
+		if err == nil && u != nil {
+			mu.Lock()
+			proxies[strings.ToLower(proxyHostPort(u))] = true
+			mu.Unlock()
+		}
+		return u, err
+	}
 	return t
+}
+
+// proxyHostPort is the host:port a proxy URL is dialed at.
+func proxyHostPort(u *neturl.URL) string {
+	port := u.Port()
+	if port == "" {
+		switch strings.ToLower(u.Scheme) {
+		case "https":
+			port = "443"
+		case "socks5", "socks5h":
+			port = "1080"
+		default:
+			port = "80"
+		}
+	}
+	return net.JoinHostPort(u.Hostname(), port)
 }
 
 // checkedProxy returns a Proxy function that uses the proxy from proxy
 // only once the request's host is not a blocked address, as written or
 // as resolved with lookup. A name this server cannot resolve (only the
 // proxy can, say) passes, unless it is a cloud metadata service's name.
+// With localOnly the host must be this computer or a private address,
+// and a name this server cannot resolve is refused.
 func checkedProxy(proxy func(*http.Request) (*neturl.URL, error),
-	lookup func(ctx context.Context, network, host string) ([]netip.Addr, error)) func(*http.Request) (*neturl.URL, error) {
+	lookup func(ctx context.Context, network, host string) ([]netip.Addr, error), localOnly bool) func(*http.Request) (*neturl.URL, error) {
 	return func(req *http.Request) (*neturl.URL, error) {
 		u, err := proxy(req)
 		if err != nil || u == nil {
@@ -150,6 +228,9 @@ func checkedProxy(proxy func(*http.Request) (*neturl.URL, error),
 		if a, err := netip.ParseAddr(host); err == nil {
 			if Blocked(a) {
 				return nil, blocked
+			}
+			if localOnly && !localAddr(a) {
+				return nil, plainPublic(host)
 			}
 			return u, nil
 		}
@@ -162,11 +243,18 @@ func checkedProxy(proxy func(*http.Request) (*neturl.URL, error),
 					return nil, blocked
 				}
 			}
+			if localOnly {
+				return nil, fmt.Errorf("%s could not be looked up here, so it cannot be told whether it is on your network; "+
+					"the AI model's address is plain http, which is allowed only to this computer and private addresses: %w", host, err)
+			}
 			return u, nil
 		}
 		for _, a := range addrs {
 			if Blocked(a) {
 				return nil, blocked
+			}
+			if localOnly && !localAddr(a) {
+				return nil, plainPublic(host + " (" + a.String() + ")")
 			}
 		}
 		return u, nil

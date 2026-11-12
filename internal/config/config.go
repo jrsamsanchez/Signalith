@@ -1416,13 +1416,16 @@ func (c *Config) AssistantClient() *assistant.Client {
 	cl := assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
 	if cl != nil {
 		cl.HTTP.Timeout = c.AssistantRequestTimeout()
+		if a.AllowInsecureHTTP {
+			cl.AllowPlainHTTP()
+		}
 	}
 	return cl
 }
 
 // AssistantInsecure reports whether the AI model's address is plain http
-// beyond the local network (a public address or a dotted name, see
-// assistant.Insecure) without assistant.allow_insecure_http: questions,
+// to a public IP address (assistant.Insecure) without
+// assistant.allow_insecure_http: questions,
 // events and the model's answers would cross the network unencrypted, and
 // answers changed on the way would become verdicts and queries, so the AI
 // features stay off.
@@ -3011,7 +3014,15 @@ func (c *Config) Warnings() []string {
 		w = append(w, "opensearch.allow_insecure_http is on, so the OpenSearch username and password cross the network to "+u.Host+" unencrypted. Use an https:// opensearch.url.")
 	}
 	if u, err := url.Parse(c.AssistantURL()); err == nil && c.Assistant.Provider != "" && assistant.PlainRemote(c.AssistantURL()) {
-		if !assistant.Insecure(c.AssistantURL()) {
+		if c.Assistant.AllowInsecureHTTP && (assistant.Insecure(c.AssistantURL()) || assistant.PlainName(c.AssistantURL())) {
+			w = append(w, "assistant.allow_insecure_http is on, so questions, the events Investigate with AI sends, the AI model's answers and its API key cross the network to "+
+				u.Host+" unencrypted, wherever it is, where they can be read or changed. Use an https:// assistant.url.")
+		} else if assistant.PlainName(c.AssistantURL()) {
+			w = append(w, "assistant.url is plain http to "+u.Host+", so questions, the events Investigate with AI sends, the AI model's answers and any API key "+
+				"cross your network unencrypted. Signalith connects to it only while "+u.Hostname()+" resolves to this computer or a private address (checked at each connection); "+
+				"if it resolves to a public address, the AI features fail with an error saying so. Use https:// when you can, or, to reach a public address over plain http, "+
+				"set assistant.allow_insecure_http: true.")
+		} else if !assistant.Insecure(c.AssistantURL()) {
 			w = append(w, "assistant.url is plain http to "+u.Host+", so questions, the events Investigate with AI sends, the AI model's answers and any API key "+
 				"cross your network unencrypted. Use https:// when you can.")
 		} else if c.Assistant.AllowInsecureHTTP {

@@ -311,8 +311,9 @@ parser checks the model's query before you see it, and the Search page runs it a
 unless it runs more searches of its own (`map`, `join`, `append`, `union` or a subsearch
 in `[ ]`): those wait for you to check and run them. Point `assistant.url` at a local
 Ollama or LM Studio server to keep everything on site (plain `http://` works for
-`localhost`, private addresses and single-label names such as `ollama`; for a model
-beyond your network use `https://`, or turn on `assistant.allow_insecure_http`):
+`localhost`, private addresses, and names such as `ollama` or `ollama.lan` that resolve
+to one when Signalith connects; for a model beyond your network use `https://`, or turn
+on `assistant.allow_insecure_http`):
 
 ```yaml
 assistant:

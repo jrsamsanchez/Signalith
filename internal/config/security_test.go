@@ -144,22 +144,25 @@ func TestWarnings(t *testing.T) {
 	}
 	c.OpenSearch.URL = "https://os.internal:9200"
 	c.OpenSearch.TLSSkipVerify = true
-	c.Assistant = Assistant{Provider: "openai", URL: "http://ollama.lan:11434/v1", Model: "llama3.1", APIKey: "k"}
+	c.Assistant = Assistant{Provider: "openai", URL: "http://203.0.113.9:11434/v1", Model: "llama3.1", APIKey: "k"}
 	w := strings.Join(c.Warnings(), "\n")
 	if !strings.Contains(w, "tls_skip_verify") || !strings.Contains(w, "ca_file") || !strings.Contains(w, "AI features are off") {
 		t.Errorf("warnings: %s", w)
 	}
-	// Plain http beyond the local network turns the AI off unless allowed
-	// (AI-02); a private address or single-label name is only warned
-	// about, and this computer's own address needs nothing.
+	// Plain http to a public address turns the AI off unless allowed
+	// (AI-02); a private address is only warned about, and this
+	// computer's own address needs nothing.
 	if c.AssistantClient() != nil || !c.AssistantInsecure() {
-		t.Error("an AI model client over plain http beyond the local network")
+		t.Error("an AI model client over plain http to a public address")
 	}
 	c.Assistant.AllowInsecureHTTP = true
 	if c.AssistantClient() == nil || !strings.Contains(strings.Join(c.Warnings(), "\n"), "allow_insecure_http is on") {
 		t.Errorf("allowed: %v", c.Warnings())
 	}
-	for _, lan := range []string{"http://ollama:11434/v1", "http://192.168.1.20:11434/v1", "http://[fd12::1]:11434/v1"} {
+	// A name is judged by what it resolves to, when connecting: it keeps
+	// the AI on, with a warning that says so.
+	for _, lan := range []string{"http://ollama:11434/v1", "http://192.168.1.20:11434/v1", "http://[fd12::1]:11434/v1",
+		"http://ollama.lan:11434/v1", "http://gpu01.corp.example:11434/v1", "http://ollama.svc.cluster.local:11434/v1"} {
 		c.Assistant = Assistant{Provider: "openai", URL: lan, Model: "llama3.1"}
 		w := strings.Join(c.Warnings(), "\n")
 		if c.AssistantClient() == nil || c.AssistantInsecure() || !strings.Contains(w, "plain http") || strings.Contains(w, "AI features are off") {
