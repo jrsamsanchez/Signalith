@@ -7,6 +7,8 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
@@ -203,7 +205,13 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 			total.add(&Result{Rejected: 1, Errors: []store.BulkItemError{{Reason: bad.Msg}}})
 			return nil
 		}
-		evs := otlpEvents(l, p.now())
+		evs, ok := safeOTLPEvents(l, p.now())
+		if !ok {
+			done++
+			p.stats.Failed.Add(1)
+			total.add(&Result{Rejected: 1, Errors: []store.BulkItemError{{Reason: fmt.Sprintf("log record %d could not be read", pos)}}})
+			return nil
+		}
 		if extra := len(evs) - 1; extra > 0 {
 			// An Event Hub message's records count as received one by one.
 			n += extra
@@ -248,6 +256,25 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 	}
 	return total, nil
 }
+
+// safeOTLPEvents is otlpEvents for one record, with ok false when reading
+// it panicked, so one crafted record is rejected on its own instead of
+// failing the request or stopping the server (ING-215).
+func safeOTLPEvents(l *otlpLog, now time.Time) (evs []Event, ok bool) {
+	defer func() {
+		if p := recover(); p != nil {
+			parserPanics.Add(1)
+			if last := lastParserPanicLog.Load(); now.Unix()-last >= 60 && lastParserPanicLog.CompareAndSwap(last, now.Unix()) {
+				slog.Warn("an OTLP log record stopped its parser; rejected it (logged once a minute)", "panic", fmt.Sprint(p))
+			}
+			evs, ok = nil, false
+		}
+	}()
+	return otlpEventsOf(l, now), true
+}
+
+// otlpEventsOf is otlpEvents, which a test replaces with one that panics.
+var otlpEventsOf = otlpEvents
 
 // otlpTooExpanded refuses a request over maxOTLPExpandedBytes.
 func otlpTooExpanded() *BodyError {

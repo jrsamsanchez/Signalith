@@ -107,7 +107,7 @@ func (s *Server) handleOTLPLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer slot()
-	res, err = s.Pipeline.IngestOTLP(withOrigin(r, ingest.IntakeOTLP, who), body, isJSON)
+	res, err = s.Pipeline.IngestOTLP(s.withOrigin(r, ingest.IntakeOTLP, who), body, isJSON)
 	if res != nil {
 		s.tokens().Note(who.ID, from.String(), res.Indexed)
 		s.noteAgent(r, ingest.IntakeOTLP, "", who, res.Indexed, res.Hosts, nil)

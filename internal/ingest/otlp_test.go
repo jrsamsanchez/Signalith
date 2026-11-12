@@ -696,6 +696,41 @@ func TestOTLPRejectsBadRecordsAlone(t *testing.T) {
 	}
 }
 
+// A record that makes reading it panic is rejected on its own; the rest
+// of the request is written (ING-215).
+func TestOTLPRejectsPanickingRecordAlone(t *testing.T) {
+	orig := otlpEventsOf
+	t.Cleanup(func() { otlpEventsOf = orig })
+	otlpEventsOf = func(l *otlpLog, now time.Time) []Event {
+		if s, _ := l.body.(string); s == "boom" {
+			panic("crafted record")
+		}
+		return orig(l, now)
+	}
+	good := tRec{body: "fine"}
+	for _, isJSON := range []bool{false, true} {
+		body := encodeProto(tRes{recs: []tRec{good, {body: "boom"}, good}})
+		if isJSON {
+			body = encodeJSON(tRes{recs: []tRec{good, {body: "boom"}, good}})
+		}
+		b := &countingBulk{keep: true}
+		p := &Pipeline{Store: b, Prefix: "sig", Now: func() time.Time { return now }}
+		res, err := p.IngestOTLP(context.Background(), body, isJSON)
+		if err != nil {
+			t.Fatalf("json %v: %v", isJSON, err)
+		}
+		if res.Received != 3 || res.Indexed != 2 || res.Rejected != 1 || len(b.docs) != 2 {
+			t.Errorf("json %v: %+v, %d documents", isJSON, res, len(b.docs))
+		}
+		if len(res.Errors) != 1 || res.Errors[0].Reason != "log record 2 could not be read" {
+			t.Errorf("json %v: errors %+v", isJSON, res.Errors)
+		}
+		if st := p.Stats(); st.Received != 3 || st.Failed != 1 {
+			t.Errorf("json %v: stats %+v", isJSON, st)
+		}
+	}
+}
+
 // An Event Hub message split into more records than a batch holds is
 // written in batches of the usual size.
 func TestOTLPBatchesSplitMessages(t *testing.T) {
