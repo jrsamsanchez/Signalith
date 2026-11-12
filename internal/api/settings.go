@@ -1449,9 +1449,9 @@ func (s *Server) handleTestAssistant(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, rep)
 }
 
-// insecureModelURL says why a plain http address to another computer is
-// not used (see config.AssistantInsecure).
-const insecureModelURL = "This is plain http to another computer, so questions, events, the model's answers and any API key would cross the network unencrypted, " +
+// insecureModelURL says why a plain http address beyond the local
+// network is not used (see config.AssistantInsecure).
+const insecureModelURL = "This is plain http beyond your local network, so questions, events, the model's answers and any API key would cross the network unencrypted, " +
 	"and answers changed on the way would become verdicts and queries. Use https://, or turn on Allow plain http to accept the risk."
 
 // explainAssistant words a failed assistant test, and names the setting
@@ -1540,7 +1540,7 @@ func (s *Server) handleAssistantModels(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, rep)
 		return
 	case c.AssistantInsecure():
-		rep.Message = "The address is plain http to another computer: use https://, or turn on Allow plain http, to see its models."
+		rep.Message = "The address is plain http beyond your local network: use https://, or turn on Allow plain http, to see its models."
 		writeJSON(w, http.StatusOK, rep)
 		return
 	case a.Provider == assistant.Anthropic && a.APIKey == "":

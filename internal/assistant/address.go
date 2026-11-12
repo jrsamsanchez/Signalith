@@ -64,10 +64,10 @@ func CheckURL(raw string) error {
 	return nil
 }
 
-// Insecure reports whether raw is plain http to a host other than this
-// computer, where the events, the model's replies and the API key would
+// PlainRemote reports whether raw is plain http to a host other than
+// this computer, where the events, the model's replies and the API key
 // cross the network unencrypted and could be changed on the way.
-func Insecure(raw string) bool {
+func PlainRemote(raw string) bool {
 	u, err := neturl.Parse(strings.TrimSpace(raw))
 	if err != nil || !strings.EqualFold(u.Scheme, "http") {
 		return false
@@ -78,6 +78,25 @@ func Insecure(raw string) bool {
 	}
 	a, err := netip.ParseAddr(h)
 	return err != nil || !a.Unmap().IsLoopback()
+}
+
+// Insecure reports whether raw is plain http beyond the local network:
+// to a public address or a dotted name, which is refused unless allowed.
+// Plain http to this computer, to a private address (RFC 1918, or an IPv6
+// unique local address in fd00::/8) or to a single-label name (such as
+// ollama, a Docker service or a LAN host) is the usual way to reach a
+// model on your own hardware, and only warned about (PlainRemote).
+func Insecure(raw string) bool {
+	if !PlainRemote(raw) {
+		return false
+	}
+	u, _ := neturl.Parse(strings.TrimSpace(raw))
+	h := strings.TrimSuffix(u.Hostname(), ".")
+	if a, err := netip.ParseAddr(h); err == nil {
+		a = a.Unmap()
+		return !a.IsPrivate()
+	}
+	return strings.Contains(h, ".")
 }
 
 // refuseBlocked stops a connection to a blocked address, whatever name

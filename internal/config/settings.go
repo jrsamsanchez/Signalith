@@ -525,7 +525,8 @@ var Registry = []Setting{
 		Help:        "Where the model runs: the provider's own service, a model server on your own hardware such as Ollama, or another compatible service.",
 		Placeholder: "http://localhost:11434/v1", EmptyMeans: "the provider's own address", check: checkModelURL},
 	{Key: "assistant.allow_insecure_http", Scope: ScopeCluster, Section: "assistant", Label: "Allow plain http", Type: TypeBool,
-		Help: "Lets Signalith reach a model on another computer over http:// instead of https://. Without it, a plain http address other than this computer's own (localhost) turns the AI features off.",
+		Help: "Lets Signalith reach a model beyond your local network over http:// instead of https://. Without it, plain http to a public address or a dotted name (such as models.example.com) turns the AI features off. " +
+			"Plain http to this computer, a private address (10.x, 172.16-31.x, 192.168.x, fd00::/8) or a single-label name (such as ollama) works without it, with a warning.",
 		Confirm: "Questions, the events Investigate with AI sends, the model's answers and any API key will cross the network unencrypted, where anyone on the way can read or change them. " +
 			"Use an https:// address instead when you can.", ConfirmWhen: "on"},
 	{Key: "assistant.model", Scope: ScopeCluster, Section: "assistant", Label: "Model", Type: TypeText,

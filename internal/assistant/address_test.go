@@ -31,17 +31,31 @@ func TestModelAddressChecks(t *testing.T) {
 			t.Errorf("CheckURL(%q): %v", good, err)
 		}
 	}
-	for raw, want := range map[string]bool{
-		"http://localhost:11434/v1": false,
-		"http://127.0.0.1:11434":    false,
-		"http://[::1]:11434":        false,
-		"https://ollama.lan":        false,
-		"http://ollama.lan:11434":   true,
-		"http://10.0.0.5:11434":     true,
-		"HTTP://10.0.0.5":           true,
+	// Insecure: plain http beyond the local network. PlainRemote: plain
+	// http to any other computer, which is warned about.
+	for raw, want := range map[string][2]bool{
+		"http://localhost:11434/v1":    {false, false},
+		"http://127.0.0.1:11434":       {false, false},
+		"http://[::1]:11434":           {false, false},
+		"https://ollama.lan":           {false, false},
+		"https://203.0.113.9/v1":       {false, false},
+		"http://ollama:11434":          {false, true},
+		"http://10.0.0.5:11434":        {false, true},
+		"HTTP://192.168.1.20":          {false, true},
+		"http://172.16.4.2:8000":       {false, true},
+		"http://172.31.255.1":          {false, true},
+		"http://[fd12:3456::1]:11434":  {false, true},
+		"http://172.32.0.1":            {true, true},
+		"http://203.0.113.9:11434/v1":  {true, true},
+		"http://[2001:db8::1]:11434":   {true, true},
+		"http://ollama.lan:11434":      {true, true},
+		"http://models.example.com/v1": {true, true},
 	} {
-		if got := Insecure(raw); got != want {
+		if got := Insecure(raw); got != want[0] {
 			t.Errorf("Insecure(%q) = %v", raw, got)
+		}
+		if got := PlainRemote(raw); got != want[1] {
+			t.Errorf("PlainRemote(%q) = %v", raw, got)
 		}
 	}
 }

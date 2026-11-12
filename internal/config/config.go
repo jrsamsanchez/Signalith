@@ -1349,8 +1349,10 @@ type Assistant struct {
 	URL    string `yaml:"url,omitempty"`
 	Model  string `yaml:"model,omitempty"`
 	APIKey string `yaml:"api_key,omitempty"`
-	// AllowInsecureHTTP lets URL be plain http to another computer. Off,
-	// such an address turns the AI features off (see AssistantInsecure).
+	// AllowInsecureHTTP lets URL be plain http beyond the local network
+	// (a public address or a dotted name). Off, such an address turns the
+	// AI features off (see AssistantInsecure). Plain http to this computer,
+	// a private address or a single-label name needs nothing.
 	AllowInsecureHTTP bool `yaml:"allow_insecure_http,omitempty"`
 	// Investigate lets analysts use Investigate with AI on a finding,
 	// which sends the finding's events and the results of read-only
@@ -1419,7 +1421,8 @@ func (c *Config) AssistantClient() *assistant.Client {
 }
 
 // AssistantInsecure reports whether the AI model's address is plain http
-// to another computer without assistant.allow_insecure_http: questions,
+// beyond the local network (a public address or a dotted name, see
+// assistant.Insecure) without assistant.allow_insecure_http: questions,
 // events and the model's answers would cross the network unencrypted, and
 // answers changed on the way would become verdicts and queries, so the AI
 // features stay off.
@@ -3007,12 +3010,15 @@ func (c *Config) Warnings() []string {
 	if u, err := url.Parse(o.URL); err == nil && u.Scheme == "http" && o.AllowInsecureHTTP && (o.Username != "" || o.Password != "") && !isLoopback(u.Hostname()) {
 		w = append(w, "opensearch.allow_insecure_http is on, so the OpenSearch username and password cross the network to "+u.Host+" unencrypted. Use an https:// opensearch.url.")
 	}
-	if u, err := url.Parse(c.AssistantURL()); err == nil && c.Assistant.Provider != "" && assistant.Insecure(c.AssistantURL()) {
-		if c.Assistant.AllowInsecureHTTP {
+	if u, err := url.Parse(c.AssistantURL()); err == nil && c.Assistant.Provider != "" && assistant.PlainRemote(c.AssistantURL()) {
+		if !assistant.Insecure(c.AssistantURL()) {
+			w = append(w, "assistant.url is plain http to "+u.Host+", so questions, the events Investigate with AI sends, the AI model's answers and any API key "+
+				"cross your network unencrypted. Use https:// when you can.")
+		} else if c.Assistant.AllowInsecureHTTP {
 			w = append(w, "assistant.allow_insecure_http is on, so questions, the events Investigate with AI sends, the AI model's answers and its API key cross the network to "+
 				u.Host+" unencrypted, where they can be read or changed. Use an https:// assistant.url.")
 		} else {
-			w = append(w, "assistant.url is plain http to "+u.Host+", so the AI features are off: questions, events and the model's answers would cross the network unencrypted, "+
+			w = append(w, "assistant.url is plain http to "+u.Host+", beyond your local network, so the AI features are off: questions, events and the model's answers would cross the network unencrypted, "+
 				"and answers changed on the way would become verdicts and queries. Use https://, or, to accept the risk, set assistant.allow_insecure_http: true.")
 		}
 	}
