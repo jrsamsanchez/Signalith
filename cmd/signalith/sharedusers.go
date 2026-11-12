@@ -49,6 +49,12 @@ type sharedUsers struct {
 	// shared settings, and cur holds them then.
 	on  atomic.Bool
 	cur atomic.Pointer[usersParts]
+	// builtin watches the built-in admin's document, for the audit
+	// records of changes made from a server's command line
+	// (auditBuiltinChange).
+	builtin *clusterauth.BuiltinWatch
+	// builtinCluster is the cluster document builtin already follows.
+	builtinCluster *shared.Doc[shared.ClusterBody]
 
 	// servers is how many servers take sign-ins, worked out from the
 	// node's status at most every serversFor.
@@ -72,7 +78,42 @@ type usersParts struct {
 
 // newSharedUsers returns the link for the process.
 func newSharedUsers(log *slog.Logger) *sharedUsers {
-	return &sharedUsers{docs: clusterauth.NewDocs(), cache: clusterauth.NewSessionCache(), log: log}
+	ua := &sharedUsers{docs: clusterauth.NewDocs(), cache: clusterauth.NewSessionCache(), log: log}
+	ua.builtin = &clusterauth.BuiltinWatch{Docs: ua.docs, Report: ua.auditBuiltinChange}
+	return ua
+}
+
+// cliByPrefix starts who a document says changed it when that was a
+// command run on a server (cliUser).
+const cliByPrefix = "cli:"
+
+// auditBuiltinChange writes the audit record of a change to the built-in
+// admin made with a command on a server: signalith passwd (a new
+// password, and turned on again) and signalith cluster apply (renamed).
+// Such a command has no audit log to write to, so the server that runs
+// the cluster's jobs writes the record when it sees the change in the
+// shared settings, within a few seconds, with who the document says made
+// it; one server, so that there is one record. Changes made on the Users
+// page are logged by the server that took the request, and are left out
+// here. The messages are those the same changes have on the page, so the
+// audit alerts and searches cover both.
+func (ua *sharedUsers) auditBuiltinChange(ch clusterauth.BuiltinChange) {
+	p := ua.cur.Load()
+	if p == nil || p.node == nil || !p.node.Lease().Holding() || !strings.HasPrefix(ch.By.User, cliByPrefix) {
+		return
+	}
+	args := []any{"audit", true, "by", ch.By.User, "user", ch.User, "source", users.SourceBuiltin, "changed_on", ch.By.Node}
+	switch ch.What {
+	case clusterauth.BuiltinRenamed:
+		ua.log.Info("user changed", append(args, "fields", "username", "from", ch.From,
+			"reason", "the built-in admin was renamed with signalith cluster apply")...)
+	case clusterauth.BuiltinPassword:
+		ua.log.Info("password reset", append(args, "reason", "signalith passwd set the built-in admin's password for every server")...)
+	case clusterauth.BuiltinEnabled:
+		ua.log.Info("user enabled", append(args, "reason", "signalith passwd turned the built-in admin on again")...)
+	case clusterauth.BuiltinDisabled:
+		ua.log.Info("user disabled", append(args, "reason", "changed from a server's command line")...)
+	}
 }
 
 // follow ties the shared users to the runtime of the process: the
@@ -118,6 +159,16 @@ func (ua *sharedUsers) start(ctx context.Context, rt *shared.Runtime, node *clus
 			return m != shared.ModeMember
 		},
 		Confirmed: func() time.Time { return rt.Hub().Confirmed() }, Log: log}
+	// What the built-in admin is now is what later changes are compared
+	// with.
+	ua.builtin.Check()
+	ua.docs.OnUsers(ua.builtin.Check)
+	// A rename shows in the cluster document too, which may be read after
+	// the users. The document outlives a start, so it is told once.
+	if cd := rt.Cluster(); cd != nil && cd != ua.builtinCluster {
+		cd.OnChange(func(_, _ *shared.ClusterBody) { ua.builtin.Check() })
+		ua.builtinCluster = cd
+	}
 	sess.SetIdle(c.SessionIdle())
 	sess.SetMaxAge(c.SessionMaxAge())
 	sess.Listen()

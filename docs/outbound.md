@@ -120,7 +120,7 @@ network.
    release's `all.zip` into, or to `off`.
 5. **Threat intel.** Add feeds only from files, or from addresses and TAXII servers on
    your network.
-6. **AI.** Leave **Provider** off under **Settings > AI assistant**, or point **Address**
+6. **AI.** Leave **Provider** off under **Settings > Server > AI assistant**, or point **Address**
    at a model on your network.
 7. **Everything else you add** (notification channels, ticketing, response actions,
    directory and single sign-on) must name systems on your network. Leave Microsoft 365

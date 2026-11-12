@@ -1,0 +1,23 @@
+goatcounter-count.js is public/count.js of GoatCounter v2.7.0
+(zgo.at/goatcounter/v2 v2.7.0, git tag v2.7.0, commit
+7e91d8a9bdbb0dd48496e498c5680f8f3477a1b4), unchanged. It is served from
+this site so that no script from another host runs on its pages. It sends
+the visit counts to https://signalith.goatcounter.com/count.
+
+SHA-256: 030ad75a7c80a04107a9b91f79e4b1572da0a583a80a9b67e111b310da11cbe9
+
+Copyright © Martin Tournoij <martin@arp242.net>
+
+The count.js integration script is licensed under the ISC license:
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.

@@ -19,16 +19,90 @@ import (
 
 // API tokens (clusterauth.APITokenBody) sign a program in, such as the
 // read-only AI tools server: Authorization: Bearer sgl_api_<52>. A
-// request signed in with one reads as the token's role but can only
-// read, whatever the route allows that role: GET and HEAD, and POST only
-// to tokenPosts.
+// request signed in with one reads as the token's role (viewer or
+// analyst) but can only read, whatever the route allows that role: it
+// may use only the routes of tokenRoutes.
 
-// tokenPosts are the only POST routes an API token may use; each only
-// reads (a search runs a query, parse checks one). internal/mcp's client
-// sends nothing else.
-var tokenPosts = map[string]bool{
-	"POST /api/search": true,
-	"POST /api/parse":  true,
+// tokenRoutes are the only routes an API token may use, each checked to
+// change nothing: the GET routes a viewer or an analyst may use, a
+// search (which runs a query) and parse (which checks one). Every other
+// route, including a new one, is refused to tokens until someone checks
+// it only reads and lists it here; TestTokenRoutesOnlyRead fails until
+// a new viewer or analyst GET route is listed here or in its list of
+// routes kept from tokens. internal/mcp's client sends nothing else.
+// Running a response action or approving a playbook step is not here:
+// those need a person, who enters the password or code again.
+var tokenRoutes = map[string]bool{
+	"POST /api/search":                 true,
+	"POST /api/parse":                  true,
+	"GET /api/agent-hosts":             true,
+	"GET /api/agent-tokens":            true,
+	"GET /api/agents":                  true,
+	"GET /api/ask":                     true,
+	"GET /api/case-templates":          true,
+	"GET /api/cases":                   true,
+	"GET /api/cases/reports/keys":      true,
+	"GET /api/cases/summary":           true,
+	"GET /api/cases/{id}":              true,
+	"GET /api/cases/{id}/files/{file}": true,
+	"GET /api/cases/{id}/report":       true,
+	"GET /api/cases/{id}/tickets":      true,
+	"GET /api/chat/accounts":           true,
+	"GET /api/cluster/features":        true,
+	"GET /api/compliance":              true,
+	"GET /api/compliance/export":       true,
+	"GET /api/compliance/history":      true,
+	"GET /api/compliance/history/{id}": true,
+	"GET /api/coverage":                true,
+	"GET /api/dashboards":              true,
+	"GET /api/dashboards/{id}":         true,
+	"GET /api/dashboards/{id}/yaml":    true,
+	"GET /api/datamodels":              true,
+	"GET /api/detections":              true,
+	"GET /api/detections/content":      true,
+	"GET /api/detections/exceptions":   true,
+	"GET /api/detections/packs":        true,
+	"GET /api/detections/{id}":         true,
+	"GET /api/detections/{id}/yaml":    true,
+	"GET /api/endpoints":               true,
+	"GET /api/endpoints/checks":        true,
+	"GET /api/endpoints/settings":      true,
+	"GET /api/endpoints/{id}":          true,
+	"GET /api/exception-requests":      true,
+	"GET /api/fields":                  true,
+	"GET /api/fields/values":           true,
+	"GET /api/findings":                true,
+	"GET /api/findings/summary":        true,
+	"GET /api/findings/{id}":           true,
+	"GET /api/health":                  true,
+	"GET /api/intel":                   true,
+	"GET /api/intel/catalog":           true,
+	"GET /api/intel/feeds":             true,
+	"GET /api/intel/indicators":        true,
+	"GET /api/intel/lookup":            true,
+	"GET /api/investigate":             true,
+	"GET /api/language":                true,
+	"GET /api/lookups/context":         true,
+	"GET /api/lookups/{kind}":          true,
+	"GET /api/lookuptables":            true,
+	"GET /api/lookuptables/{name}":     true,
+	"GET /api/me":                      true,
+	"GET /api/me/finding-views":        true,
+	"GET /api/me/mfa":                  true,
+	"GET /api/me/setup":                true,
+	"GET /api/notebooks":               true,
+	"GET /api/notebooks/{id}":          true,
+	"GET /api/notebooks/{id}/markdown": true,
+	"GET /api/playbooks/runs":          true,
+	"GET /api/posture":                 true,
+	"GET /api/respond/actions":         true,
+	"GET /api/respond/runs":            true,
+	"GET /api/risk":                    true,
+	"GET /api/risk/object":             true,
+	"GET /api/storyline":               true,
+	"GET /api/tenants":                 true,
+	"GET /api/vulns":                   true,
+	"GET /api/vulns/hosts/{id}":        true,
 }
 
 // apiTokenUser is the name requests signed in with the token named name
@@ -37,16 +111,8 @@ var tokenPosts = map[string]bool{
 func apiTokenUser(name string) string { return "api-token:" + name }
 
 // tokenMayUse reports whether a request signed in with an API token may
-// do what r asks.
-func tokenMayUse(r *http.Request) bool {
-	switch r.Method {
-	case http.MethodGet, http.MethodHead:
-		return true
-	case http.MethodPost:
-		return tokenPosts[r.Method+" "+r.URL.Path]
-	}
-	return false
-}
+// use route rt. A "GET" route also answers HEAD.
+func tokenMayUse(rt route) bool { return tokenRoutes[rt.Pattern] }
 
 // bearerAPIToken returns the API token of the Authorization header, ""
 // when it carries none.

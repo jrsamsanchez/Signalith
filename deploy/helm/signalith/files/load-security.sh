@@ -229,20 +229,69 @@ answered=yes
 # opensearch.snapshotRole), or it is mapped already (snapshot.sh register
 # maps it) and a snapshot repository or Signalith's snapshot policy
 # exists. Loading the files would drop a mapping made that way, so this
-# loads a copy of them with it added.
-admin_get() {
-	curl -s --max-time 20 --cacert "$certs/root-ca.pem" --cert "$certs/admin.pem" --key "$certs/admin-key.pem" \
-		"https://$host:9200$1"
-}
-snapshot_role() {
-	[ "${SIGNALITH_SNAPSHOT_ROLE:-}" = on ] && return 0
-	case $(admin_get /_plugins/_security/api/rolesmapping/signalith_snapshots) in
-	*'"signalith_snapshots"'*) ;;
-	*) return 1 ;;
+# loads a copy of them with it added. It decides after step 2, and only
+# from answers it understands: when OpenSearch can't tell yet, it asks
+# again, and if it still can't, it loads nothing rather than drop the
+# mapping.
+#
+# admin_ask asks OpenSearch for $1 with the admin certificate. It sets
+# answer to what OpenSearch answered and asked to the HTTP status: 000
+# when it didn't answer.
+admin_ask() {
+	answer=$(curl -s --max-time 20 -w '\n%{http_code}' --cacert "$certs/root-ca.pem" --cert "$certs/admin.pem" \
+		--key "$certs/admin-key.pem" "https://$host:9200$1")
+	asked=$(printf '%s\n' "$answer" | tail -n 1)
+	answer=$(printf '%s\n' "$answer" | sed '$d')
+	case $asked in
+	[1-5][0-9][0-9]) ;;
+	*) asked=000 ;;
 	esac
-	admin_get '/_plugins/_sm/policies?size=1000' | grep -Eq '"created_by" *: *"signalith"' && return 0
+}
+# role_mapped sets mapped to yes when signalith_snapshots is mapped, no
+# when it is not, and unknown when OpenSearch's answer doesn't say. While
+# OpenSearch uses its security settings (health 200) it asks its security
+# API; before that, the API can't answer, so it reads the stored mapping,
+# which is what loading the files would replace.
+role_mapped() {
+	mapped=unknown
+	if [ "$code" = 200 ]; then
+		admin_ask /_plugins/_security/api/rolesmapping/signalith_snapshots
+		case $asked:$answer in
+		200:*'"signalith_snapshots"'*) mapped=yes ;;
+		404:*'"NOT_FOUND"'*) mapped=no ;;
+		esac
+		return
+	fi
+	admin_ask /.opendistro_security/_doc/rolesmapping
+	case $asked:$answer in
+	404:*index_not_found_exception* | 404:*'"found":false'*) mapped=no; return ;;
+	200:*'"found":true'*) ;;
+	*) return ;;
+	esac
+	stored_mapping=$(printf '%s' "$answer" | sed -n 's/.*"rolesmapping":"\([A-Za-z0-9+\/=]*\)".*/\1/p' | base64 -d 2> /dev/null)
+	case $stored_mapping in
+	*'"signalith_snapshots"'*) mapped=yes ;;
+	*'"_meta"'*) mapped=no ;;
+	esac
+}
+# snapshot_role sets role to yes when Signalith keeps the role, no when it
+# doesn't, and unknown when OpenSearch's answers don't tell: an error, no
+# answer in time, or an answer this doesn't recognize.
+snapshot_role() {
+	role_mapped
+	role=$mapped
+	[ "$role" = yes ] || return 0
+	role=unknown
+	admin_ask '/_plugins/_sm/policies?size=1000'
+	case $asked:$answer in
+	200:*) printf '%s' "$answer" | grep -Eq '"created_by" *: *"signalith"' && { role=yes; return 0; } ;;
+	404:*index_not_found_exception*) ;;
+	*) return 0 ;;
+	esac
 	# Any repository but cold storage's (<prefix>-cold), which has its own role.
-	admin_get '/_cat/repositories?h=id' | grep -v '^[{[]' | grep -v -- '-cold$' | grep -q .
+	admin_ask '/_cat/repositories?h=id'
+	[ "$asked" = 200 ] || return 0
+	if printf '%s\n' "$answer" | grep -v -- '-cold$' | grep -q .; then role=yes; else role=no; fi
 }
 src=$dir
 dir=/tmp/opensearch-security
@@ -250,10 +299,6 @@ rm -rf "$dir" && mkdir -p "$dir" && cp "$src"/*.yml "$dir"/ || {
 	say "Could not copy the security settings files to $dir."
 	exit 1
 }
-if snapshot_role; then
-	printf '\nsignalith_snapshots:\n  users:\n    - "signalith"\n    - "signalith-server-*"\n' >> "$dir/roles_mapping.yml"
-	say "Signalith keeps the snapshot role (signalith_snapshots) for scheduled snapshots."
-fi
 
 all=""
 for k in $kinds; do
@@ -278,10 +323,44 @@ if [ "$code" = 503 ]; then
 	fi
 fi
 
+# The files as they are, and with the snapshot role's mapping added.
+had=$(cat "$state" 2> /dev/null)
+plain=$(fingerprint)
+cp "$dir/roles_mapping.yml" /tmp/roles_mapping.plain.yml
+printf '\nsignalith_snapshots:\n  users:\n    - "signalith"\n    - "signalith-server-*"\n' >> "$dir/roles_mapping.yml"
+with_role=$(fingerprint)
+cp /tmp/roles_mapping.plain.yml "$dir/roles_mapping.yml"
+
+# 1b, continued. While OpenSearch uses settings loaded from these same
+# files, with or without the mapping, nothing is loaded, so there is
+# nothing to decide.
+role=no
+if [ "${SIGNALITH_SNAPSHOT_ROLE:-}" = on ]; then
+	role=yes
+elif [ "$code" = 200 ] && { [ "$had" = "$plain" ] || [ "$had" = "$with_role" ]; }; then
+	role=same
+else
+	while snapshot_role; [ "$role" = unknown ]; do
+		# No security index at all: a first start, with no mapping to keep.
+		[ "$code" != 200 ] && [ "$(stored)" = 0 ] && { role=no; break; }
+		if [ "$(left)" -le 0 ]; then
+			say "Could not tell whether the snapshot role (signalith_snapshots) is mapped: OpenSearch answered HTTP $asked."
+			say "Nothing was loaded, so a mapping made with snapshot.sh register is kept."
+			give_up "OpenSearch did not say whether the snapshot role is mapped."
+		fi
+		say "Could not tell yet whether the snapshot role (signalith_snapshots) is mapped (OpenSearch answered HTTP $asked). Asking again."
+		wait_a_bit
+		code=$(status)
+	done
+fi
+if [ "$role" = yes ]; then
+	printf '\nsignalith_snapshots:\n  users:\n    - "signalith"\n    - "signalith-server-*"\n' >> "$dir/roles_mapping.yml"
+	say "Signalith keeps the snapshot role (signalith_snapshots) for scheduled snapshots."
+fi
+
 # 3. Nothing to do when its settings are loaded, from these same files.
 want=$(fingerprint)
-had=$(cat "$state" 2> /dev/null)
-if [ "$code" = 200 ] && [ "$want" = "$had" ]; then
+if [ "$code" = 200 ] && { [ "$want" = "$had" ] || [ "$role" = same ]; }; then
 	say "Nothing to do: OpenSearch has its security settings loaded, from these same files."
 	exit 0
 fi

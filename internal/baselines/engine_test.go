@@ -222,7 +222,8 @@ func TestNewCountryAfterLearning(t *testing.T) {
 	if !ev.Time.Equal(brazilAt.Add(7 * time.Minute)) {
 		t.Errorf("event time %v, want the first sign-in's", ev.Time)
 	}
-	if !strings.Contains(ev.Message, "Brazil (BR)") {
+	// "First" is within what the check remembers (SRCH-226).
+	if !strings.Contains(ev.Message, "Brazil (BR)") || !strings.Contains(ev.Message, " in the last ") {
 		t.Errorf("message %q", ev.Message)
 	}
 	// The new network is the same news: not raised again.
@@ -266,7 +267,7 @@ func TestNewNetwork(t *testing.T) {
 	r.now = at.Add(time.Hour + settle)
 	r.run()
 	evs := r.risk.of(NewNetwork)
-	if len(evs) != 1 || evs[0].Fields["src_asn"] != "AS15169" || !strings.Contains(evs[0].Message, "AS15169 (GOOGLE)") {
+	if len(evs) != 1 || evs[0].Fields["src_asn"] != "AS15169" || !strings.Contains(evs[0].Message, "AS15169 (GOOGLE)") || !strings.Contains(evs[0].Message, " in the last ") {
 		t.Fatalf("events %+v", evs)
 	}
 	if evs := r.risk.of(NewCountry); len(evs) != 0 {
@@ -287,7 +288,8 @@ func TestRareProcess(t *testing.T) {
 			h := fmt.Sprintf("ws-%02d", i)
 			rows = append(rows, row("dest", h, "process_name", "explorer.exe"))
 			if start.Equal(at) {
-				// A rollout reaches every host at once: common, not rare.
+				// A roll-out, or a tool pushed to every host at once: not
+				// rare on any host, but new to all of them (SRCH-227).
 				rows = append(rows, row("dest", h, "process_name", "NewAgent.exe"))
 			}
 		}
@@ -300,12 +302,26 @@ func TestRareProcess(t *testing.T) {
 	r.now = at.Add(time.Hour + settle)
 	r.run()
 	evs := r.risk.of(RareProcess)
-	if len(evs) != 1 {
+	if len(evs) != 2 {
 		t.Fatalf("events %+v", evs)
 	}
-	ev := evs[0]
-	if ev.Object != "ws-03" || ev.ObjectType != "system" || ev.Fields["process_name"] != "Mimikatz.EXE" || ev.Fields["baseline_value"] != "mimikatz.exe" {
+	var ev, fleet detect.RiskEvent
+	for _, e := range evs {
+		if e.ObjectType == "other" {
+			fleet = e
+		} else {
+			ev = e
+		}
+	}
+	if ev.Object != "ws-03" || ev.ObjectType != "system" || ev.Fields["process_name"] != "Mimikatz.EXE" || ev.Fields["baseline_value"] != "mimikatz.exe" ||
+		!strings.Contains(ev.Message, "in the last 3 days") {
 		t.Errorf("event %+v", ev)
+	}
+	// One event for the program, at a quarter of the risk, not one per
+	// host.
+	if fleet.Object != "NewAgent.exe" || fleet.Score != 5 || fleet.Fields["baseline_hosts"] != 6 ||
+		!strings.Contains(fleet.Message, "on 6 hosts within one hour") || !strings.Contains(fleet.Message, "in the last 3 days") {
+		t.Errorf("fleet event %+v", fleet)
 	}
 	if p := r.profile(prevalenceCheck, "newagent.exe"); p == nil || len(p.Values) != 6 {
 		t.Errorf("fleet profile %+v", p)
@@ -402,6 +418,9 @@ func TestNewChange(t *testing.T) {
 	got := map[string]string{}
 	for _, e := range r.risk.of(NewChange) {
 		got[e.Object] = e.Fields["baseline_value"].(string)
+		if !strings.Contains(e.Message, " in the last ") {
+			t.Errorf("message %q does not say what the check remembers", e.Message)
+		}
 	}
 	if len(got) != 2 || got["erin"] != "CreateAccessKey" || got["frank"] != "deleted group" {
 		t.Fatalf("events %v", got)

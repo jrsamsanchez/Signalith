@@ -69,6 +69,8 @@ func (s *Server) agents() *agentinv.Inventory { return s.Agents }
 // its resourcedetection processor puts its computer's name on every
 // event, so a batch with one host name is named by it. A Collector that
 // forwards other computers' events is told apart by address and token.
+// Whichever way the name is found, a batch sent with a line's token does
+// not move the row of a computer that has a key of its own.
 func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.Identity, events int, hosts []string, sensor *ingest.SensorStatus) {
 	name, ok := s.agentHostName(r, who)
 	if !ok {
@@ -82,6 +84,13 @@ func (s *Server) noteAgent(r *http.Request, intake, tag string, who agenttokens.
 		}
 		if len(hosts) == 1 {
 			name = hosts[0]
+		}
+		// The name is the sender's word, as the header is: one that
+		// belongs to a computer with a key of its own moves its row only
+		// when the batch came with that key (then the name is the key's,
+		// above). The events are kept.
+		if n := agentinv.CleanName(name); who.Host == "" && n != "" && s.tokens().Enrolled(n) {
+			return
 		}
 	}
 	from := clientaddr.Parse(r.RemoteAddr)

@@ -109,7 +109,7 @@ func applyMakeMV(ctx context.Context, res *Result, c *query.MakeMV) error {
 			vs = append(vs, p)
 		}
 		// The values share the text's memory; the list itself is new.
-		if !ev.charge(len(vs) * rowOverhead) {
+		if !ev.chargeValues(len(vs), 0) {
 			return ev.err
 		}
 		if v := mvOut(vs); v == nil {

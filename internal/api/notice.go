@@ -5,8 +5,13 @@ package api
 
 import (
 	"bytes"
+	"crypto/hmac"
+	"encoding/base64"
 	"html"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/config"
 )
@@ -17,7 +22,9 @@ import (
 // in from the sign-in page (a password, a passkey, single sign-on and the
 // public demo's button) is refused until the person ticks I agree, here on
 // the server as well as on the page, and the sign-in is logged with
-// notice=agreed. API tokens and HTTP Basic auth are for scripts, which
+// notice=agreed. Single sign-on starts with a link rather than a form, so
+// its start counts the tick only from a page of this site
+// (ssoNoticeAgreed). API tokens and HTTP Basic auth are for scripts, which
 // read no page, and are not asked.
 
 const noticeViewRoute = "GET /api/auth/notice"
@@ -49,6 +56,64 @@ func (s *Server) noticeLog() []any {
 		return []any{"notice", "agreed"}
 	}
 	return nil
+}
+
+// ssoNoticeLog is noticeLog for a single sign-on, which ends on another
+// request than the one that checked the notice: agreed comes from the
+// sign-in under way, not from the setting now.
+func ssoNoticeLog(agreed bool) []any {
+	if agreed {
+		return []any{"notice", "agreed"}
+	}
+	return nil
+}
+
+// noticeHopPurpose keys the mark that a single sign-on start passes on
+// through the hop to the public address: the notice was agreed to.
+const noticeHopPurpose = "sign-in notice hop"
+
+// noticeHopWait is how long that mark is good for.
+const noticeHopWait = 2 * time.Minute
+
+// ssoNoticeAgreed reports whether a single sign-on start comes with the
+// notice agreed to. The sign-in page's link carries agreed=1 once I agree
+// is ticked, but a link is easy to copy: an identity provider's tile, a
+// bookmark or a link someone sent would sign in without the notice
+// shown. So agreed=1 counts only when the browser says the link was
+// followed from a page of this same site (Sec-Fetch-Site; a browser too
+// old to send it is taken at its word), or, after the hop to the public
+// address, with the signed mark the first start gave it.
+func (s *Server) ssoNoticeAgreed(r *http.Request) bool {
+	q := r.URL.Query()
+	if q.Get("agreed") != "1" {
+		return false
+	}
+	if q.Get("hop") != "" {
+		return s.noticeHopOK(q.Get("notice"), time.Now())
+	}
+	site := r.Header.Get("Sec-Fetch-Site")
+	return site == "" || site == "same-origin"
+}
+
+// noticeHop is the mark for the hop to the public address, good until
+// noticeHopWait from now.
+func (s *Server) noticeHop(now time.Time) string {
+	exp := strconv.FormatInt(now.Add(noticeHopWait).Unix(), 10)
+	return exp + "." + base64.RawURLEncoding.EncodeToString(s.browserKey().MAC(noticeHopPurpose, []byte(exp)))
+}
+
+// noticeHopOK checks a mark noticeHop made.
+func (s *Server) noticeHopOK(v string, now time.Time) bool {
+	exp, mac, ok := strings.Cut(v, ".")
+	if !ok {
+		return false
+	}
+	got, err := base64.RawURLEncoding.DecodeString(mac)
+	if err != nil || !hmac.Equal(got, s.browserKey().MAC(noticeHopPurpose, []byte(exp))) {
+		return false
+	}
+	t, err := strconv.ParseInt(exp, 10, 64)
+	return err == nil && now.Unix() <= t
 }
 
 // noticePage fills the sign-in page's notice, hidden while there is none.

@@ -7,6 +7,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 )
 
@@ -25,6 +27,28 @@ type Match struct {
 
 func (m Match) empty() bool {
 	return len(m.Messages)+len(m.MessagePrefixes)+len(m.Actions)+len(m.ActionPrefixes) == 0
+}
+
+// Selects reports whether m selects ev, as Matching would: for a reader
+// that holds the events itself.
+func (m Match) Selects(ev Event) bool {
+	if ev.Time.Before(m.Since) {
+		return false
+	}
+	if slices.Contains(m.Messages, ev.Message) || slices.Contains(m.Actions, ev.Action) {
+		return true
+	}
+	for _, p := range m.MessagePrefixes {
+		if strings.HasPrefix(ev.Message, p) {
+			return true
+		}
+	}
+	for _, p := range m.ActionPrefixes {
+		if strings.HasPrefix(ev.Action, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchPage is how many events one request of Matching reads.
@@ -55,7 +79,10 @@ func Matching(ctx context.Context, c Searcher, prefix string, m Match, limit int
 		filter = append(filter, map[string]any{"range": map[string]any{"@timestamp": map[string]any{"gte": m.Since.UTC().Format(time.RFC3339Nano)}}})
 	}
 	var after []any
-	for len(hits) < limit {
+	// One event past the limit is always asked for, also when the limit
+	// is reached at the end of a page, so truncated is never wrongly
+	// false.
+	for {
 		size := min(matchPage, limit-len(hits)+1)
 		body := map[string]any{
 			"query": map[string]any{"bool": map[string]any{"filter": filter}},
@@ -100,5 +127,4 @@ func Matching(ctx context.Context, c Searcher, prefix string, m Match, limit int
 		}
 		after = out.Hits.Hits[len(out.Hits.Hits)-1].Sort
 	}
-	return hits, false, nil
 }

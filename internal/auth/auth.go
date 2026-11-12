@@ -40,6 +40,40 @@ type Session struct {
 	// Tenant is the tenant the session works in: a tenant user's own,
 	// or the one a provider user switched to ("" is the default tenant).
 	Tenant string
+	// Client is the address the user signed in from, "" when unknown.
+	Client string
+}
+
+// Info describes one session in a list of a user's sessions (List). It
+// never holds the session's token, nor the hash it is stored under.
+type Info struct {
+	// ID names the session in the list, to end it (End).
+	ID       string    `json:"id"`
+	Created  time.Time `json:"created"`
+	LastSeen time.Time `json:"last_seen"`
+	Client   string    `json:"client,omitempty"`
+	Method   string    `json:"method,omitempty"`
+	Remember bool      `json:"remember"`
+	// Current is the session of the request that asked for the list.
+	Current bool `json:"current,omitempty"`
+}
+
+// ListID is the ID a session stored under the key stored has in a list
+// of sessions (Info.ID): a hash of the key, so the list gives away
+// neither the token nor what it is stored under.
+func ListID(stored string) string {
+	sum := sha256.Sum256([]byte("signalith session list\x00" + stored))
+	return base64.RawURLEncoding.EncodeToString(sum[:16])
+}
+
+// SortInfo puts the current session first, then the most recently used.
+func SortInfo(list []Info) {
+	sort.SliceStable(list, func(i, j int) bool {
+		if list[i].Current != list[j].Current {
+			return list[i].Current
+		}
+		return list[i].LastSeen.After(list[j].LastSeen)
+	})
 }
 
 // NewSession is what a session starts with.
@@ -108,7 +142,7 @@ func (s *Sessions) Start(n NewSession) string {
 	}
 	token := base64.RawURLEncoding.EncodeToString(b)
 	now := s.Now()
-	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method, Tenant: n.Tenant}
+	ss := &Session{User: n.User, Created: now, LastSeen: now, Remember: n.Remember, Version: n.Version, Epoch: n.Epoch, Method: n.Method, Tenant: n.Tenant, Client: n.Client}
 	s.mu.Lock()
 	if f := s.forward; f != nil {
 		s.mu.Unlock()
@@ -233,6 +267,38 @@ func (s *Sessions) EndUser(user, keep string) int {
 		}
 	}
 	return n
+}
+
+// List lists the sessions of user that have not expired, the one of the
+// token current marked. Usernames ignore case.
+func (s *Sessions) List(user, current string) []Info {
+	now := s.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur := hash(current)
+	out := []Info{}
+	for id, ss := range s.byID {
+		if strings.EqualFold(ss.User, user) && !s.expired(ss, now) {
+			out = append(out, Info{ID: ListID(string(id[:])), Created: ss.Created, LastSeen: ss.LastSeen, Client: ss.Client,
+				Method: ss.Method, Remember: ss.Remember, Current: current != "" && id == cur})
+		}
+	}
+	SortInfo(out)
+	return out
+}
+
+// End ends the session of user with the list ID id (Info.ID), and
+// reports whether there was one.
+func (s *Sessions) End(user, id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, ss := range s.byID {
+		if strings.EqualFold(ss.User, user) && ListID(string(key[:])) == id {
+			delete(s.byID, key)
+			return true
+		}
+	}
+	return false
 }
 
 // Users lists the users with a session that has not expired, each once,

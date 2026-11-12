@@ -38,7 +38,9 @@ on its own, right now. For example:
   computers should send them, and says so.
 - **Detections**: enabled detections that match the control (sign-in attacks, privilege
   misuse, malware, network intrusions, persistence), with the data they read arriving
-  and scheduled detections turned on.
+  and scheduled detections turned on. At least one of them must also have run on its
+  schedule without an error in the last 7 days, or the evidence is partial; when the
+  server cannot read the detections' run state it says so instead.
 - **Configuration checks**: the [osquery checks](endpoints.md) whose NIST SP 800-53
   references match the control, and how many pass and fail across your hosts. Each
   failing check names the hosts it fails on (up to 25, then a count); analysts and
@@ -232,6 +234,12 @@ framework's score, and says for each one whether it checks out:
 | Not signed | The record has no signature, so nothing shows Signalith made it: anyone who can write to OpenSearch could have. Nothing in it is shown. A server with a report key never stores an unsigned record: when signing fails, it tries again an hour later. |
 | Revoked key | The signature matches, but the key that made it was [revoked](cases.md#report-keys) because it may have leaked. |
 | Changed | The record was changed, is stored under another record's name, or was not made by Signalith. Nothing in it is shown. |
+
+A note on a control is recorded with who left it and when (`attested_by`, `attested_at`).
+Each record also names the signed record before it, by ID and SHA-256 (`prev_id`,
+`prev_sha256`), so a record deleted or replaced later shows on the record after it as a
+broken link. The newest record has none after it: removing it shows only in the
+[audit log](audit.md), which records each record taken.
 
 Records are kept in OpenSearch, in the `<prefix>_compliance_history` index, and are never
 changed or deleted by Signalith. The page and the API show the newest 100 monthly records

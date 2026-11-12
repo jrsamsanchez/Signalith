@@ -54,32 +54,49 @@ func (rt *router) viewerSensitive(pattern string, h http.HandlerFunc) {
 	rt.add(route{Pattern: pattern, Role: users.Viewer, Recheck: true}, h)
 }
 
+// analystSensitive registers an analyst route that changes other systems
+// at once (running a response action, approving a playbook step): it
+// asks for the password or code entered within auth.ActionRecheckAge.
+func (rt *router) analystSensitive(pattern string, h http.HandlerFunc) {
+	rt.add(route{Pattern: pattern, Role: users.Analyst, Recheck: true, RecheckAge: auth.ActionRecheckAge}, h)
+}
+
 func (s *Server) routeRecheck(api *router) {
 	api.self("POST /api/me/recheck", s.handleRecheck)
 }
 
 // rechecked reports whether p entered their password or code in the last
-// auth.RecheckAge. Requests that sent the password themselves (HTTP
-// Basic) count as rechecked; API tokens only read.
-func (s *Server) rechecked(r *http.Request, p *principal) bool {
+// within (signing in counts). Requests that sent the password themselves
+// (HTTP Basic) count as rechecked; API tokens only read, so they never
+// reach a route that asks (tokenMayUse).
+func (s *Server) rechecked(r *http.Request, p *principal, within time.Duration) bool {
 	if p.Method != "session" {
 		return true
 	}
 	now := time.Now()
-	if !p.signedIn.IsZero() && now.Sub(p.signedIn) < auth.RecheckAge {
+	if !p.signedIn.IsZero() && now.Sub(p.signedIn) < within {
 		return true
 	}
 	c, err := r.Cookie(s.recheckCookieName(r))
-	return err == nil && s.browserKey().CheckRecheck(p.Username, p.token, c.Value, now)
+	return err == nil && s.browserKey().CheckRecheckWithin(p.Username, p.token, c.Value, now, within)
 }
 
 // recheckNeeded answers 403 recheck_required and returns true when p
 // must enter their password or code again first.
 func (s *Server) recheckNeeded(w http.ResponseWriter, r *http.Request, p *principal) bool {
-	if s.rechecked(r, p) {
+	return s.recheckNeededWithin(w, r, p, auth.RecheckAge)
+}
+
+// recheckNeededWithin is recheckNeeded for a password or code entered
+// within that time; 0 stands for auth.RecheckAge.
+func (s *Server) recheckNeededWithin(w http.ResponseWriter, r *http.Request, p *principal, within time.Duration) bool {
+	if within <= 0 || within > auth.RecheckAge {
+		within = auth.RecheckAge
+	}
+	if s.rechecked(r, p, within) {
 		return false
 	}
-	v := map[string]any{"code": "recheck_required", "minutes": int(auth.RecheckAge.Minutes())}
+	v := map[string]any{"code": "recheck_required", "minutes": int(within.Minutes())}
 	switch {
 	case !mfaSource(p.Source):
 		v["error"] = "Sign in again to make this change."

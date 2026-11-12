@@ -6,9 +6,11 @@ package agentinv
 import (
 	"context"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/store"
@@ -349,5 +351,26 @@ func TestOldEntriesAreForgottenAndAFullListMakesRoom(t *testing.T) {
 	v.mu.Unlock()
 	if agents != 0 {
 		t.Errorf("agents not heard from for 30 days kept: %d", agents)
+	}
+}
+
+// TestALongTagIsCut: the tag a sender chooses is kept to maxTag bytes,
+// cut at the start of a character (ING-211).
+func TestALongTagIsCut(t *testing.T) {
+	fos := ostest.New(t)
+	c := store.New(store.Config{URL: fos.URL})
+	clk := &clock{t: time.Now().UTC()}
+	v := newInv(c, "n1", clk, pinA)
+	v.Note(Contact{Name: "web-01", Address: "192.0.2.10", Tag: "x" + strings.Repeat("é", 40<<10), Intake: "agent", TLS: true, Events: 1})
+	v.FlushNow(context.Background())
+	agents := list(t, newInv(c, "n2", clk, pinA))
+	if len(agents) != 1 {
+		t.Fatalf("agents: %+v", agents)
+	}
+	if tag := agents[0].Tag; len(tag) > maxTag || len(tag) < maxTag-1 || !utf8.ValidString(tag) || !strings.HasPrefix(tag, "xé") {
+		t.Errorf("tag: %d bytes %q", len(tag), tag)
+	}
+	if got := capTag("linux.auth"); got != "linux.auth" {
+		t.Errorf("short tag: %q", got)
 	}
 }

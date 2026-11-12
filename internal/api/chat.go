@@ -158,7 +158,10 @@ func (d chatDesk) Acknowledge(ctx context.Context, findingID, user, note string)
 	if err != nil {
 		return ack, err
 	}
-	d.s.Log.Info("finding acknowledged from chat", "audit", true, "by", user, "finding", f.ID, "owner", f.Owner, "status", f.Status)
+	// A click in chat has no address of its own: the chat system's
+	// servers send it. The chat button line names the chat account.
+	d.s.Log.Info("finding.update: finding acknowledged from chat", "audit", true, "by", user, "client", "chat",
+		"target", f.ID, "owner", f.Owner, "status", f.Status)
 	return ack, nil
 }
 
