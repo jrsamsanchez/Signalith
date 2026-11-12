@@ -543,8 +543,8 @@ func (s *Server) Handler() http.Handler {
 	s.routeTenants(api)
 	if s.UI != nil {
 		api.add(route{Pattern: "GET /", Role: users.Viewer}, revalidate(s.indexPage(staticFiles(s.UI, true))))
-		if v := versionSegment(s.Version); v != "" {
-			// The same files under /v/<version>/, which pages name.
+		if v := s.buildToken(); v != "" {
+			// The same files under /v/<build>/, which pages name.
 			api.add(route{Pattern: "GET /v/" + v + "/", Role: users.Viewer},
 				versionedFiles(s.Version, true, http.StripPrefix("/v/"+v, staticFiles(s.UI, false))))
 		}

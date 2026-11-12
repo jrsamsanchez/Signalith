@@ -1169,8 +1169,9 @@ it on, and then takes the scrape token instead of a sign-in, only over HTTPS or 
 (see [metrics.md](metrics.md)). Requests from a browser that change something must come from the Signalith
 page itself.
 
-Every answer carries the server's version in `X-Signalith-Version`. Answers to
-signed-in requests (and to a successful sign-in) also carry `X-Signalith-Config`,
+Every answer carries the server's build token in `X-Signalith-Build`. Answers to
+signed-in requests (and to a successful sign-in) also carry the server's version in
+`X-Signalith-Version`, and `X-Signalith-Config`,
 once the server has read the shared settings. Behind a load balancer, send the
 `X-Signalith-Config` of a change's answer as `X-Signalith-Config-Min` on the next
 request, so a server that has not yet read that change reads it first (see

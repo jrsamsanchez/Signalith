@@ -54,7 +54,7 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 		// Only the assets folder, never the app's own pages and scripts.
 		if assets, err := fs.Sub(s.UI, "assets"); err == nil {
 			mux.Handle("GET /assets/", http.StripPrefix("/assets", staticFiles(assets, false)))
-			if v := versionSegment(s.Version); v != "" {
+			if v := s.buildToken(); v != "" {
 				prefix := "/v/" + v + "/assets"
 				mux.Handle("GET "+prefix+"/", versionedFiles(s.Version, false, http.StripPrefix(prefix, staticFiles(assets, false))))
 			}
