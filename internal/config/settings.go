@@ -536,6 +536,17 @@ var Registry = []Setting{
 			"with the fields below masked. Analysts see exactly what is sent before it goes. For data that must stay in-house, use a model on your own hardware, such as Ollama.",
 		Confirm: "Event data from findings, such as user names, host names and IP addresses, will be sent to the AI model when an analyst investigates a finding. " +
 			"With a cloud provider, it leaves your network.", ConfirmWhen: "on"},
+	{Key: "assistant.first_pass", Scope: ScopeCluster, Section: "assistant", Label: "AI first pass on new findings", Type: TypeBool,
+		Help: "The model looks at each new finding on its own, as Investigate with AI does, and notes on it whether it looks real or like noise, and why. " +
+			"It is a suggestion for the analyst: it never closes, assigns or changes a finding. Each finding looked at is one investigation's worth of model use, so the daily limit below caps the cost.",
+		Confirm: "Event data from new findings, such as user names, host names and IP addresses, will be sent to the AI model without anyone asking each time, up to the daily limit. " +
+			"With a cloud provider, it leaves your network.", ConfirmWhen: "on"},
+	{Key: "assistant.first_pass_urgency", Scope: ScopeCluster, Section: "assistant", Label: "First pass from urgency", Type: TypeChoice,
+		Help:    "The least urgent findings the first pass looks at. The most urgent new findings go first.",
+		Choices: []Choice{{"critical", "Critical only"}, {"high", "High and critical"}, {"", "Medium and up"}, {"low", "Low and up"}}},
+	{Key: "assistant.first_pass_daily", Scope: ScopeCluster, Section: "assistant", Label: "First pass: findings a day", Type: TypeNumber, Min: intp(1), Max: intp(MaxFirstPassDaily),
+		Help:        "The most findings the first pass looks at in a day (UTC). Findings past the limit are left for people as they are.",
+		Placeholder: "50", EmptyMeans: "50"},
 	{Key: "assistant.mask_fields", Scope: ScopeCluster, Section: "assistant", Label: "Fields never sent", Type: TypeList,
 		Help: "Fields whose values are replaced with stand-ins such as masked-user-1 wherever they appear, such as user or src. The same value always gets the same stand-in, " +
 			"and the real values are put back into the model's searches and its write-up. Add _raw to leave out the original event text. Wildcards * work, and a field covers its subfields: user also masks user.name. " +

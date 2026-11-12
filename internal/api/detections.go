@@ -511,6 +511,17 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 	if e := v.Get("entity"); e != "" {
 		flt.EntityValues = []string{e}
 	}
+	// ai=benign keeps findings the AI first pass judged likely benign;
+	// none, those it gave no verdict.
+	if ai := splitList(v.Get("ai")); len(ai) > 0 {
+		for _, a := range ai {
+			if !slices.Contains([]string{"real", "benign", "unsure", findings.AINone}, a) {
+				writeError(w, http.StatusBadRequest, errors.New("ai must be real, benign, unsure or none"))
+				return
+			}
+		}
+		flt.AI = ai
+	}
 	sla := s.findingSLA()
 	if due := v.Get("due"); due != "" {
 		// due=overdue keeps findings late now; due=1h also those due
@@ -610,6 +621,10 @@ func (s *Server) handleListFindings(w http.ResponseWriter, r *http.Request) {
 	if len(list) == limit {
 		// There may be more: next continues after the last one.
 		resp["next"] = findings.CursorOf(list[len(list)-1]).Encode()
+	}
+	if s.conf().Assistant.FirstPass && s.model() != nil {
+		// The queue then offers its filter on the AI first pass's notes.
+		resp["ai_first_pass"] = true
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

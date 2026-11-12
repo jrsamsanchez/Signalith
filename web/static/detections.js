@@ -326,7 +326,7 @@ const URG_RANK = { critical: 4, high: 3, medium: 2, low: 1, informational: 0 };
 const urgencyOf = (f) => f.urgency || f.severity;
 const fnd = {
   urgency: new Set(), since: '7d', detection: '', sort: { key: 'urgency', dir: 'desc' },
-  counts: {}, all: 0, total: 0, next: '', groups: null, entity: '', due: '', dueOf: {}, loaded: false, loadedAt: 0, stale: null, sig: '',
+  counts: {}, all: 0, total: 0, next: '', groups: null, entity: '', due: '', ai: '', aiOn: false, dueOf: {}, loaded: false, loadedAt: 0, stale: null, sig: '',
   closed: false, tab: 'overview', owners: new Set(), seq: 0, detailSeq: 0,
 };
 const FND_DEFAULT_STATUS = 'new,in_progress,pending';
@@ -372,9 +372,10 @@ async function loadFindings(opts = {}) {
     const rows = res.findings;
     const counts = res.by_urgency || {};
     rows.forEach((f) => { if (f.owner) fnd.owners.add(f.owner); });
-    const sig = JSON.stringify([counts, res.total, res.groups || null, rows.map((f) => [f.id, f.updated, f.status, f.owner, urgencyOf(f), f.case_id])]);
+    const sig = JSON.stringify([counts, res.total, res.groups || null, rows.map((f) => [f.id, f.updated, f.status, f.owner, urgencyOf(f), f.case_id, f.ai_triage ? f.ai_triage.at : ''])]);
     fnd.groups = res.groups || null;
     fnd.dueOf = res.due || {};
+    if (!!res.ai_first_pass !== fnd.aiOn) { fnd.aiOn = !!res.ai_first_pass; syncFindingFilters(); }
     fnd.loadedAt = Date.now();
     fnd.stale = null;
     fnd.counts = counts;
@@ -449,6 +450,7 @@ function findingsQuery() {
   if (fnd.detection) p.set('detection', fnd.detection);
   if (fnd.entity) p.set('entity', fnd.entity);
   if (fnd.due) p.set('due', fnd.due);
+  if (fnd.ai) p.set('ai', fnd.ai);
   if (fnd.urgency.size) p.set('urgency', [...fnd.urgency].join(','));
   p.set('sort', FND_ORDER[fnd.sort.key + ':' + fnd.sort.dir] || 'urgency');
   return p;
@@ -480,6 +482,7 @@ function findingsState() {
   if (fnd.sort.key !== 'urgency' || fnd.sort.dir !== 'desc') p.set('sort', fnd.sort.key + ':' + fnd.sort.dir);
   if (fnd.entity) p.set('entity', fnd.entity);
   if (fnd.due) p.set('due', fnd.due);
+  if (fnd.ai) p.set('ai', fnd.ai);
   if ($('f-group').value) p.set('group', $('f-group').value);
   p.sort();
   return p;
@@ -506,6 +509,7 @@ function readFindingsHash(query) {
   fnd.sort = FND_ORDER[key + ':' + dir] ? { key, dir } : { key: 'urgency', dir: 'desc' };
   fnd.entity = (p.get('entity') || '').slice(0, 500);
   fnd.due = FND_DUE.some(([v]) => v && v === p.get('due')) ? p.get('due') : '';
+  fnd.ai = FND_AI.some(([v]) => v && v === p.get('ai')) ? p.get('ai') : '';
   const g = p.get('group');
   $('f-group').value = g === 'detection' || g === 'entity' ? g : '';
 }
@@ -525,7 +529,7 @@ function syncOwnerOptions() {
 
 function findingFiltersActive() {
   return $('f-status').value !== FND_DEFAULT_STATUS || $('f-owner').value !== '' || $('f-text').value.trim() !== ''
-    || fnd.since !== '7d' || fnd.urgency.size > 0 || fnd.detection !== '' || fnd.entity !== '' || fnd.due !== '' || $('f-group').value !== '';
+    || fnd.since !== '7d' || fnd.urgency.size > 0 || fnd.detection !== '' || fnd.entity !== '' || fnd.due !== '' || fnd.ai !== '' || $('f-group').value !== '';
 }
 function syncFindingFilters() {
   $('f-since').querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.since === fnd.since)));
@@ -537,6 +541,9 @@ function syncFindingFilters() {
       dxBtn('ghost', '', () => { fnd.detection = ''; loadFindings(); }, { sm: true, icon: 'x', title: 'Show every detection' }));
   }
   $('f-due').value = fnd.due;
+  $('f-ai').value = fnd.ai;
+  // The AI filter shows while the first pass is on, or a view uses it.
+  $('f-ai').classList.toggle('hidden', !fnd.aiOn && !fnd.ai);
   const ent = $('f-entity');
   ent.classList.toggle('hidden', !fnd.entity);
   if (fnd.entity) {
@@ -554,6 +561,7 @@ function clearFindingFilters() {
   fnd.detection = '';
   fnd.entity = '';
   fnd.due = '';
+  fnd.ai = '';
   $('f-group').value = '';
   loadFindings();
 }
@@ -630,6 +638,8 @@ function findingChips(f) {
   const seen = new Set();
   const chips = [];
   if (f.case_id) chips.push(el('span', { class: 'badge', title: 'Part of case ' + f.case_id }, icon('briefcase', 'icon--xs'), 'In case'));
+  const ai = typeof aiTriageChip === 'function' ? aiTriageChip(f) : null;
+  if (ai) chips.push(ai);
   for (const [k, raw] of Object.entries(ents)) {
     if (k === 'risk_object_type' || raw == null) continue;
     const v = String(raw);
@@ -668,6 +678,9 @@ function findingRow(f) {
 }
 
 // FND_DUE are the choices of the due filter.
+// FND_AI are the choices of the AI first pass filter.
+const FND_AI = [['', 'Any AI note'], ['real', 'AI: likely real'], ['benign', 'AI: likely benign'], ['unsure', 'AI: unsure'], ['none', 'Not looked at by AI']];
+
 const FND_DUE = [['', 'Any due time'], ['overdue', 'Late now'], ['1h', 'Due within 1 hour'], ['4h', 'Due within 4 hours'], ['24h', 'Due within 24 hours']];
 
 // dueChip says when an open finding is next due: its first response if
@@ -1016,6 +1029,8 @@ $('f-owner').addEventListener('change', () => loadFindings());
 $('f-group').addEventListener('change', () => loadFindings());
 $('f-due').replaceChildren(...FND_DUE.map(([v, label]) => el('option', { value: v }, label)));
 $('f-due').addEventListener('change', () => { fnd.due = $('f-due').value; loadFindings(); });
+$('f-ai').replaceChildren(...FND_AI.map(([v, label]) => el('option', { value: v }, label)));
+$('f-ai').addEventListener('change', () => { fnd.ai = $('f-ai').value; loadFindings(); });
 $('f-since').addEventListener('click', (ev) => {
   const b = ev.target.closest('button[data-since]');
   if (!b) return;
@@ -1279,6 +1294,7 @@ function renderFindingDetail(box, data, opts = {}) {
         f.credit ? el('p', { class: 'dx-credit' }, f.credit) : null,
         d && d.guidance ? el('div', { class: 'callout' }, icon('lightbulb'), el('div', {}, el('b', {}, 'How to triage. '), d.guidance)) : null,
         (f.mitre || []).length ? techRow(f.mitre) : null,
+        typeof findingFirstPass === 'function' ? findingFirstPass(f) : null,
         can('analyst') && typeof findingInvestigate === 'function' ? findingInvestigate(f) : null,
         err,
         // Viewers see the triage state; analysts and admins change it.

@@ -92,6 +92,9 @@ environment variable wins over the page, which wins over `signalith.yaml`. See
 | `assistant.provider` | off | Optional AI model for **Ask**: `anthropic`, or `openai` for any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM) |
 | `assistant.url`, `assistant.model`, `assistant.api_key` | per provider | Endpoint, model name and key; `anthropic` defaults to `claude-sonnet-5-5` |
 | `assistant.investigate` | `false` | Lets analysts use **Investigate with AI** on a finding, which sends the finding's events to the model. See [docs/investigate.md](investigate.md) |
+| `assistant.first_pass` | `false` | The **AI first pass**: the model looks at each new finding on its own and notes whether it looks real or like noise. It never changes a finding. See [docs/investigate.md](investigate.md#ai-first-pass-on-new-findings) |
+| `assistant.first_pass_urgency` | `medium` | The least urgent findings the first pass looks at: `critical`, `high`, `medium` or `low` |
+| `assistant.first_pass_daily` | `50` | The most findings the first pass looks at in a UTC day, up to 2000 |
 | `assistant.mask_fields` | none | Fields whose values are replaced with stand-ins before Investigate with AI sends anything; `_raw` leaves out the event text. Passwords, tokens, keys and cookies are always masked |
 | `assistant.request_timeout` | `3m` | How long one answer from the model may take (Test and each Investigate with AI turn), from 30s to 1h. A local model on a CPU without a GPU may need `15m` or more |
 | `assistant.investigate_timeout` | `6m` | How long one Investigate with AI may take in all, from 30s to 2h. With a slow local model, allow about 3 times the answer limit, such as `45m` |

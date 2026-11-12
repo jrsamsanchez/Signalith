@@ -2080,6 +2080,14 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 			log.Info("notifications will be sent for new findings that match a rule", "file", c.NotifyFile())
 			dispatcher.Run(ctx)
 		}},
+		// The AI first pass checks its setting each minute, so it can be
+		// turned on in Settings at any time.
+		{Name: "AI first pass", Run: func(ctx context.Context) {
+			if !ready(ctx) || !findingsOK {
+				return
+			}
+			srv.RunAIFirstPass(ctx)
+		}},
 		{Name: "playbooks", Run: func(ctx context.Context) {
 			if !ready(ctx) || !playbooksOK || !findingsOK {
 				return

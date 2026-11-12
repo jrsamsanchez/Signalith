@@ -1357,6 +1357,41 @@ type Assistant struct {
 	// InvestigateTimeout is how long one Investigate with AI may take,
 	// every model turn and search included, such as 6m (the default).
 	InvestigateTimeout string `yaml:"investigate_timeout,omitempty"`
+	// FirstPass has the model look at each new finding of at least
+	// FirstPassUrgency on its own and note whether it looks real or like
+	// noise, as a suggestion on the finding. It never changes a finding's
+	// status, owner or anything else. At most FirstPassDaily findings a
+	// day (UTC) are looked at, so the model's cost has a ceiling. Off
+	// unless an admin turns it on.
+	FirstPass        bool   `yaml:"first_pass,omitempty"`
+	FirstPassUrgency string `yaml:"first_pass_urgency,omitempty"`
+	FirstPassDaily   int    `yaml:"first_pass_daily,omitempty"`
+}
+
+// The AI first pass's defaults and its most findings a day.
+const (
+	DefaultFirstPassUrgency = "medium"
+	DefaultFirstPassDaily   = 50
+	MaxFirstPassDaily       = 2000
+)
+
+// FirstPassUrgency returns assistant.first_pass_urgency: the least
+// urgency the AI first pass looks at (medium when unset or unknown).
+func (c *Config) FirstPassUrgency() string {
+	switch u := strings.TrimSpace(c.Assistant.FirstPassUrgency); u {
+	case "critical", "high", "medium", "low":
+		return u
+	}
+	return DefaultFirstPassUrgency
+}
+
+// FirstPassDaily returns assistant.first_pass_daily: the most findings
+// the AI first pass looks at in a day (50 when unset).
+func (c *Config) FirstPassDaily() int {
+	if n := c.Assistant.FirstPassDaily; n > 0 {
+		return min(n, MaxFirstPassDaily)
+	}
+	return DefaultFirstPassDaily
 }
 
 // The AI model's time limits: their defaults and the range allowed.
