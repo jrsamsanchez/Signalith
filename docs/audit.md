@@ -70,6 +70,7 @@ action and what its line holds:
 | `detection.exception_add`, `detection.exception_remove` | An exception added to or removed from a detection | the detection (`target`), the exception, its `match` and `until`; on removal also who added it (`added_by`) |
 | `detection.scoped_exception_add`, `detection.scoped_exception_remove` | An [exception for many detections](detections.md#exceptions-for-many-detections) added or removed | its `scope` (`all`, `pack:<name>` or `tag:<tag>`), the exception, its `match` and `until`; when added its `comment`, on removal who added it (`added_by`) |
 | `detection.create`, `detection.save`, `detection.delete`, `detection.enable` | A detection created, saved, deleted (or its override removed), or turned on or off | the detection (`target`), whether it is `enabled`; for several at once, the `count` and the first 50 |
+| `detection.export` | Detections exported with **Export my detections** | how many (`count`) and whether their `exceptions` were kept |
 | `case.create`, `case.update` | An investigation case created or changed | the case (`target`); its title, severity, owner and linked findings when created; `changes` (status, owner, severity, title; for the description and resolution only that they were edited) and `commented` when changed |
 | `case.close_findings` | A case closed with its findings | the case, the `status` and `disposition` set, how many were `closed` and `failed`, and the first 50 |
 | `case.finding_add`, `case.finding_remove` | Findings linked to or taken out of a case | the case and the findings |

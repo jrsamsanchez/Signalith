@@ -31,6 +31,30 @@
   };
 
   pageHooks.push((name) => { if (name === 'notify') load(); });
+
+  // notifyForDetection opens the Notifications page with a new rule for
+  // one detection's findings, whatever their urgency: "Notify me when it
+  // fires" on a detection. With no channel yet it asks for one first,
+  // email to start with, and the rule follows once the channel is saved.
+  window.notifyForDetection = (id, title) => {
+    NT.pending = { id, title };
+    if (currentPage === 'notify') load(true);
+    else showPage('notify');
+  };
+  function openPending() {
+    const p = NT.pending;
+    if (!p || !manage() || $('nt-rule-dialog').open || $('nt-channel-dialog') && $('nt-channel-dialog').open) return;
+    if (!NT.data.channels.length) {
+      // Asked once: closing the channel dialog without saving drops it.
+      if (p.asked) { NT.pending = null; return; }
+      p.asked = true;
+      toast('Add a channel first, such as an email address. The rule for this detection opens once it is saved.');
+      openChannel(null, 'email');
+      return;
+    }
+    NT.pending = null;
+    openRule(null, null, { name: String(p.title || p.id).replace(/\$[a-z0-9_.()]+\$/gi, '…').slice(0, 80), detections: [p.id], min_urgency: 'informational' });
+  }
   $('nt-add-channel').addEventListener('click', () => openChannel(null, 'slack'));
   $('nt-add-rule').addEventListener('click', () => openRule(null));
 
@@ -61,6 +85,7 @@
       NT.delivErr = del.error || '';
       render();
       if (d.chat && d.manage && d.channels.some((c) => c.interactive)) loadLinks(seq);
+      openPending();
     } catch (e) {
       if (seq !== NT.seq) return;
       box().removeAttribute('aria-busy');
@@ -943,11 +968,11 @@
     return parts.join(' ') + (to.length ? ' go to ' + list + (r.late ? ', and again if nobody picks one up by its due time.' : '.') : ' go nowhere yet: pick a channel.');
   }
 
-  async function openRule(r, channelID) {
+  async function openRule(r, channelID, preset) {
     const dlg = $('nt-rule-dialog');
     const edit = !!r;
     const id = edit ? r.id : newID();
-    const st = edit ? ruleInput(r) : { id, name: '', enabled: true, channels: channelID ? [channelID] : NT.data.channels.length === 1 ? [NT.data.channels[0].id] : [], min_urgency: 'high', detections: [], min_risk_score: 0, include_sample: false, late: true };
+    const st = edit ? ruleInput(r) : { id, name: '', enabled: true, channels: channelID ? [channelID] : NT.data.channels.length === 1 ? [NT.data.channels[0].id] : [], min_urgency: 'high', detections: [], min_risk_score: 0, include_sample: false, late: true, ...(preset || {}) };
     const msg = el('div', { class: 'nt-msg', 'aria-live': 'polite' });
     const form = el('form', { class: 'nt-form', novalidate: '', autocomplete: 'off' });
     const preview = el('p', { class: 'nt-preview__text' });

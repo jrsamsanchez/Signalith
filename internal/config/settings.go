@@ -541,6 +541,17 @@ var Registry = []Setting{
 			"with the fields below masked. Analysts see exactly what is sent before it goes. For data that must stay in-house, use a model on your own hardware, such as Ollama.",
 		Confirm: "Event data from findings, such as user names, host names and IP addresses, will be sent to the AI model when an analyst investigates a finding. " +
 			"With a cloud provider, it leaves your network.", ConfirmWhen: "on"},
+	{Key: "assistant.first_pass", Scope: ScopeCluster, Section: "assistant", Label: "AI first pass on new findings", Type: TypeBool,
+		Help: "The model looks at each new finding on its own, as Investigate with AI does, and notes on it whether it looks real or like noise, and why. " +
+			"It is a suggestion for the analyst: it never closes, assigns or changes a finding. Each finding looked at is one investigation's worth of model use, so the daily limit below caps the cost.",
+		Confirm: "Event data from new findings, such as user names, host names and IP addresses, will be sent to the AI model without anyone asking each time, up to the daily limit. " +
+			"With a cloud provider, it leaves your network.", ConfirmWhen: "on"},
+	{Key: "assistant.first_pass_urgency", Scope: ScopeCluster, Section: "assistant", Label: "First pass from urgency", Type: TypeChoice,
+		Help:    "The least urgent findings the first pass looks at. The most urgent new findings go first.",
+		Choices: []Choice{{"critical", "Critical only"}, {"high", "High and critical"}, {"", "Medium and up"}, {"low", "Low and up"}}},
+	{Key: "assistant.first_pass_daily", Scope: ScopeCluster, Section: "assistant", Label: "First pass: findings a day", Type: TypeNumber, Min: intp(1), Max: intp(MaxFirstPassDaily),
+		Help:        "The most findings the first pass looks at in a day (UTC). Findings past the limit are left for people as they are.",
+		Placeholder: "50", EmptyMeans: "50"},
 	{Key: "assistant.mask_fields", Scope: ScopeCluster, Section: "assistant", Label: "Fields never sent", Type: TypeList,
 		Help: "Fields whose values are replaced with stand-ins such as masked-user-1 wherever they appear, such as user or src. The same value always gets the same stand-in, " +
 			"and the real values are put back into the model's searches and its write-up. Add _raw to leave out the original event text. Wildcards * work, and a field covers its subfields: user also masks user.name. " +
@@ -597,6 +608,10 @@ var Registry = []Setting{
 	{Key: "auth.oidc.button_label", Scope: ScopeCluster, Section: "sso", Label: "Button label", Type: TypeText,
 		Help:        "The sign-in page's button.",
 		Placeholder: "Sign in with Okta", EmptyMeans: "Sign in with and the provider's name"},
+	{Key: "auth.oidc.require_mfa", Scope: ScopeCluster, Section: "sso", Label: "Check two-step sign-in", Type: TypeBool,
+		Help: "When Require two-step sign-in is Everyone, lets in only people whose ID token shows a second factor: its amr claim names mfa, or two or more ways of signing in. " +
+			"Turn it on once the provider asks Signalith's users for a second factor and sends amr (Microsoft Entra ID and Okta do; Keycloak with its AMR mapper; Google does not). " +
+			"Off, the provider alone decides. Upgrade every server first."},
 	{Key: "auth.saml.enabled", Scope: ScopeCluster, Section: "sso", Label: "SAML single sign-on", Type: TypeBool,
 		Help: "Shows a sign-in button for the SAML identity provider on the sign-in page. Works alongside OpenID Connect, local users, directory sign-in and the built-in admin."},
 	{Key: "auth.saml.provider", Scope: ScopeCluster, Section: "sso", Label: "Identity provider", Type: TypeChoice,
@@ -628,6 +643,11 @@ var Registry = []Setting{
 	{Key: "auth.saml.button_label", Scope: ScopeCluster, Section: "sso", Label: "Button label", Type: TypeText,
 		Help:        "The sign-in page's button.",
 		Placeholder: "Sign in with AD FS", EmptyMeans: "Sign in with and the provider's name"},
+	{Key: "auth.saml.mfa_context", Scope: ScopeCluster, Section: "sso", Label: "Two-step sign-in context", Type: TypeText,
+		Help: "When Require two-step sign-in is Everyone, asks the provider for this authentication context and lets in only people whose assertion names it " +
+			"(its AuthnContextClassRef, or Microsoft's authnmethodsreferences attribute). AD FS: http://schemas.microsoft.com/claims/multipleauthn. " +
+			"Empty, the provider alone decides. Upgrade every server first.",
+		Placeholder: "http://schemas.microsoft.com/claims/multipleauthn", EmptyMeans: "none asked for"},
 	{Key: "auth.scim.enabled", Scope: ScopeCluster, Section: "sso", Label: "Provisioning (SCIM)", Type: TypeBool,
 		Help: "Lets the identity provider add, update, disable and remove single sign-on users before they sign in, over SCIM 2.0. Roles still come from groups at each sign-in."},
 	{Key: "auth.scim.token_sha256", Scope: ScopeCluster, Section: "sso", Label: "SCIM token", Type: TypeText,

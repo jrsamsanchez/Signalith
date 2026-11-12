@@ -413,7 +413,8 @@ works: Microsoft Authenticator, Google Authenticator, 1Password, Bitwarden, Auth
 others. It works for local users, the built-in admin and directory users. Users who
 sign in with single sign-on get their second step from their identity provider, and
 Signalith does not ask again, so require it there: **Require two-step sign-in** does
-not reach them.
+not reach them by itself. With it set to `everyone`, Signalith can also check that the
+provider asked for a second step: see [Two-step sign-in at the provider](sso.md#two-step-sign-in-at-the-provider).
 
 **Turn it on.** Open the user menu (your name, top right) and choose **Two-step
 sign-in**. Add a passkey (see [Passkeys](#passkeys)), or under **Authenticator app**
@@ -1291,7 +1292,7 @@ Signalith Agents of an install line collect; see
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
 server, which can only read and expire after `expires_in_days`, 90 unless set), `GET /api/metrics` and `POST /api/metrics/token` (the Metrics tab of Settings and its scrape token; see [metrics.md](metrics.md)), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
-`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/detections/exceptions`, `DELETE /api/detections/exceptions/{exception}`, `POST /api/findings/{id}/suppress`, `POST /api/exception-requests/{id}/approve`, `POST /api/exception-requests/{id}/decline`, `PUT /api/case-templates`, `POST /api/cases/reports/keys/{id}/revoke` ([revoking a report key](cases.md#report-keys)),
+`POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/convert` (reading a shared file of rules for review), `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/detections/exceptions`, `DELETE /api/detections/exceptions/{exception}`, `POST /api/findings/{id}/suppress`, `POST /api/exception-requests/{id}/approve`, `POST /api/exception-requests/{id}/decline`, `PUT /api/case-templates`, `POST /api/cases/reports/keys/{id}/revoke` ([revoking a report key](cases.md#report-keys)),
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
 `POST /api/detections/{id}/run`, `POST /api/detections/content/check`, `POST /api/detections/content/upload`, `DELETE /api/detections/content`, `PUT /api/lookups/{kind}`, `PUT /api/lookuptables/{name}`, `DELETE /api/lookuptables/{name}`,
 `GET /api/parsers`, `POST /api/parsers/analyze`, `POST /api/parsers/refine`, `GET /api/parsers/{name}/input`,

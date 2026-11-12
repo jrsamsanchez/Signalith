@@ -389,6 +389,12 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "failed", "", err.Error())
 		return
 	}
+	// Read from the signed ID token only, before userinfo adds claims.
+	if c.MFARequiredMode() == "everyone" && set.RequireMFA && !claims.MFA() {
+		s.ssoFail(w, r, "mfa", claims.String(set.UsernameClaim), "the ID token does not show a second factor (amr: "+
+			oidcText(strings.Join(claims.Strings("amr"), " "))+"); have the identity provider ask Signalith's users for one, or turn Check two-step sign-in off")
+		return
+	}
 	note := ""
 	if set.GroupsClaim != "" && !claims.Has(set.GroupsClaim) && md.UserinfoEndpoint != "" {
 		// Some providers (Okta's org server among them) send groups only

@@ -662,13 +662,19 @@ password `admin`. The password is compared in memory and never shown.
 
 - Good: an account without admin rights.
 - Needs attention: an account that can do anything in OpenSearch (`all_access`,
-  `security_manager` or the `admin` backend role).
+  `security_manager` or the `admin` backend role), or one with the `signalith_snapshots`
+  role, which may delete snapshots, while scheduled snapshots are off (as an install
+  from before 0.4.0 keeps it).
 - At risk: `admin` with the password `admin`.
 - Can't tell: OpenSearch couldn't be reached, or didn't say.
 
 **To fix:** give Signalith its own account with the `signalith_server` role, ideally
 signing in with a certificate
-([Load the security settings](opensearch-security.md#3-load-the-security-settings)).
+([Load the security settings](opensearch-security.md#3-load-the-security-settings)). To take
+the snapshot role away, run `signalith opensearch snapshot-role off` (the Windows
+installer and the Linux packages), `snapshot.sh unregister` (the Docker quick start) or
+set `opensearch.snapshotRole: false` (the Helm chart)
+([What OpenSearch needs](backup.md#what-opensearch-needs)).
 
 **How to check by hand:**
 

@@ -80,6 +80,7 @@ var (
 	docTokensReplace      = DocLink{File: "agent-tokens.md", Anchor: "replace-a-shared-token"}
 	docAPITokens          = DocLink{File: "ai-tools.md", Anchor: "api-tokens"}
 	docKubernetesSecurity = DocLink{File: "kubernetes.md", Anchor: "security"}
+	docBackupRole         = DocLink{File: "backup.md", Anchor: "what-opensearch-needs"}
 )
 
 // AllDocs lists every section of the docs the report may link to.
@@ -89,7 +90,7 @@ func AllDocs() []DocLink {
 		docEncElsewhere, docEncKey, docEncChange, docEncBackup, docEncWhat, docEncNot, docEncLosing, docEncDisk,
 		docEncInUse, docEncCommands, docRetArchives, docUsersBuiltin, docUsersLocal, docUsersDirectory, docStartLinux,
 		docStartWindows, docDockerStart, docServersIdentity, docServersCRL, docSecSyslog, docSecDisk, docSecOSDisk, docSecFiles, docTokensHow, docTokensReplace,
-		docAPITokens, docSecNotChecked, docKubernetesSecurity}
+		docAPITokens, docSecNotChecked, docKubernetesSecurity, docBackupRole}
 }
 
 // NotCheckedDocs is the section that says how to check by hand what the

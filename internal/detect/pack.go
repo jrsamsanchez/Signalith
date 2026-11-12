@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"path"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -424,6 +425,7 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 			Category string `yaml:"category"`
 			Service  string `yaml:"service"`
 		} `yaml:"logsource"`
+		Detection map[string]any `yaml:"detection"`
 	}
 	if err := yaml.Unmarshal(src, &meta); err != nil {
 		return nil, err
@@ -500,6 +502,9 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 	}
 	if n := sigmaNeeds(meta.Logsource.Product, meta.Logsource.Category, meta.Logsource.Service); n != "" {
 		tags = append(tags, n)
+	} else if strings.EqualFold(meta.Logsource.Product, "windows") && strings.EqualFold(meta.Logsource.Service, "security") &&
+		needsAuditPolicy(modernEventIDs(sigmaEventIDs(meta.Detection))) {
+		tags = append(tags, NeedsAuditPolicy)
 	}
 	d.Tags = tags
 	d.Origin = &Origin{
@@ -517,15 +522,45 @@ func PackDetection(p *Pack, r PackRule, src []byte) (*Detection, error) {
 
 // The needs tags name the logging a rule reads that a host does not send
 // as installed: Sysmon, process creation auditing (Sysmon's process
-// events, or Security 4688 with the command line), PowerShell logging, or
-// the Linux audit log. The pack card and Browse rules show them, and the
-// starter set leaves such rules out.
+// events, or Security 4688 with the command line), PowerShell logging,
+// Security events of an audit policy Windows leaves off, or the Linux
+// audit log. The pack card and Browse rules show them, and the starter
+// set leaves such rules out.
 const (
 	NeedsSysmon          = "needs-sysmon"
 	NeedsProcessAuditing = "needs-process-auditing"
 	NeedsPowerShell      = "needs-powershell-logging"
+	NeedsAuditPolicy     = "needs-audit-policy"
 	NeedsAuditd          = "needs-auditd"
 )
+
+// unauditedSecurityEvents are the Security log events of audit
+// subcategories Windows leaves off by default (SRCH-213), so hosts send
+// them only once an audit policy turns them on.
+var unauditedSecurityEvents = map[string]bool{
+	// Object access: File System, Registry, Kernel Object, Handle
+	// Manipulation and SAM.
+	"4656": true, "4657": true, "4658": true, "4660": true, "4661": true, "4663": true,
+	// Security System Extension (a service installed).
+	"4697": true,
+	// Other Object Access Events (scheduled tasks).
+	"4698": true, "4699": true, "4700": true, "4701": true, "4702": true,
+	// Directory Service Changes.
+	"5136": true, "5137": true, "5139": true, "5141": true,
+	// File Share and Detailed File Share.
+	"5140": true, "5145": true,
+	// Filtering Platform Connection and Policy Change.
+	"5156": true, "5157": true, "5158": true, "5447": true,
+	// Certification Services.
+	"4886": true, "4887": true,
+}
+
+// needsAuditPolicy reports whether every Security event a rule reads is
+// one Windows does not audit by default, so the rule stays quiet until an
+// audit policy turns them on.
+func needsAuditPolicy(ids []string) bool {
+	return len(ids) > 0 && !slices.ContainsFunc(ids, func(id string) bool { return !unauditedSecurityEvents[id] })
+}
 
 // sysmonOnly are the Sigma categories only Sysmon logs on Windows.
 var sysmonOnly = map[string]bool{
