@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/audit"
+	"github.com/jrsamsanchez/signalith/internal/auth"
 )
 
 // auditTap is a server log whose audit records are kept, as the audit
@@ -167,5 +168,34 @@ func TestSSORefusalsCountAnIPv6NetworkAsOne(t *testing.T) {
 	srv.logSkipped("failed single sign-ons", skipped)
 	if n, got := tap.count("audit records left out"); n != 1 || got[0].Fields["count"] != fmt.Sprint(skipped) {
 		t.Errorf("summary records %+v", got)
+	}
+}
+
+// AUTHRT-02/03: once an account is slowed, every guess at it is "locked
+// out", so only the failure that starts a lock or slow-down skips the
+// audit caps. A wrong two-step code after a right password has a budget
+// of its own, which wrong passwords cannot use up.
+func TestSlowedFailuresStayWithinTheAuditBudget(t *testing.T) {
+	var tap auditTap
+	srv := &Server{}
+	srv.Log = tap.logger(t)
+	from := clientInfo{Addr: netip.MustParseAddr("192.0.2.7")}
+	logged := 0
+	for range 60 {
+		if srv.auditSignInFailure(from, auth.Failure{Slowed: time.Minute}, false) > 0 {
+			logged++
+		}
+	}
+	if logged != signInFailsPerClient {
+		t.Errorf("60 failures on a slowed account: %d records, want %d", logged, signInFailsPerClient)
+	}
+	if srv.auditSignInFailure(from, auth.Failure{Slowed: time.Second, SlowStarted: true}, false) == 0 {
+		t.Error("the failure that started a slow-down was left out")
+	}
+	if srv.auditSignInFailure(from, auth.Failure{Locked: true}, false) == 0 {
+		t.Error("a lockout was left out")
+	}
+	if srv.auditSignInFailure(from, auth.Failure{}, true) == 0 {
+		t.Error("a wrong two-step code was left out after wrong passwords used up their budget")
 	}
 }

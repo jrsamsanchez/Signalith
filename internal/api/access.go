@@ -689,13 +689,22 @@ const (
 
 // auditSignInFailure says whether a failed sign-in goes to the audit log,
 // as how many of the client's failures the record stands for (0: none):
-// always when it locked or slowed something down (the audit alerts tell
-// of lockouts), else within signInFailsPerClient and signInFailsAMinute.
-// What the total leaves out is said in one record (logSkipped).
-func (s *Server) auditSignInFailure(from clientInfo, f auth.Failure) int {
-	n, skipped := s.signInFailed.noteUpTo(from.key(), time.Now(), signInFailsPerClient, signInFailsAMinute)
-	s.logSkipped("failed sign-ins", skipped)
-	if n == 0 && f.LockedOut() {
+// always when it started a lock or slow-down (the audit alerts tell of
+// lockouts), else within signInFailsPerClient and signInFailsAMinute.
+// Only the failure that starts one is exempt: once an account is slowed,
+// every guess at it is (Failure.LockedOut), and those must stay within
+// the caps. A wrong two-step code after a right password (code) has a
+// budget of its own, so wrong passwords and made-up names cannot crowd
+// out the records that say someone has the password. What the totals
+// leave out is said in one record (logSkipped).
+func (s *Server) auditSignInFailure(from clientInfo, f auth.Failure, code bool) int {
+	counter, what := &s.signInFailed, "failed sign-ins"
+	if code {
+		counter, what = &s.codeFailed, "wrong two-step codes"
+	}
+	n, skipped := counter.noteUpTo(from.key(), time.Now(), signInFailsPerClient, signInFailsAMinute)
+	s.logSkipped(what, skipped)
+	if n == 0 && f.Started() {
 		n = 1
 	}
 	return n
@@ -765,7 +774,8 @@ func (s *Server) signIn(r *http.Request, name, password string, step secondFacto
 			attempt.Done()
 		}
 		attrs := slices.Concat([]any{"user", name}, from.logAttrs(), []any{"method", method, "reason", reason, "locked_out", f.LockedOut()})
-		if n := s.auditSignInFailure(from, f); n > 0 {
+		code := errors.Is(err, errWrongCode) || errors.Is(err, errPasskeyWrong) || errors.Is(err, errPasskeyCloned)
+		if n := s.auditSignInFailure(from, f, code); n > 0 {
 			if n > 1 {
 				// This client's failures since its last record.
 				attrs = append(attrs, "failures", n)

@@ -551,3 +551,25 @@ func TestLimiterBoundsGuessesPerAccount(t *testing.T) {
 // knownAddr is the i-th of 4096 addresses that signed in to the account
 // before, in TestLimiterBoundsGuessesPerAccount.
 func knownAddr(i int) Client { return addr(fmt.Sprintf("10.200.%d.%d", i>>8&15, i&255)) }
+
+// Only the failure that starts an account's slow-down says so.
+func TestFailureSlowStarted(t *testing.T) {
+	l := NewLimiter()
+	c := &clock{time.Now()}
+	l.Now = c.now
+	started := 0
+	for i := range l.MaxPerAccount + 3 {
+		f := fail(t, l, addr(fmt.Sprintf("10.1.%d.1", i)), "carol")
+		if f.SlowStarted {
+			started++
+			if f.Slowed == 0 {
+				t.Error("started a slow-down of nothing")
+			}
+		}
+		c.t = c.t.Add(time.Hour / 2 / time.Duration(l.MaxPerAccount))
+		c.t = c.t.Add(l.slowWait(i+1, l.MaxPerAccount))
+	}
+	if started != 1 {
+		t.Errorf("%d failures started the slow-down, want 1", started)
+	}
+}

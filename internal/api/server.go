@@ -344,6 +344,7 @@ type Server struct {
 	scimRefused          ssoRefusals  // refused SCIM tokens, to limit their audit records
 	ssoRefused           ssoRefusals  // failed single sign-ons that name no user, to limit their audit records
 	signInFailed         ssoRefusals  // failed password sign-ins, to limit their audit records (access.go)
+	codeFailed           ssoRefusals  // wrong two-step codes after a right password, likewise
 	breakGlassStepUsed   atomic.Int64 // the last app code step taken with the break-glass password (mfa.go)
 	creds                credCache    // recently checked Basic credentials
 	passkeyChallenges    challengeSet // passkey challenges answered on this server

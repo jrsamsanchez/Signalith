@@ -274,7 +274,15 @@ type Failure struct {
 	// Slowed is how long strangers must now wait before trying this
 	// account again; 0 when they need not.
 	Slowed time.Duration
+	// SlowStarted is set when this failure started the account's
+	// slow-down for strangers (the first failure past MaxPerAccount),
+	// rather than adding to one already on.
+	SlowStarted bool
 }
+
+// Started reports whether this failure began a lock or slow-down, the
+// moment worth recording however many failures are recorded already.
+func (f Failure) Started() bool { return f.Locked || f.SlowStarted }
 
 // LockedOut reports whether further tries are refused or slowed for a
 // while.
@@ -537,6 +545,7 @@ func (a *Attempt) Fail() Failure {
 			locks = append(locks, lock{scopeOf(s.key), LockKey(l.lockSecret, s.key), b.lockedUntil})
 		case s.kind == kindSlow && n >= s.limit:
 			f.Slowed = l.slowWait(n, s.limit)
+			f.SlowStarted = f.SlowStarted || n == s.limit
 			if l.MaxSlow > 0 && f.Slowed >= l.MaxSlow {
 				locks = append(locks, lock{ScopeSlow, LockKey(l.lockSecret, s.key), now.Add(f.Slowed)})
 			}
