@@ -148,7 +148,7 @@ func (s *Server) handleAttachCaseFile(w http.ResponseWriter, r *http.Request) {
 		s.writeModifyError(w, err)
 		return
 	}
-	s.audit(r, "case file attached", "case", caseID, "file", f.ID, "name", f.Name, "size", f.Size, "sha256", f.SHA256)
+	s.audit(r, "case.file_attach: case file attached", "target", caseID, "file", f.ID, "name", f.Name, "size", f.Size, "sha256", f.SHA256)
 	writeJSON(w, http.StatusCreated, map[string]any{"case": c, "entry": added})
 }
 
@@ -266,7 +266,7 @@ func (s *Server) handleCaseFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	intact := f.Matches(data) && f.SHA256 == e.FileSHA256 && cases.EvidenceIntact(e)
-	s.audit(r, "case file downloaded", "case", c.ID, "file", id, "sha256", e.FileSHA256, "intact", intact)
+	s.audit(r, "case.file_download: case file downloaded", "target", c.ID, "file", id, "sha256", e.FileSHA256, "intact", intact)
 	h := w.Header()
 	h.Set("Content-Type", "application/octet-stream")
 	h.Set("Content-Disposition", attachment(e.FileName))
@@ -325,10 +325,12 @@ func (s *Server) removeCaseFile(r *http.Request, caseID string, e cases.Entry) {
 	if s.CaseFiles == nil || e.Kind != cases.KindFile {
 		return
 	}
+	// The message stays as it was, as the Deletions audit alert looks for
+	// it; the action is given as an attribute of its own instead.
 	if err := s.CaseFiles.Delete(context.WithoutCancel(r.Context()), caseID, e.FileID); err != nil {
 		s.Log.Warn("a file removed from a case was not deleted; retention deletes it later", "case", caseID, "file", e.FileID, "err", err)
-		s.audit(r, "case file removed", "case", caseID, "file", e.FileID, "name", e.FileName, "sha256", e.FileSHA256, "deleted", false)
+		s.audit(r, "case file removed", "action", "case.file_remove", "target", caseID, "file", e.FileID, "name", e.FileName, "sha256", e.FileSHA256, "deleted", false)
 		return
 	}
-	s.audit(r, "case file removed", "case", caseID, "file", e.FileID, "name", e.FileName, "sha256", e.FileSHA256)
+	s.audit(r, "case file removed", "action", "case.file_remove", "target", caseID, "file", e.FileID, "name", e.FileName, "sha256", e.FileSHA256)
 }

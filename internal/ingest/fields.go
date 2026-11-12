@@ -46,6 +46,11 @@ const (
 	// shares add up to more than the budget, and the mapping guard
 	// (mappingStop) keeps the index under OpenSearch's limit.
 	minNamesPerServer = 100
+	// senderShare is the part of an index's budget one sender (an agent
+	// token, else an address) may use up, so that one sender's made-up
+	// names cannot leave none for the others' fields for the rest of the
+	// day (ING-216).
+	senderShare = 2
 )
 
 // namesBudget is one server's share of maxNewNamesPerIndex when servers
@@ -478,11 +483,14 @@ type indexNames struct {
 	// paths holds each name and dotted prefix added: true for an object
 	// (a prefix of a longer name), false for a value.
 	paths map[string]bool
+	// bySender counts the names each sender added.
+	bySender map[string]int
 }
 
-// limit is limitTo with the whole budget, as on a server alone.
+// limit is limitTo with the whole budget, as on a server alone, for no
+// sender in particular.
 func (b *fieldBudget) limit(index, day, oldest string, f map[string]any) int {
-	return b.limitTo(index, day, oldest, f, maxNewNamesPerIndex, false)
+	return b.limitTo(index, day, oldest, "", f, maxNewNamesPerIndex, false)
 }
 
 // hasUnknown reports whether an event has a field Signalith does not
@@ -499,12 +507,13 @@ func hasUnknown(f map[string]any) bool {
 // limitTo drops the fields of an event (going to index, on day) that are
 // invalid, over the per-event cap, clash with a known field or with how
 // the index already maps the name, or do not fit the index's budget of
-// budget names (this server's share). With full, the index's mapping is
+// budget names (this server's share), or of sender's share of it
+// (1/senderShare; none for sender ""). With full, the index's mapping is
 // near OpenSearch's limit (mappingStop), and no new name is granted;
 // names granted before still pass. It returns how many it dropped. oldest
 // is the first day an event can still be written to; budgets of earlier
 // days are forgotten.
-func (b *fieldBudget) limitTo(index, day, oldest string, f map[string]any, budget int, full bool) int {
+func (b *fieldBudget) limitTo(index, day, oldest, sender string, f map[string]any, budget int, full bool) int {
 	var unknown []string
 	for k := range f {
 		if !KnownField(k) {
@@ -542,7 +551,7 @@ func (b *fieldBudget) limitTo(index, day, oldest string, f map[string]any, budge
 				delete(b.indices, k)
 			}
 		}
-		ix = &indexNames{day: day, paths: map[string]bool{}}
+		ix = &indexNames{day: day, paths: map[string]bool{}, bySender: map[string]int{}}
 		b.indices[index] = ix
 	}
 	for _, k := range unknown {
@@ -575,9 +584,12 @@ func (b *fieldBudget) limitTo(index, day, oldest string, f map[string]any, budge
 				break
 			}
 		}
-		if clash || full || len(ix.paths)+added > budget {
+		if clash || full || len(ix.paths)+added > budget || sender != "" && ix.bySender[sender]+added > budget/senderShare {
 			drop(k)
 			continue
+		}
+		if sender != "" {
+			ix.bySender[sender] += added
 		}
 		for i := 1; i < len(parts); i++ {
 			ix.paths[strings.Join(parts[:i], ".")] = true

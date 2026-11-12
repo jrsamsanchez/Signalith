@@ -440,6 +440,7 @@
         el('span', { class: 'cp-hist__how' }, how)),
       score,
       el('span', { class: `badge badge--${chk.tone} cp-badge`, title: r.problem || chk.text }, chk.label),
-      r.problem ? el('p', { class: 'cp-hist__problem' }, sentence(r.problem)) : null);
+      r.problem ? el('p', { class: 'cp-hist__problem' }, sentence(r.problem)) : null,
+      r.chain ? el('p', { class: 'cp-hist__problem' }, sentence(r.chain)) : null);
   }
 })();

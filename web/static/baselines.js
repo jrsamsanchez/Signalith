@@ -389,7 +389,7 @@
     const form = el('form', { class: 'modal__body bl-ex-form', novalidate: '' },
       alert,
       el('p', {}, volume
-        ? `It forgets how much this ${one} usually sends and learns it again, so its volume adds no risk for the next 3 days.`
+        ? `It forgets how much this ${one} usually sends and learns it again, so its volume adds no risk for the next 7 days.`
         : `It forgets this value for this ${one} only, so the next time it is seen it adds risk as new. Use it for something learned while an account or host was misused. Other ${(ENTITY[c.entity] || ['', 'users and hosts'])[1]} keep what they learned.`),
       dxField(one[0].toUpperCase() + one.slice(1), whoIn, 'As the risk event names it.'),
       volume ? null : dxField('Value', whatIn, 'As the risk event’s value has it, such as ' + ((VALUE_HINT[check] || '').replace(/^.*such as /, '') || 'BR') + '.'));
@@ -421,7 +421,7 @@
       switchRow(),
       numRow('learning_days', 'Learning period', 'Days a new user or host is only learned from before its new behavior adds risk.', d.learning_days, 1, 90, 'days'),
       numRow('forget_days', 'Forget after', 'Days a country, program or other value not seen again is remembered. A user or host not seen for this long is forgotten too.', d.forget_days, 7, 365, 'days'),
-      numRow('rare_hosts', 'Rare program', 'A program is rare when at most this many hosts ever ran it.', d.rare_hosts, 1, 10, 'hosts'),
+      numRow('rare_hosts', 'Rare program', 'A program is rare when at most this many hosts ran it within what the baselines remember.', d.rare_hosts, 1, 10, 'hosts'),
       numRow('min_mb', 'Least unusual volume', 'An hour must send at least this much to count as an unusual data volume.', d.min_mb, 1, 1000000, 'MB'),
       ipRow(),
     ];

@@ -15,7 +15,11 @@ Every run goes the same way:
    is disruptive unless an admin says otherwise; "enable" (undo) actions are not
    by default.
 3. A confirm step says exactly what will happen, for example *Disable the AD account
-   jdoe in corp.example.com.* Nothing runs before the analyst confirms.
+   jdoe in corp.example.com.* Nothing runs before the analyst confirms. From the release after 0.4.0, if they have not
+   entered their password (or a two-step code or passkey) in the last 5 minutes,
+   Signalith asks for it first, so nobody at a computer left signed in, or holding a
+   stolen session, can run an action (see [Confirming it's you](users.md#confirming-its-you)).
+   People who sign in with single sign-on are asked to sign in again.
 4. The server checks the target strictly for its kind, writes the run to the audit
    log, runs the action, and shows the result and output.
 5. The run is noted on the case timeline (where it cannot be removed) or in the
@@ -31,7 +35,7 @@ way, as `playbook <name>`.
 | Role | Can |
 | --- | --- |
 | Viewer | See the timeline entries of runs on a case. |
-| Analyst | Run actions from a finding or a case, see past runs. |
+| Analyst | Run actions from a finding or a case (after entering the password again, see above), see past runs. |
 | Admin | Add, change, test and delete actions on the **Response actions** page. |
 
 Each user may start at most **30 runs a minute**; more are refused with
@@ -334,7 +338,7 @@ web UI, or put them on a shared folder.
 | Method and path | Role | |
 | --- | --- | --- |
 | `GET /api/respond/actions` | analyst | The actions analysts can run, without their settings. |
-| `POST /api/respond/run` | analyst | Run one: `{"action", "target", "target_kind"?, "finding_id"?, "case_id"?, "reason"}`. Returns the run. |
+| `POST /api/respond/run` | analyst | Run one: `{"action", "target", "target_kind"?, "finding_id"?, "case_id"?, "reason"}`. Returns the run. Answers `403` `recheck_required` when the password was not entered in the last 5 minutes ([Confirming it's you](users.md#confirming-its-you)). API tokens cannot use it. |
 | `GET /api/respond/runs` | analyst | Past runs, newest first: `?finding_id=`, `?case_id=`, `?action=`, `?limit=` (50, at most 500). |
 | `GET /api/respond/config` | admin | The actions with their settings (secrets show only as set or not), templates, scripts. |
 | `PUT /api/respond/config` | admin | Replace the actions: `{"actions": [...]}`. A secret is `{"value": "..."}` to set it or `{"keep": true}` to keep the saved one. |

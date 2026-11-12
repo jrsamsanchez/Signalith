@@ -6,12 +6,16 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 	"github.com/jrsamsanchez/signalith/internal/query"
+	"github.com/jrsamsanchez/signalith/internal/safelog"
 	"github.com/jrsamsanchez/signalith/internal/storyline"
 )
 
@@ -96,8 +100,10 @@ func (s *Server) handleStoryline(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	b := &storyline.Builder{Findings: s.Findings, Assets: s.Assets}
+	var searches atomic.Int64
 	if s.Engine != nil {
 		b.Run = func(ctx context.Context, q *query.Query) ([]map[string]any, error) {
+			searches.Add(1)
 			res, err := s.Engine.Execute(ctx, q)
 			if err != nil {
 				return nil, err
@@ -109,7 +115,24 @@ func (s *Server) handleStoryline(w http.ResponseWriter, r *http.Request) {
 			return rows, nil
 		}
 	}
+	start := time.Now()
 	st, err := b.Build(ctx, req)
+	// The storyline reads sign-in, process and connection activity about
+	// whoever it names, so it is audited like any other search.
+	attrs := []any{"anchor", anchor["kind"], "seeds", storylineSeeds(req.Seeds), "earliest", req.Earliest, "latest", req.Latest,
+		"searches", searches.Load(), "took_ms", time.Since(start).Milliseconds()}
+	switch anchor["kind"] {
+	case "finding", "case":
+		attrs = append(attrs, "target", anchor["id"])
+	default:
+		attrs = append(attrs, "target", anchor["value"], "type", anchor["type"])
+	}
+	if err != nil {
+		attrs = append(attrs, "outcome", "failed", "err", err)
+	} else {
+		attrs = append(attrs, "outcome", "ok")
+	}
+	s.auditSearch(r, "search.storyline: built a storyline", attrs...)
 	if err != nil {
 		writeSearchError(w, err)
 		return
@@ -124,4 +147,18 @@ func writeFindingError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeError(w, http.StatusBadGateway, err)
+}
+
+// storylineSeeds lists a storyline's seeds for its audit line, the first
+// 50 of them.
+func storylineSeeds(seeds []storyline.Entity) string {
+	parts := make([]string, 0, min(len(seeds), 50))
+	for _, e := range seeds[:min(len(seeds), 50)] {
+		parts = append(parts, e.Type+"="+e.Value)
+	}
+	out := safelog.Cut(strings.Join(parts, ","), 2000)
+	if len(seeds) > 50 {
+		out += fmt.Sprintf(" and %d more", len(seeds)-50)
+	}
+	return out
 }

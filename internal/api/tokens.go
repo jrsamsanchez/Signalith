@@ -151,9 +151,20 @@ func (s *Server) tokenAccepted(r *http.Request) bool {
 }
 
 // withOrigin returns the context of an agent's request with where its
-// events come from.
+// events come from: the client behind a trusted reverse proxy, as the
+// proxy names it, not the proxy (ING-209).
+func (s *Server) withOrigin(r *http.Request, intake string, id agenttokens.Identity) context.Context {
+	return origin(r, intake, id, s.client(r).Addr.String())
+}
+
+// withOrigin is (*Server).withOrigin with the connection's peer as the
+// sender, for the OTLP route until it moves to the method.
 func withOrigin(r *http.Request, intake string, id agenttokens.Identity) context.Context {
-	o := ingest.Origin{Intake: intake, TokenID: id.ID, TokenName: id.Name, Sender: clientaddr.Parse(r.RemoteAddr).String()}
+	return origin(r, intake, id, clientaddr.Parse(r.RemoteAddr).String())
+}
+
+func origin(r *http.Request, intake string, id agenttokens.Identity, sender string) context.Context {
+	o := ingest.Origin{Intake: intake, TokenID: id.ID, TokenName: id.Name, Sender: sender}
 	if !id.Legacy {
 		o.Purpose = id.Purpose
 	}

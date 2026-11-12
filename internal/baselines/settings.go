@@ -56,7 +56,7 @@ var Checks = []Check{
 	{ID: UnusualHour, Title: "Sign-in at an unusual hour", Entity: "user", Data: "Authentication", Score: 10, MITRE: []string{"T1078"}, Tactic: "initial-access",
 		Description: "A user signs in at an hour of the day that has had under 2% of their sign-in activity, once they have been seen in at least 40 different hours."},
 	{ID: RareProcess, Title: "Rare process on a host", Entity: "system", Data: "Endpoint", Score: 20, Tactic: "execution",
-		Description: "A host runs a program it never ran before, which at most a few hosts have ever run."},
+		Description: "A host runs a program it did not run before, which at most a few hosts ran, within what the baselines remember (Forget after)."},
 	{ID: NewChange, Title: "New kind of change by a user", Entity: "user", Data: "Change", Score: 15,
 		Description: "A user makes a kind of change they never made before, such as a cloud API call (CreateAccessKey) or deleting a group."},
 	{ID: DataVolume, Title: "Unusual data volume from a host", Entity: "system", Data: "Network_Traffic", Score: 30, MITRE: []string{"T1048"}, Tactic: "exfiltration",

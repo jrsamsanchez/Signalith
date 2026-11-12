@@ -375,6 +375,16 @@ type nodeDoc struct {
 // reinstalled, or its key removed) replaces its earlier record, keeping
 // nothing but the row.
 func (s *Store) Enroll(ctx context.Context, n *Node) error {
+	return s.EnrollUnless(ctx, n, nil)
+}
+
+// ErrKept refuses an enrollment that would replace a record that must be
+// kept.
+var ErrKept = errors.New("a host with this identifier is enrolled with its computer's own key; only that key can enroll it again")
+
+// EnrollUnless is Enroll, but when keep says an earlier record of the
+// host must stay, nothing changes and the answer is ErrKept.
+func (s *Store) EnrollUnless(ctx context.Context, n *Node, keep func(old *Node) bool) error {
 	if n.HostIdentifier != "" {
 		_, _, found, err := s.Docs.Get(ctx, s.Index, blockedDocID(n.HostIdentifier))
 		if err != nil {
@@ -389,6 +399,14 @@ func (s *Store) Enroll(ctx context.Context, n *Node) error {
 		}}})
 		if err != nil {
 			return err
+		}
+		if keep != nil {
+			for _, d := range old {
+				var was Node
+				if json.Unmarshal(d.Source, &was) == nil && keep(&was) {
+					return ErrKept
+				}
+			}
 		}
 		for _, d := range old {
 			if err := s.Docs.DeleteIf(ctx, s.Index, d.ID, d.Version, false); err != nil && !errors.Is(err, store.ErrNotFound) && !errors.Is(err, store.ErrConflict) {

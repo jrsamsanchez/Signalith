@@ -261,6 +261,12 @@ type Detection struct {
 	// Tags may map the detection to a control: "<framework>:<control>",
 	// such as "pci-dss:10.2.1.4".
 	Tags []string
+	// RunKnown says the scheduler's run state was read, LastRun is when
+	// the detection last ran on its schedule (zero when it never has), and
+	// LastFailed says that run failed.
+	RunKnown   bool
+	LastRun    time.Time
+	LastFailed bool
 }
 
 // CheckStat is one configuration check and its results across hosts.

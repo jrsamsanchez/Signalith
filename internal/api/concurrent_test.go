@@ -118,7 +118,7 @@ func TestTwoServersEditTheSameCaseAndFinding(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		code, out := callAsync(t, cl[1], srv[1], "POST", "/api/findings/bulk", `{"ids":["f1","f2"],"update":{"status":"in_progress","owner":"ana","comment":"taking these"}}`)
+		code, out := callAsync(t, cl[1], srv[1], "POST", "/api/findings/bulk", `{"ids":["f1","f2"],"update":{"status":"in_progress","owner":"admin","comment":"taking these"}}`)
 		if code != 200 || out["updated"] != float64(2) {
 			t.Errorf("bulk = %d %v", code, out)
 		}
@@ -147,7 +147,7 @@ func TestTwoServersEditTheSameCaseAndFinding(t *testing.T) {
 	if len(f.Comments) != n+1 || len(comments) != n+1 || !comments["taking these"] {
 		t.Errorf("the finding kept %d comments (%d different), want %d", len(f.Comments), len(comments), n+1)
 	}
-	if f.Status != findings.StatusInProgress || f.Owner != "ana" || len(f.History) != 2 {
+	if f.Status != findings.StatusInProgress || f.Owner != "admin" || len(f.History) != 2 {
 		t.Errorf("finding = %s %s, history %+v", f.Status, f.Owner, f.History)
 	}
 	if f2, _ := fs.Get(ctx, "f2"); f2.Status != findings.StatusInProgress || len(f2.Comments) != 1 {

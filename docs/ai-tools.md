@@ -244,9 +244,11 @@ inside the container.
 API tokens let a program read through Signalith's API without a person's password. An
 admin makes and revokes them on **Settings > API tokens**.
 
-- **Read only.** Whatever its role, a request made with a token may only read: `GET`
-  requests, searches and query checks. Anything else gets
-  `403 API tokens can only read`. A token can't sign in to the web page.
+- **Read only.** Whatever its role, a request made with a token may only read: the
+  `GET` requests a viewer or an analyst may make, searches and query checks, each on a
+  list checked to change nothing. Anything else, including running a response action or
+  approving a playbook step, gets `403 API tokens can only read`. A token can't sign in
+  to the web page.
 - **Role.** A token is a **Viewer** or an **Analyst**, never an Admin. Viewer is enough
   for every AI tool.
 - **Expiry.** A token expires 90 days after it is made unless you pick 30, 180 or 365

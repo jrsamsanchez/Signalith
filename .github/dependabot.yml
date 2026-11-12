@@ -20,6 +20,11 @@ updates:
     directory: /deploy/docker
     schedule:
       interval: weekly
+    # The image builds with the Go in go.mod (TestImageBuildsWithTheGoInGoMod),
+    # so a new Go minor version is a go.mod change made by hand.
+    ignore:
+      - dependency-name: golang
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
   - package-ecosystem: docker-compose
     directory: /deploy/docker
     schedule:

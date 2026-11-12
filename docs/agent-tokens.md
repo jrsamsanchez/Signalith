@@ -224,8 +224,11 @@ osquery send with the key.
   Signalith refuses it with any other name (`403`, `host_mismatch`). A name has one key at
   a time. Once a computer has a key, a status sent with the line's token in its name is
   refused (`409`, `host_enrolled`), and events sent that way are kept but don't change the
-  computer's row on the **Endpoints** page or keep its "silent" alert from firing. So a
+  computer's row on the **Endpoints** page or keep its "silent" alert from firing. That
+  holds however the events name the computer: the `X-Signalith-Agent` header, an
+  OpenTelemetry resource's `host.name` or an HEC event's `host`. So a
   computer that holds the line's token can't report as another computer of the line.
+  The host name written inside the events themselves is still the sender's word.
 - **Cut off one computer.** `signalith tokens hosts revoke <name>` (or
   `POST /api/agent-hosts/{host}/revoke`) refuses that computer's key within a few seconds
   on every server and removes its osquery host. Its name stays taken, so nothing can enroll
@@ -279,3 +282,7 @@ another name.
   environment is refused too, since the token it enrolled with no longer exists.
 - Events from osquery record the token and the host's address as above, with
   `signalith_intake=osquery`.
+- A computer that has [a key of its own](#computer-keys) enrolls its osquery with
+  that key, as the Signalith Agent does. An enrollment in its name with a line's token or
+  another computer's key is refused (`403`), and so is one that would replace its osquery
+  host by sending the same host identifier.
