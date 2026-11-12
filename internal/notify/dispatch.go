@@ -6,9 +6,11 @@ package notify
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -88,15 +90,25 @@ type Dispatcher struct {
 	// a known account, and UnknownName otherwise. nil knows none.
 	KnownUser func(name string) bool
 
-	reader    Reader
-	auditDone time.Time // when the last audit pass that finished started
-	auditWarn bool      // a pass read the most audit records it may; logged once
-	mu        sync.Mutex
-	inFlight  map[string]bool // deliveries this server is sending
-	warned    bool            // a pass read the most findings it may; logged once
-	lastPurge time.Time
-	lastLate  time.Time
-	lastErr   string // the last pass's problem, logged once
+	reader Reader
+	// For each audit alert, by ID: when the last pass that read all of
+	// its records started, whether the last pass read the most it may
+	// (logged once), and how far the look for records that arrived late
+	// has come and when the last one finished.
+	auditDone   map[string]time.Time
+	auditBehind map[string]bool
+	auditSweep  map[string]time.Time
+	auditSwept  map[string]time.Time
+	// How many records the source had let go of (AuditTap.Dropped) at
+	// the last pass, and when that last rose.
+	auditDropped   int64
+	auditDroppedAt time.Time
+	mu             sync.Mutex
+	inFlight       map[string]bool // deliveries this server is sending
+	warned         bool            // a pass read the most findings it may; logged once
+	lastPurge      time.Time
+	lastLate       time.Time
+	lastErr        string // the last pass's problem, logged once
 }
 
 func (d *Dispatcher) now() time.Time {
@@ -193,12 +205,18 @@ func (d *Dispatcher) Pass(ctx context.Context) {
 	} else {
 		d.problem("", nil)
 	}
-	d.sendAll(ctx, s, perChannel, now, func(n int) Message { return summaryMessage(n, d.link(), d.now()) })
-	d.sendAll(ctx, s, perAudit, now, func(n int) Message { return auditSummaryMessage(n, d.auditLink(), d.now()) })
+	d.sendAll(ctx, s, perChannel, now, false, func(list []claimed) Message { return summaryMessage(len(list), d.link(), d.now()) })
+	d.sendAll(ctx, s, perAudit, now, true, func(list []claimed) Message {
+		names := make([]string, len(list))
+		for i, cl := range list {
+			names[i] = cl.d.RuleName
+		}
+		return auditSummaryMessage(names, d.auditLink(), d.now())
+	})
 }
 
 // sendAll sends each channel its items, in the order of the channel IDs.
-func (d *Dispatcher) sendAll(ctx context.Context, s Settings, perChannel map[string][]item, now time.Time, summary func(int) Message) {
+func (d *Dispatcher) sendAll(ctx context.Context, s Settings, perChannel map[string][]item, now time.Time, eachRule bool, summary func([]claimed) Message) {
 	ids := make([]string, 0, len(perChannel))
 	for id := range perChannel {
 		ids = append(ids, id)
@@ -206,7 +224,7 @@ func (d *Dispatcher) sendAll(ctx context.Context, s Settings, perChannel map[str
 	sort.Strings(ids)
 	for _, id := range ids {
 		c, _ := s.Channel(id)
-		d.sendChannel(ctx, c, perChannel[id], now, summary)
+		d.sendChannel(ctx, c, perChannel[id], now, eachRule, summary)
 	}
 }
 
@@ -217,12 +235,22 @@ func (d *Dispatcher) auditLink() string {
 	return AuditLink(d.PublicURL())
 }
 
-// MaxAudit is the most audit records one pass reads.
+// MaxAudit is the most audit records one pass reads for one audit alert.
 const MaxAudit = 2000
+
+// AuditSweepEvery is how often the audit records of the last CatchUp are
+// read again for each alert, for those that arrived late: a server that
+// could not reach OpenSearch writes its audit records when it can again,
+// with the time they were logged at.
+const AuditSweepEvery = 10 * time.Minute
 
 // collectAudit adds the new audit records an audit alert that is on
 // matches to perChannel: each record at most once per channel, as the
 // first alert that matches it, and not when it was claimed before.
+//
+// Each alert's records are read on their own, the most urgent alert
+// first, so many records of one alert (failed sign-ins, say) never keep
+// another alert's from being read.
 func (d *Dispatcher) collectAudit(ctx context.Context, s Settings, now time.Time, perChannel map[string][]item) error {
 	var src AuditSource
 	if d.Audit != nil {
@@ -233,41 +261,24 @@ func (d *Dispatcher) collectAudit(ctx context.Context, s Settings, now time.Time
 		rule  AuditRule
 	}
 	var rules []on
-	var alerts []AuditAlert
 	for _, a := range AuditAlerts {
 		r := s.AuditRule(a.ID)
-		if r.Enabled && len(r.Channels) > 0 {
+		if src != nil && r.Enabled && len(r.Channels) > 0 {
 			rules = append(rules, on{a, r})
-			alerts = append(alerts, a)
+		} else {
+			d.auditRead(a, now, now, time.Time{}, false, false)
 		}
 	}
-	if src == nil || len(rules) == 0 {
-		d.auditPassDone(now)
+	d.auditLost(src, now)
+	if len(rules) == 0 {
 		return nil
-	}
-	since := now.Add(-CatchUp)
-	d.mu.Lock()
-	if t := d.auditDone.Add(-Window); t.After(since) {
-		since = t
-	}
-	d.mu.Unlock()
-	list, truncated, err := src.AuditRecords(ctx, auditMatch(alerts, since), MaxAudit)
-	if err != nil {
-		return err
-	}
-	d.mu.Lock()
-	warn := truncated && !d.auditWarn
-	d.auditWarn = truncated
-	d.mu.Unlock()
-	if warn {
-		d.log().Warn("more audit records matched the audit alerts than one notifications pass reads; the newest wait for the next pass", "read", len(list))
 	}
 	link := d.auditLink()
 	var wants []item
 	var ids, channels []string
 	seen := map[string]bool{}
-	for _, rec := range list {
-		for _, o := range rules {
+	gather := func(o on, list []AuditRecord) {
+		for _, rec := range list {
 			if rec.Event.Time.Before(o.rule.Since) || !o.alert.Matches(rec.Event) {
 				continue
 			}
@@ -287,6 +298,56 @@ func (d *Dispatcher) collectAudit(ctx context.Context, s Settings, now time.Time
 			}
 		}
 	}
+	// A read that fails stops the reading, but what the more urgent
+	// alerts already read is still sent.
+	var failed error
+	oldest := now.Add(-CatchUp)
+	for _, o := range rules {
+		one := []AuditAlert{o.alert}
+		d.mu.Lock()
+		since, sweep, sweeping := oldest, d.auditSweep[o.alert.ID], false
+		if t := d.auditDone[o.alert.ID].Add(-Window); t.After(since) {
+			since = t
+			// Records that arrived late are older than since: every
+			// AuditSweepEvery the whole of CatchUp is read again, over as
+			// many passes as it takes.
+			_, sweeping = d.auditSweep[o.alert.ID]
+			if !sweeping && now.Sub(d.auditSwept[o.alert.ID]) >= AuditSweepEvery {
+				sweep, sweeping = oldest, true
+			}
+			if sweep.Before(oldest) {
+				sweep = oldest
+			}
+		}
+		d.mu.Unlock()
+		list, truncated, err := src.AuditRecords(ctx, auditMatch(one, since), MaxAudit)
+		if err != nil {
+			failed = err
+			break
+		}
+		gather(o, list)
+		done := now
+		if truncated && len(list) > 0 {
+			// The next pass reads on from the newest record read.
+			done = list[len(list)-1].Event.Time.Add(Window)
+		}
+		if !sweeping {
+			d.auditRead(o.alert, now, done, time.Time{}, !since.After(oldest), truncated)
+			continue
+		}
+		late, more, err := src.AuditRecords(ctx, auditMatch(one, sweep), MaxAudit)
+		if err != nil {
+			d.auditRead(o.alert, now, done, sweep, false, truncated)
+			failed = err
+			break
+		}
+		gather(o, late)
+		next := time.Time{}
+		if more && len(late) > 0 && late[len(late)-1].Event.Time.After(sweep) {
+			next = late[len(late)-1].Event.Time
+		}
+		d.auditRead(o.alert, now, done, next, next.IsZero(), truncated)
+	}
 	if len(wants) > 0 {
 		have, err := d.Deliveries.Existing(ctx, ids)
 		if err != nil {
@@ -298,23 +359,83 @@ func (d *Dispatcher) collectAudit(ctx context.Context, s Settings, now time.Time
 			}
 		}
 	}
-	if !truncated {
-		d.auditPassDone(now)
-	} else if len(list) > 0 {
-		// The next pass reads on from the newest record read.
-		d.auditPassDone(list[len(list)-1].Event.Time.Add(Window))
-	}
-	return nil
+	return failed
 }
 
-// auditPassDone records that the audit records up to t, less Window, were
-// all looked at.
-func (d *Dispatcher) auditPassDone(t time.Time) {
+// auditRead records how a pass's reading for an audit alert went: its
+// records up to done, less Window, were all looked at (the zero time
+// leaves that as it was); sweep is where the look for late records goes
+// on in the next pass, or the zero time when none is under way any more;
+// whole says the whole of CatchUp has now been read; behind says the
+// pass read the most records it may, which is logged once.
+func (d *Dispatcher) auditRead(a AuditAlert, now, done, sweep time.Time, whole, behind bool) {
+	d.mu.Lock()
+	if d.auditDone == nil {
+		d.auditDone, d.auditBehind = map[string]time.Time{}, map[string]bool{}
+		d.auditSweep, d.auditSwept = map[string]time.Time{}, map[string]time.Time{}
+	}
+	if done.After(d.auditDone[a.ID]) {
+		d.auditDone[a.ID] = done
+	}
+	if sweep.IsZero() {
+		delete(d.auditSweep, a.ID)
+	} else {
+		d.auditSweep[a.ID] = sweep
+	}
+	if whole {
+		d.auditSwept[a.ID] = now
+	}
+	warn := behind && !d.auditBehind[a.ID]
+	d.auditBehind[a.ID] = behind
+	d.mu.Unlock()
+	if warn {
+		d.log().Warn("more audit records matched an audit alert than one notifications pass reads; the newest wait for the next pass",
+			"alert", a.Name, "read", MaxAudit)
+	}
+}
+
+// auditLost logs when the source of the audit records let go of some
+// before they were read (see AuditTap), so the loss is never silent.
+func (d *Dispatcher) auditLost(src AuditSource, now time.Time) {
+	t, ok := src.(interface{ Dropped() int64 })
+	if !ok {
+		return
+	}
+	n := t.Dropped()
+	d.mu.Lock()
+	more := n - d.auditDropped
+	d.auditDropped = n
+	if more > 0 {
+		d.auditDroppedAt = now
+	}
+	d.mu.Unlock()
+	if more > 0 {
+		d.log().Warn("audit records were let go before the audit alerts could look at them, the least urgent first, because more than this server keeps arrived at once; they are still in the audit log",
+			"dropped", more, "dropped_in_all", n, "kept", TapSize)
+	}
+}
+
+// AuditWarning says, in words for the Health and Notifications pages,
+// that audit alerts may be missing or late: the source let go of audit
+// records in the last hour, or more records match an alert than a pass
+// reads. It is "" when all is well.
+func (d *Dispatcher) AuditWarning() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if t.After(d.auditDone) {
-		d.auditDone = t
+	var out []string
+	if !d.auditDroppedAt.IsZero() && d.now().Sub(d.auditDroppedAt) < time.Hour {
+		out = append(out, fmt.Sprintf("Audit alerts may be missing: so many audit records arrived at once that %d in all were let go before the alerts could look at them, the least urgent first. The audit log still has them.", d.auditDropped))
 	}
+	var behind []string
+	for _, a := range AuditAlerts {
+		if d.auditBehind[a.ID] {
+			behind = append(behind, a.Name)
+		}
+	}
+	if len(behind) > 0 {
+		out = append(out, "Audit alerts are late: more audit records match "+strings.Join(behind, ", ")+" than one pass reads, so the newest wait.")
+	}
+	return strings.Join(out, " ")
 }
 
 // collect adds the new findings that match a rule to perChannel: each
@@ -477,16 +598,36 @@ func (d *Dispatcher) tooMany(truncated bool, n int) {
 }
 
 // sendChannel sends a channel its messages: the most urgent first, and
-// when there are more than FloodLimit, the rest in one summary.
-func (d *Dispatcher) sendChannel(ctx context.Context, c Channel, items []item, now time.Time, summary func(int) Message) {
-	sort.SliceStable(items, func(i, j int) bool {
-		if items[i].urgency != items[j].urgency {
-			return items[i].urgency > items[j].urgency
-		}
-		return items[i].msg.Created.Before(items[j].msg.Created)
-	})
+// when there are more than FloodLimit, the rest in one summary. With
+// eachRule (the audit alerts), the first message of each rule is sent
+// on its own before a second of any, so many records of one alert never
+// leave another alert to the summary alone.
+func (d *Dispatcher) sendChannel(ctx context.Context, c Channel, items []item, now time.Time, eachRule bool, summary func([]claimed) Message) {
+	byUrgency := func(items []item) {
+		sort.SliceStable(items, func(i, j int) bool {
+			if items[i].urgency != items[j].urgency {
+				return items[i].urgency > items[j].urgency
+			}
+			return items[i].msg.Created.Before(items[j].msg.Created)
+		})
+	}
+	byUrgency(items)
 	single, rest := items, []item(nil)
 	if len(items) > FloodLimit {
+		if eachRule {
+			var first, more []item
+			seen := map[string]bool{}
+			for _, it := range items {
+				if seen[it.rule.ID] {
+					more = append(more, it)
+				} else {
+					seen[it.rule.ID] = true
+					first = append(first, it)
+				}
+			}
+			items = append(first, more...)
+			byUrgency(items[:FloodLimit-1])
+		}
 		single, rest = items[:FloodLimit-1], items[FloodLimit-1:]
 	}
 	for _, it := range single {
@@ -526,7 +667,7 @@ func (d *Dispatcher) sendChannel(ctx context.Context, c Channel, items []item, n
 		d.release(claims)
 		return
 	}
-	d.send(ctx, c, summary(len(claims)), claims)
+	d.send(ctx, c, summary(claims), claims)
 }
 
 // claimed is a delivery this server claimed and is about to send.

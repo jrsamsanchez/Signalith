@@ -478,7 +478,9 @@ so **View contributing events** shows exactly the events behind that row.
 
 Findings move through `new`, `in_progress`, `pending`, `resolved` and `closed`, with
 an owner, a disposition (`true_positive`, `benign_true_positive`, `false_positive`,
-`undetermined`), comments, and a history of every change. They are stored in the
+`undetermined`), comments, and a history of every change. An owner is a Signalith user
+(any case, saved as the user's name is spelt) or nobody; a name no user has is refused.
+An owner set before owners were checked is kept. They are stored in the
 OpenSearch index `<index_prefix>_findings`, which event searches never include.
 
 Resolving or closing a finding asks for a disposition, so the false positive rate
@@ -516,6 +518,9 @@ and goes to the disposition, and **Ctrl+Enter** saves. **/** jumps to the search
 
 Each urgency has two targets: how soon someone should pick a finding up (change its
 status or owner) and how soon it should be resolved, both timed from when it was raised.
+A finding a late run raised for a missed slot (after the server was down, say) is timed
+from when that run raised it, not from the end of its slot, so catch-up findings are not
+late the moment they appear.
 They start at 15 minutes and 4 hours for critical, 1 hour and 24 hours for high, 4 hours
 and 3 days for medium, and 24 hours and 7 days for low; informational findings have none.
 Change them under **Settings > Detections** (`detections.sla.critical_respond`,

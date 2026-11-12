@@ -104,9 +104,14 @@ than an hour ahead is filed under the time it arrived (see [Ingest limits](sendi
 
 The same limits as agent batches apply: up to 16 MB per request (also after gzip is
 undone), 200,000 records of at most 1 MB each, values nested at most 32 levels. Every
-record's event carries a copy of its resource's attributes, so a request may come to at
-most 64 MB counting the resource once per record, and each attribute list (a resource's,
-a record's, or a map value) keeps its first 256 attributes. A
+record's event carries a copy of its resource's attributes and its scope's name, so a
+request may come to at most 64 MB counting both once per record (and the resource's
+`host.name` once for each event of a record that is split into several, such as an Event
+Hub message); a request over that is refused with `413` (when it is the copies of
+`host.name` that take it over, the records before that one are already stored, and
+count as duplicates if they are sent again). Each attribute list (a
+resource's, a record's, or a map value) keeps its first 256 attributes, a scope name and
+`service.name` their first 256 bytes, and `host.name` its first 255. A
 record over the size or nesting limit, or one that does not decode, is turned away on
 its own: the rest of the batch is stored, and the record is counted in the answer's
 partial success with a message saying why. A request over a limit or that does not

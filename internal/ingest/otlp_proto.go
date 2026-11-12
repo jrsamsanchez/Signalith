@@ -120,7 +120,7 @@ func walkOTLPProto(body []byte, build bool, fn func(l *otlpLog, size int, bad *B
 				if f.num == 1 && f.wire == wireBytes { // InstrumentationScope
 					return pbEach(f.data, func(f pbField) error {
 						if f.num == 1 && f.wire == wireBytes {
-							scope = pbString(f.data)
+							scope = otlpScope(pbString(f.data))
 						}
 						return nil
 					})
@@ -135,7 +135,9 @@ func walkOTLPProto(body []byte, build bool, fn func(l *otlpLog, size int, bad *B
 					return nil
 				}
 				n++
-				size := len(f.data) + resSize
+				// The scope's name counts with each record, like the
+				// resource.
+				size := len(f.data) + resSize + len(scope)
 				if len(f.data) > MaxRecordBytes {
 					return fn(nil, size, tooLarge("log record %d is %d bytes; the limit is %d bytes (1 MB) per record", n, len(f.data), MaxRecordBytes))
 				}

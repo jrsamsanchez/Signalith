@@ -220,6 +220,8 @@ type samlState struct {
 	Next       string `json:"x,omitempty"`
 	Entity     string `json:"p"`
 	Expires    int64  `json:"e"`
+	// Agreed is set when the sign-in notice was agreed to at the start.
+	Agreed bool `json:"a,omitempty"`
 }
 
 // handleSAMLStart sends the browser to the identity provider.
@@ -230,16 +232,18 @@ func (s *Server) handleSAMLStart(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "off", "", "SAML single sign-on is off")
 		return
 	}
-	if c.NoticeAgree() && r.URL.Query().Get("agreed") != "1" {
-		s.ssoFail(w, r, "notice", "", "the sign-in notice was not agreed to")
+	agreed := c.NoticeAgree()
+	if agreed && !s.ssoNoticeAgreed(r) {
+		s.ssoFail(w, r, "notice", "", "the sign-in notice was not agreed to on the sign-in page")
 		return
 	}
 	next := localPath(r.URL.Query().Get("next"))
 	// The cookie must be set on the host the provider posts back to.
 	if pu, err := url.Parse(c.Server.PublicURL); err == nil && pu.Host != "" && !strings.EqualFold(pu.Host, r.Host) && r.URL.Query().Get("hop") == "" {
 		q := url.Values{"next": {next}, "hop": {"1"}}
-		if a := r.URL.Query().Get("agreed"); a != "" {
-			q.Set("agreed", a)
+		if agreed {
+			q.Set("agreed", "1")
+			q.Set("notice", s.noticeHop(time.Now()))
 		}
 		http.Redirect(w, r, strings.TrimRight(c.Server.PublicURL, "/")+samlStartPath+"?"+q.Encode(), http.StatusSeeOther)
 		return
@@ -264,7 +268,7 @@ func (s *Server) handleSAMLStart(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "provider", "", err.Error())
 		return
 	}
-	st := samlState{ID: req.ID, RelayState: req.RelayState, Next: next, Entity: idp.EntityID, Expires: time.Now().Add(ssoWait).Unix()}
+	st := samlState{ID: req.ID, RelayState: req.RelayState, Next: next, Entity: idp.EntityID, Expires: time.Now().Add(ssoWait).Unix(), Agreed: agreed}
 	http.SetCookie(w, &http.Cookie{Name: s.samlCookieName(r), Value: s.sealSAMLState(st), Path: "/",
 		MaxAge: int(ssoWait.Seconds()), HttpOnly: true, SameSite: http.SameSiteNoneMode, Secure: true})
 	http.Redirect(w, r, target, http.StatusSeeOther)
@@ -366,7 +370,8 @@ func (s *Server) handleSAMLACS(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, code, oidcText(a.NameID), reason)
 		return
 	}
-	s.signInSSO(w, r, u, set.NewUsers(), st.Next, []any{"protocol", "saml", "issuer", idp.EntityID, "groups_matched", strings.Join(matched, ",")})
+	s.signInSSO(w, r, u, set.NewUsers(), st.Next, append([]any{"protocol", "saml", "issuer", idp.EntityID, "groups_matched", strings.Join(matched, ",")},
+		ssoNoticeLog(st.Agreed)...))
 }
 
 // samlIdentityOf works out who a checked assertion describes with set,

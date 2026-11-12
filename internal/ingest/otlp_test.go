@@ -21,6 +21,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 // A small OTLP encoder for tests, in protobuf and JSON, so every case runs
@@ -750,5 +752,173 @@ func TestOTLPResendIsDuplicate(t *testing.T) {
 		if res, err = p.IngestOTLP(other, body, isJSON); err != nil || res.Duplicates != 4 {
 			t.Fatalf("json=%v: other sender's resend: %+v %v", isJSON, res, err)
 		}
+	}
+}
+
+// sizedBulk counts the text handed to OpenSearch, per bulk request and in
+// all, and the longest value of each field.
+type sizedBulk struct {
+	calls   int
+	docs    int
+	total   int
+	largest int // the largest bulk request
+	longest map[string]int
+}
+
+func (b *sizedBulk) Bulk(_ context.Context, docs []store.IndexedDoc) ([]store.BulkItemError, error) {
+	if b.longest == nil {
+		b.longest = map[string]int{}
+	}
+	n := 0
+	for _, d := range docs {
+		for k, v := range d.Doc {
+			if s, ok := v.(string); ok {
+				n += len(s)
+				b.longest[k] = max(b.longest[k], len(s))
+			}
+		}
+	}
+	b.calls++
+	b.docs += len(docs)
+	b.total += n
+	b.largest = max(b.largest, n)
+	return nil, nil
+}
+
+// A scope's name is written on every event of its records: it is cut to
+// maxOTLPNameLen, so a small request with a long one and many records does
+// not become gigabytes, and no bulk request is larger than usual.
+func TestOTLPLongScopeNameOnManyRecords(t *testing.T) {
+	r := tRes{scope: strings.Repeat("s", 1<<20), recs: make([]tRec, 100000)}
+	for _, isJSON := range []bool{false, true} {
+		body := encodeProto(r)
+		if isJSON {
+			body = encodeJSON(r)
+		}
+		b := &sizedBulk{}
+		p := &Pipeline{Store: b, Now: func() time.Time { return now }}
+		res, err := p.IngestOTLP(context.Background(), body, isJSON)
+		if err != nil || res.Indexed != len(r.recs) || b.docs != len(r.recs) {
+			t.Fatalf("json=%v: %+v %v", isJSON, res, err)
+		}
+		if b.longest["otel_scope"] != maxOTLPNameLen {
+			t.Errorf("json=%v: otel_scope is %d bytes, want %d", isJSON, b.longest["otel_scope"], maxOTLPNameLen)
+		}
+		if b.total > maxOTLPExpandedBytes || b.largest > 2*batchBytes {
+			t.Errorf("json=%v: %d bytes written, %d in the largest of %d bulk requests", isJSON, b.total, b.largest, b.calls)
+		}
+	}
+}
+
+// The scope's name counts towards the request's expanded size once for
+// each record, as the resource does; a request over the limit is refused
+// before anything is written.
+func TestOTLPScopeNameCountsWithEachRecord(t *testing.T) {
+	recs := make([]tRec, MaxRecords)
+	for i := range recs {
+		recs[i] = tRec{body: strings.Repeat("x", 72)}
+	}
+	r := tRes{scope: strings.Repeat("s", maxOTLPNameLen), recs: recs}
+	body := encodeProto(r)
+	if len(body) > MaxBodyBytes {
+		t.Fatalf("the request is %d bytes, over the body limit itself", len(body))
+	}
+	b := &sizedBulk{}
+	p := &Pipeline{Store: b, Now: func() time.Time { return now }}
+	_, err := p.IngestOTLP(context.Background(), body, false)
+	var bad *BodyError
+	if !errors.As(err, &bad) || bad.Status != http.StatusRequestEntityTooLarge || !strings.Contains(bad.Msg, "too large once written") {
+		t.Fatalf("err = %v", err)
+	}
+	if b.calls != 0 {
+		t.Errorf("%d bulk requests were written for a refused request", b.calls)
+	}
+	// The same records under a short scope name are taken.
+	r.scope = "app"
+	if res, err := p.IngestOTLP(context.Background(), encodeProto(r), false); err != nil || res.Indexed != len(recs) {
+		t.Fatalf("short scope name: %+v %v", res, err)
+	}
+}
+
+// azureMessage is an Event Hub message of n small records.
+func azureMessage(n int) string {
+	return `{"records":[` + strings.TrimSuffix(strings.Repeat(`{"time":1,"category":1,"operationName":1,"tenantId":1},`, n), ",") + `]}`
+}
+
+// A record split into many events gives each the resource's host name: it
+// is cut to maxHostLen, so a long one does not become gigabytes.
+func TestOTLPLongHostNameOnSplitMessage(t *testing.T) {
+	const records = 15000
+	r := tRes{
+		attrs: []tKV{{"host.name", strings.Repeat("h", 1<<20)}, {"service.name", strings.Repeat("v", 1<<20)}},
+		recs:  []tRec{{body: azureMessage(records)}, {body: "a line"}},
+	}
+	for _, isJSON := range []bool{false, true} {
+		body := encodeProto(r)
+		if isJSON {
+			body = encodeJSON(r)
+		}
+		b := &sizedBulk{}
+		p := &Pipeline{Store: b, Now: func() time.Time { return now }}
+		res, err := p.IngestOTLP(context.Background(), body, isJSON)
+		if err != nil || res.Received != records+1 || res.Indexed != records+1 {
+			t.Fatalf("json=%v: %+v %v", isJSON, res, err)
+		}
+		if b.longest["host"] != maxHostLen || b.longest["service"] != maxOTLPNameLen {
+			t.Errorf("json=%v: host is %d bytes, service %d", isJSON, b.longest["host"], b.longest["service"])
+		}
+		if b.total > maxOTLPExpandedBytes || b.largest > 2*batchBytes {
+			t.Errorf("json=%v: %d bytes written, %d in the largest of %d bulk requests", isJSON, b.total, b.largest, b.calls)
+		}
+	}
+}
+
+// The host name each event of a split record carries counts towards the
+// request's expanded size: a request the first pass let through is
+// refused when those copies take it over the limit.
+func TestOTLPSplitMessageHostNamesCount(t *testing.T) {
+	const records = 16000
+	res := []tKV{{"host.name", strings.Repeat("h", maxHostLen)}, {"padding", strings.Repeat("p", 61<<10)}}
+	recs := make([]tRec, 1001)
+	recs[0] = tRec{body: azureMessage(records)}
+	for i := range recs[1:] {
+		recs[i+1] = tRec{body: "line"}
+	}
+	body := encodeProto(tRes{attrs: res, recs: recs})
+	expanded := 0
+	if err := walkOTLPProto(body, false, func(_ *otlpLog, size int, _ *BodyError) error {
+		expanded += size
+		return nil
+	}); err != nil || expanded > maxOTLPExpandedBytes || expanded+(records-1)*maxHostLen <= maxOTLPExpandedBytes {
+		t.Fatalf("the request expands to %d bytes before its records are split (%v): the test needs one just under the limit", expanded, err)
+	}
+	b := &sizedBulk{}
+	p := &Pipeline{Store: b, Now: func() time.Time { return now }}
+	_, err := p.IngestOTLP(context.Background(), body, false)
+	var bad *BodyError
+	if !errors.As(err, &bad) || bad.Status != http.StatusRequestEntityTooLarge || !strings.Contains(bad.Msg, "too large once written") {
+		t.Fatalf("err = %v", err)
+	}
+	if b.calls != 0 {
+		t.Errorf("%d bulk requests were written", b.calls)
+	}
+	// Without a host name to copy, the same request is taken, in bulk
+	// requests of the usual size although each event carries 61 KB.
+	res[0].v = ""
+	out, err := p.IngestOTLP(context.Background(), encodeProto(tRes{attrs: res, recs: recs}), false)
+	if err != nil || out.Indexed != records+1000 {
+		t.Fatalf("no host name: %+v %v", out, err)
+	}
+	if b.largest > 2*batchBytes {
+		t.Errorf("the largest bulk request holds %d bytes", b.largest)
+	}
+}
+
+// An event's size for batching is what was built, not only what was read.
+func TestOTLPBatchesByBuiltSize(t *testing.T) {
+	ev := Event{Fields: map[string]any{"message": strings.Repeat("m", 1000), "tags": []any{"a", "bb"}, "n": int64(7),
+		"m": map[string]any{"k": "vvv"}, "list": []string{"xyz"}}}
+	if n := builtBytes(&ev); n < 1000+3+3+3 || n > 1100 {
+		t.Errorf("builtBytes = %d", n)
 	}
 }

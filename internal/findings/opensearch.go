@@ -115,17 +115,28 @@ func (s *OpenSearch) Upgrade(ctx context.Context) error {
 // d.Now plus d.Within, one clause per urgency with a target.
 func dueQuery(d DueWithin) map[string]any {
 	at := d.Now.Add(d.Within)
+	// Due times run from the later of created and raised_at (see raised).
+	raisedBy := func(t time.Time) []any {
+		ts := t.UTC().Format(time.RFC3339Nano)
+		return []any{
+			map[string]any{"range": map[string]any{"created": map[string]any{"lte": ts}}},
+			map[string]any{"bool": map[string]any{"minimum_should_match": 1, "should": []any{
+				map[string]any{"range": map[string]any{"raised_at": map[string]any{"lte": ts}}},
+				map[string]any{"bool": map[string]any{"must_not": []any{map[string]any{"exists": map[string]any{"field": "raised_at"}}}}},
+			}}},
+		}
+	}
 	var should []any
 	for _, u := range Severities {
 		var by []any
 		if rt := d.SLA.Respond[u]; rt > 0 {
 			by = append(by, map[string]any{"bool": map[string]any{
 				"must_not": []any{map[string]any{"exists": map[string]any{"field": "responded_at"}}},
-				"filter":   []any{map[string]any{"range": map[string]any{"created": map[string]any{"lte": at.Add(-rt).UTC().Format(time.RFC3339Nano)}}}},
+				"filter":   raisedBy(at.Add(-rt)),
 			}})
 		}
 		if st := d.SLA.Resolve[u]; st > 0 {
-			by = append(by, map[string]any{"range": map[string]any{"created": map[string]any{"lte": at.Add(-st).UTC().Format(time.RFC3339Nano)}}})
+			by = append(by, map[string]any{"bool": map[string]any{"filter": raisedBy(at.Add(-st))}})
 		}
 		if len(by) == 0 {
 			continue

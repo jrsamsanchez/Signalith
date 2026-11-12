@@ -20,7 +20,9 @@ import (
 //   - per address: MaxPerAddress failures within Window, whatever the
 //     accounts, lock the address for Lockout (one address trying many
 //     accounts). A known browser is not held to it, since its cookie is
-//     only good for its own account;
+//     only good for its own account, and neither is a known address
+//     (below) for its own account, so an unlisted shared address cannot
+//     keep out the people who already sign in from it;
 //   - per address and account: Max failures within Window lock that
 //     account for that address;
 //   - per account, from browsers and addresses that have not signed in to
@@ -304,9 +306,13 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 		l.pruneLocked(now)
 	}
 	a := &Attempt{l: l, account: account, version: c.Version}
+	known := !c.Shared && l.knownLocked(c.Address, account, c.Version, now)
 	if !c.Shared {
 		a.address = c.Address
-		if c.Browser == "" {
+		// Someone who signed in to this account from here before is not
+		// held to the address's count: an unlisted NAT or proxy cannot
+		// then be used to keep its regular users out.
+		if c.Browser == "" && !known {
 			a.slots = append(a.slots, slot{"a\x00" + c.Address, kindLock, lim.perAddress, l.Window})
 		}
 	}
@@ -325,7 +331,7 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 	switch {
 	case c.Browser != "":
 		budget = "k\x00" + account
-	case !c.Shared && l.knownLocked(c.Address, account, c.Version, now):
+	case known:
 		budget = "n\x00" + account
 	}
 	if b := l.buckets[budget]; budget != "" && b != nil && lim.perAccount > 0 && len(b.recent(now))+b.pending >= lim.perAccount {

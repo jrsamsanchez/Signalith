@@ -2,6 +2,7 @@
 
 {% block scripts %}
   {{ super() }}
-  <!-- Visit counts with GoatCounter, as on the website: no cookies, no personal data. -->
-  <script data-goatcounter="https://signalith.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
+  <!-- Visit counts with GoatCounter, as on the website: no cookies, no personal data.
+       The counting script is a pinned copy served with these pages (assets/vendor/goatcounter-LICENSE.txt). -->
+  <script data-goatcounter="https://signalith.goatcounter.com/count" async src="{{ 'assets/vendor/goatcounter-count.js' | url }}"></script>
 {% endblock %}

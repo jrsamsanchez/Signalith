@@ -44,3 +44,50 @@ func TestText(t *testing.T) {
 		}
 	}
 }
+
+// TestTextWhitespaceValue: a secret's name followed by nothing but spaces
+// is left as it is rather than panicking (ING-208).
+func TestTextWhitespaceValue(t *testing.T) {
+	for _, in := range []string{"password= ", "password=  ", "request failed: pwd=\t", "api_key: ", "password= \n", "error for user x: secret=\t\t"} {
+		if got := Text(in); got != in {
+			t.Errorf("Text(%q) = %q", in, got)
+		}
+	}
+}
+
+// TestTextHidesWhatURLHides: Text hides the secret names URL hides, as
+// well as one-time codes, PEM private keys and user:password@host:port
+// written without a scheme (ING-219).
+func TestTextHidesWhatURLHides(t *testing.T) {
+	for in, want := range map[string]string{
+		"signature=abc123":                            "signature=***",
+		"sessionid=abcdef123456":                      "sessionid=***",
+		"jwt: eyJhbGciOiJIUzI1NiJ9.e30.x":             "jwt: ***",
+		"otp=123456&pin=0000":                         "otp=***&pin=***",
+		"user:pass@host:9200":                         "***@host:9200",
+		"dial admin:Hunter22@os.internal:9200 failed": "dial ***@os.internal:9200 failed",
+		"bad key -----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\n-----END RSA PRIVATE KEY----- here": "bad key -----BEGIN RSA PRIVATE KEY----- *** -----END RSA PRIVATE KEY----- here",
+		"cut -----BEGIN PRIVATE KEY-----\nMIIEpAIB":                                                     "cut -----BEGIN PRIVATE KEY----- *** ",
+
+		// Words that only look like the names stay.
+		"the server answered status code: 500": "the server answered status code: 500",
+		"auth: failed for bob":                 "auth: failed for bob",
+		"signalith_sender: 10.0.0.1":           "signalith_sender: 10.0.0.1",
+		"mapping: keyword":                     "mapping: keyword",
+		"spin=3":                               "spin=3",
+		"at 12:00 on 2026-01-02":               "at 12:00 on 2026-01-02",
+		"bob@example.com: no such user":        "bob@example.com: no such user",
+	} {
+		if got := Text(in); got != want {
+			t.Errorf("Text(%q)\n = %q\nwant %q", in, got, want)
+		}
+		if got := Text(Text(in)); got != want {
+			t.Errorf("Text twice (%q)\n = %q\nwant %q", in, got, want)
+		}
+	}
+	for _, n := range secretNames {
+		if !SecretName(n) {
+			t.Errorf("URL does not hide %q, which Text hides", n)
+		}
+	}
+}

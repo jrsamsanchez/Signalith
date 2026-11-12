@@ -15,7 +15,10 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/jrsamsanchez/signalith/internal/clusterauth"
 	"github.com/jrsamsanchez/signalith/internal/config"
@@ -103,6 +106,8 @@ type ssoState struct {
 	Next     string `json:"x,omitempty"`
 	Issuer   string `json:"i"`
 	Expires  int64  `json:"e"`
+	// Agreed is set when the sign-in notice was agreed to at the start.
+	Agreed bool `json:"a,omitempty"`
 }
 
 // localPath returns next when it is a path on this server (with its query
@@ -131,10 +136,67 @@ func localPath(next string) string {
 
 // ssoFail sends the browser back to the sign-in page, which says what
 // went wrong by code; detail goes to the server log only.
+//
+// A failure that names a user came from the identity provider's signed
+// answer, and is always written to the audit log. One that names nobody
+// can be made by anyone, not signed in, as often as they like (a link
+// to the start page, a callback with made-up text): it is written at
+// most once a minute for each address, with how many there were since,
+// and not at all while single sign-on is off, so it can neither flood
+// the audit log nor crowd out the audit alerts.
 func (s *Server) ssoFail(w http.ResponseWriter, r *http.Request, code, user, detail string) {
-	s.Log.Warn("single sign-on failed", slices.Concat([]any{"audit", true, "user", user}, s.client(r).logAttrs(),
-		[]any{"method", "sso", "code", code, "reason", detail})...)
+	attrs := []any{"method", "sso", "code", code, "reason", detail}
+	audited := true
+	if user == "" {
+		c := s.conf()
+		n := 0
+		if c.OIDCOn() || c.SAMLOn() {
+			n = s.ssoRefused.note(s.client(r).Addr.String(), time.Now())
+		}
+		if audited = n > 0; audited {
+			attrs = append(attrs, "failures", n)
+		}
+	}
+	if audited {
+		s.Log.Warn("single sign-on failed", slices.Concat([]any{"audit", true, "user", user}, s.client(r).logAttrs(), attrs)...)
+	} else {
+		s.Log.Debug("single sign-on failed", slices.Concat(s.client(r).logAttrs(), attrs)...)
+	}
 	http.Redirect(w, r, "/login?sso_error="+url.QueryEscape(code), http.StatusSeeOther)
+}
+
+// ssoFailsAMinute is the most failed single sign-ons that name no user
+// written to the audit log in a minute, from all addresses together.
+const ssoFailsAMinute = 60
+
+// ssoRefusals limits the audit records of failed single sign-ons that
+// name no user: one a minute for each address, as for refused SCIM
+// tokens, and ssoFailsAMinute in all, as one sender may have many
+// addresses.
+type ssoRefusals struct {
+	by    scimRefusals
+	mu    sync.Mutex
+	since time.Time
+	count int
+}
+
+// note counts a failure from addr, and returns how many to log now (0 to
+// log nothing).
+func (f *ssoRefusals) note(addr string, now time.Time) int {
+	n := f.by.note(addr, now)
+	if n == 0 {
+		return 0
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if now.Sub(f.since) >= time.Minute {
+		f.since, f.count = now, 0
+	}
+	if f.count >= ssoFailsAMinute {
+		return 0
+	}
+	f.count++
+	return n
 }
 
 // handleSSOStart sends the browser to the identity provider.
@@ -145,8 +207,9 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 		s.ssoFail(w, r, "off", "", "single sign-on is off")
 		return
 	}
-	if c.NoticeAgree() && r.URL.Query().Get("agreed") != "1" {
-		s.ssoFail(w, r, "notice", "", "the sign-in notice was not agreed to")
+	agreed := c.NoticeAgree()
+	if agreed && !s.ssoNoticeAgreed(r) {
+		s.ssoFail(w, r, "notice", "", "the sign-in notice was not agreed to on the sign-in page")
 		return
 	}
 	next := localPath(r.URL.Query().Get("next"))
@@ -155,8 +218,9 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 	// address first, once.
 	if pu, err := url.Parse(c.Server.PublicURL); err == nil && pu.Host != "" && !strings.EqualFold(pu.Host, r.Host) && r.URL.Query().Get("hop") == "" {
 		q := url.Values{"next": {next}, "hop": {"1"}}
-		if a := r.URL.Query().Get("agreed"); a != "" {
-			q.Set("agreed", a)
+		if agreed {
+			q.Set("agreed", "1")
+			q.Set("notice", s.noticeHop(time.Now()))
 		}
 		http.Redirect(w, r, strings.TrimRight(c.Server.PublicURL, "/")+ssoStartPath+"?"+q.Encode(), http.StatusSeeOther)
 		return
@@ -171,7 +235,7 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 	}
 	req := oidc.NewRequest()
 	st := ssoState{State: req.State, Nonce: req.Nonce, Verifier: req.Verifier, Next: next, Issuer: set.Issuer,
-		Expires: time.Now().Add(ssoWait).Unix()}
+		Expires: time.Now().Add(ssoWait).Unix(), Agreed: agreed}
 	data, _ := json.Marshal(st)
 	http.SetCookie(w, &http.Cookie{Name: s.ssoCookieName(r), Value: base64.RawURLEncoding.EncodeToString(data), Path: "/",
 		MaxAge: int(ssoWait.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookie(r)})
@@ -264,20 +328,29 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	s.finishSSO(w, r, set, claims, st.Next, note)
+	s.finishSSO(w, r, set, claims, st.Next, note, st.Agreed)
 }
 
-// oidcText is text from the provider, made safe for the log.
+// oidcText is text from the provider, or from whoever called the
+// callback, made safe for the log: at most 200 characters, with nothing
+// that could break a line or reorder what is shown.
 func oidcText(v string) string {
+	if len(v) > 1000 {
+		v = v[:1000]
+	}
+	n := 0
 	v = strings.Map(func(r rune) rune {
-		if r < 0x20 || r == 0x7f {
+		if n++; n > 201 {
+			return -1
+		}
+		if n == 201 {
+			return '…'
+		}
+		if r == utf8.RuneError || unicode.IsControl(r) || unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Zl, r) || unicode.Is(unicode.Zp, r) {
 			return ' '
 		}
 		return r
 	}, v)
-	if len(v) > 200 {
-		v = v[:200] + "…"
-	}
 	return v
 }
 
@@ -350,7 +423,7 @@ func ssoIdentityOf(set config.OIDCSettings, claims oidc.Claims) (ssoIdentity, st
 
 // finishSSO signs in the person the checked claims describe, and sends the
 // browser on to next.
-func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OIDCSettings, claims oidc.Claims, next, note string) {
+func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OIDCSettings, claims oidc.Claims, next, note string, agreed bool) {
 	id, code, reason := ssoIdentityOf(set, claims)
 	if code != "" {
 		if note != "" {
@@ -359,7 +432,8 @@ func (s *Server) finishSSO(w http.ResponseWriter, r *http.Request, set config.OI
 		s.ssoFail(w, r, code, claims.String(set.UsernameClaim), reason)
 		return
 	}
-	s.signInSSO(w, r, id.user, set.NewUsers(), next, []any{"issuer", set.Issuer, "groups_matched", strings.Join(id.matched, ",")})
+	s.signInSSO(w, r, id.user, set.NewUsers(), next, append([]any{"issuer", set.Issuer, "groups_matched", strings.Join(id.matched, ",")},
+		ssoNoticeLog(agreed)...))
 }
 
 // signInSSO signs in u, whom an identity provider vouched for, adding
@@ -402,7 +476,7 @@ func (s *Server) signInSSO(w http.ResponseWriter, r *http.Request, u users.SSOUs
 	}
 	s.setSessionCookie(w, r, token, false)
 	s.Log.Info("signed in", slices.Concat([]any{"audit", true, "user", p.Username, "role", p.Role, "source", p.Source}, s.client(r).logAttrs(),
-		[]any{"method", "sso"}, s.noticeLog(), logAttrs)...)
+		[]any{"method", "sso"}, logAttrs)...)
 	// The session cookie is SameSite=Strict, and this answer ends a
 	// navigation that came from the provider's site, so a redirect would
 	// arrive without it. A page that moves on by itself starts a new,

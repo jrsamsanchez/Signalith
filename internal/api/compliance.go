@@ -136,6 +136,9 @@ func (s *Server) handleComplianceExport(w http.ResponseWriter, r *http.Request) 
 	f, _ := rep.Find(fw)
 	x := compliance.Export{Server: s.serverName(), Version: s.Version, By: userOf(r)}
 	name := "signalith-" + fw + "-evidence-" + rep.Generated.UTC().Format("2006-01-02")
+	// The report names failing hosts, note authors and detections, and is
+	// made to leave the organisation: who took it, and when, is audited.
+	s.audit(r, "compliance.export: evidence report exported", "target", fw, "format", format, "generated", rep.Generated.UTC().Format(time.RFC3339))
 	if format == "csv" {
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="`+name+`.csv"`)
@@ -237,6 +240,18 @@ func (s *Server) complianceSnapshot(ctx context.Context, r *http.Request) *compl
 	if s.Detections != nil {
 		snap.Detections = complianceDetections(s.Detections.List())
 		snap.SchedulerOn = conf.Detections.Scheduler
+		if s.Scheduler != nil {
+			// Evidence is a detection that ran, not only one that is on.
+			if states, err := s.Scheduler.StatusCtx(ctx); err == nil {
+				for i := range snap.Detections {
+					d := &snap.Detections[i]
+					st := states[d.ID]
+					d.RunKnown, d.LastRun, d.LastFailed = true, st.LastRun, st.LastError != ""
+				}
+			} else {
+				s.Log.Warn("compliance: could not read the detection run state", "err", err)
+			}
+		}
 	}
 	if s.Endpoints != nil {
 		s.complianceChecks(ctx, snap)

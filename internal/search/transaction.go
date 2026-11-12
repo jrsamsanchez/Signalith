@@ -139,6 +139,11 @@ rows:
 					if !ok || seen[k][s] || len(seen[k]) >= maxMultiValues {
 						continue
 					}
+					// Each value the transaction keeps counts, the
+					// first as the field itself.
+					if !ev.charge(valueSize(x) + valueOverhead) {
+						return ev.err
+					}
 					seen[k][s] = true
 					row[k] = append(asList(row[k]), x)
 				}

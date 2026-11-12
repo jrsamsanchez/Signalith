@@ -146,6 +146,8 @@ type entry struct {
 	// born is the session document's Born, and tenant its Tenant.
 	born   string
 	tenant string
+	// client is the address the user signed in from.
+	client string
 	// stored is the last_seen stored, local this server's last request,
 	// and confirmed when the session was last read from OpenSearch (or
 	// written).
@@ -383,7 +385,7 @@ func (s *Sessions) Create(ctx context.Context, n auth.NewSession) (string, error
 	id := SessionID(cookie)
 	now := s.now().UTC()
 	user := users.NormalizeUsername(n.User)
-	e := &entry{user: user, epoch: n.Epoch, created: now, remember: n.Remember, method: n.Method, stored: now, local: now, confirmed: now}
+	e := &entry{user: user, epoch: n.Epoch, created: now, remember: n.Remember, method: n.Method, client: n.Client, stored: now, local: now, confirmed: now}
 	if u, _, ok := s.Docs.Users().Get(user); ok {
 		e.born = bornText(u)
 	}
@@ -794,7 +796,15 @@ func (s *Sessions) Delete(ctx context.Context, cookie string) {
 	if !s.known(cookie) {
 		return
 	}
-	id := SessionID(cookie)
+	_ = s.end(ctx, SessionID(cookie))
+}
+
+// errEndLater is a session whose document could not be deleted now: it
+// is deleted once OpenSearch takes writes.
+var errEndLater = errors.New("OpenSearch cannot be written now, so the session ends once it can")
+
+// end ends the session with the document id, as Delete does.
+func (s *Sessions) end(ctx context.Context, id string) error {
 	s.Cache.mu.Lock()
 	delete(s.Cache.carried, id)
 	_, inMemory := s.Cache.degraded[id]
@@ -803,21 +813,22 @@ func (s *Sessions) Delete(ctx context.Context, cookie string) {
 	s.Cache.neg[id] = s.now().Add(CacheFor)
 	s.Cache.mu.Unlock()
 	if inMemory {
-		return
+		return nil
 	}
 	if s.degradedNow() {
 		s.later(id)
-		return
+		return errEndLater
 	}
 	if err := s.deleteDoc(ctx, id); err != nil {
 		s.later(id)
-		return
+		return fmt.Errorf("%w: %w", errEndLater, err)
 	}
 	if h := s.Docs.Hub(); h != nil {
 		if _, err := h.BumpWith(ctx, SessionsWatch, map[string]any{"last": id}); err != nil {
 			s.log().Warn("signed out, but the other servers may accept the session for up to 15 seconds", "err", err)
 		}
 	}
+	return nil
 }
 
 // later keeps a sign-out to write once OpenSearch takes writes.
@@ -852,10 +863,13 @@ func (s *Sessions) watched(_ context.Context, raw json.RawMessage, v store.Versi
 	clear(s.Cache.pos)
 }
 
-// EndUser forgets the sessions of user this server holds, but the one of
-// the cookie keep, and reports how many of their sessions are in
-// OpenSearch: they end through the user's session epoch, which the change
-// that ends them moves on in the same write.
+// EndUser ends the sessions of user, but the one of the cookie keep, and
+// reports how many ended: it forgets those this server holds and deletes
+// their documents in OpenSearch. A change that moves the user's session
+// epoch on ends them in the same write already; one that cannot (such as
+// the directory refusing a user whose record could not be written) ends
+// them only through this. A session whose document could not be deleted
+// and that the user's record still allows is not counted.
 func (s *Sessions) EndUser(ctx context.Context, user, keep string) int {
 	user = users.NormalizeUsername(user)
 	keepID := ""
@@ -877,22 +891,126 @@ func (s *Sessions) EndUser(ctx context.Context, user, keep string) int {
 	}
 	s.Cache.mu.Unlock()
 	cl, index := s.index()
+	// A session made within the last second may not be searchable yet;
+	// a refresh makes it so. Best effort: the search says what failed.
+	_ = cl.Do(ctx, http.MethodPost, "/"+url.PathEscape(index)+"/_refresh?ignore_unavailable=true", nil, nil)
 	docs, err := cl.SearchDocs(ctx, index, map[string]any{"term": map[string]any{"user": user}})
 	if err != nil {
 		return n
 	}
 	keys := s.Docs.keys()
 	now, maxAge := s.now(), s.MaxAge()
+	deleted := false
 	for _, d := range docs {
 		var sd sessionDoc
 		if d.ID == keepID || json.Unmarshal(d.Source, &sd) != nil || !sd.verify(keys, d.ID) {
 			continue
 		}
-		if at, err := time.Parse(time.RFC3339Nano, sd.Created); err == nil && now.Sub(at) < maxAge {
+		at, err := time.Parse(time.RFC3339Nano, sd.Created)
+		live := err == nil && now.Sub(at) < maxAge
+		if err := s.deleteDoc(ctx, d.ID); err == nil {
+			s.forget(d.ID)
+			deleted = true
+		} else {
+			stored, _ := time.Parse(time.RFC3339Nano, sd.LastSeen)
+			e := entry{user: sd.User, epoch: sd.Epoch, created: at, remember: sd.Remember, method: sd.Method, born: sd.Born, stored: stored}
+			if s.allows(&e, now, false) {
+				// Still usable: not ended.
+				s.log().Warn("could not end a session", "user", user, "err", err)
+				live = false
+			}
+		}
+		if live {
 			n++
 		}
 	}
+	if h := s.Docs.Hub(); deleted && h != nil {
+		// Every server reads again the sessions it has read.
+		if _, err := h.Bump(ctx, SessionsWatch); err != nil {
+			s.log().Warn("ended the sessions, but the other servers may accept them for up to 15 seconds", "user", user, "err", err)
+		}
+	}
 	return n
+}
+
+// List lists the sessions of user that have not ended, the one of the
+// cookie current marked: those in OpenSearch, and those this server keeps
+// in memory because OpenSearch could not be written when they were made.
+func (s *Sessions) List(ctx context.Context, user, current string) ([]auth.Info, error) {
+	user = users.NormalizeUsername(user)
+	curID := ""
+	if current != "" {
+		curID = SessionID(current)
+	}
+	info := func(id string, e *entry) auth.Info {
+		return auth.Info{ID: auth.ListID(id), Created: e.created, LastSeen: maxTime(e.local, e.stored), Client: e.client,
+			Method: e.method, Remember: e.remember, Current: id == curID}
+	}
+	now := s.now()
+	out := []auth.Info{}
+	local := map[string]time.Time{}
+	s.Cache.mu.Lock()
+	for id, e := range s.Cache.degraded {
+		if e.user == user && now.Sub(e.created) < DegradedSession && s.allows(e, now, true) {
+			out = append(out, info(id, e))
+		}
+	}
+	for id, e := range s.Cache.pos {
+		if e.user == user {
+			local[id] = e.local
+		}
+	}
+	s.Cache.mu.Unlock()
+	cl, index := s.index()
+	docs, err := cl.SearchDocs(ctx, index, map[string]any{"term": map[string]any{"user": user}})
+	if err != nil {
+		return out, fmt.Errorf("could not read the sessions: %w", err)
+	}
+	keys := s.Docs.keys()
+	for _, d := range docs {
+		var sd sessionDoc
+		if json.Unmarshal(d.Source, &sd) != nil || sd.User != user || !sd.verify(keys, d.ID) {
+			continue
+		}
+		created, err := time.Parse(time.RFC3339Nano, sd.Created)
+		if err != nil {
+			continue
+		}
+		stored, _ := time.Parse(time.RFC3339Nano, sd.LastSeen)
+		e := entry{user: sd.User, epoch: sd.Epoch, created: created, remember: sd.Remember, method: sd.Method, born: sd.Born,
+			client: sd.Client, stored: stored, local: local[d.ID]}
+		if s.allows(&e, now, false) {
+			out = append(out, info(d.ID, &e))
+		}
+	}
+	auth.SortInfo(out)
+	return out, nil
+}
+
+// End ends the session of user with the list ID id (auth.Info.ID), as
+// Delete does, and reports whether there was one.
+func (s *Sessions) End(ctx context.Context, user, id string) (bool, error) {
+	user = users.NormalizeUsername(user)
+	s.Cache.mu.Lock()
+	for key, e := range s.Cache.degraded {
+		if e.user == user && auth.ListID(key) == id {
+			s.Cache.mu.Unlock()
+			return true, s.end(ctx, key)
+		}
+	}
+	s.Cache.mu.Unlock()
+	cl, index := s.index()
+	docs, err := cl.SearchDocs(ctx, index, map[string]any{"term": map[string]any{"user": user}})
+	if err != nil {
+		return false, fmt.Errorf("could not read the sessions: %w", err)
+	}
+	for _, d := range docs {
+		var sd sessionDoc
+		if auth.ListID(d.ID) == id && json.Unmarshal(d.Source, &sd) == nil && sd.User == user {
+			return true, s.end(ctx, d.ID)
+		}
+	}
+	return false, nil
 }
 
 // Users lists the users with a session that has not ended, each once, in

@@ -25,10 +25,11 @@ func (s *Server) routeRespond(api *router) {
 		s.Respond.Record = actionRecorder{s}
 	}
 	// The Respond menu lists the actions (without their settings) and
-	// past runs; running one is analyst work.
+	// past runs; running one is analyst work, and changes another system
+	// at once, so it asks for the password or code again first.
 	api.analyst("GET /api/respond/actions", s.handleRespondActions)
 	api.analyst("GET /api/respond/runs", s.handleRespondRuns)
-	api.analyst("POST /api/respond/run", s.handleRespondRun)
+	api.analystSensitive("POST /api/respond/run", s.handleRespondRun)
 	// Setting actions up decides what Signalith can change elsewhere.
 	api.admin("GET /api/respond/config", s.handleRespondConfig)
 	api.sensitive("PUT /api/respond/config", s.handleRespondSave)
@@ -187,7 +188,7 @@ func (s *Server) handleRespondSave(w http.ResponseWriter, r *http.Request) {
 	for i, c := range list {
 		names[i] = c.Name
 	}
-	s.Log.Info("response actions changed", "audit", true, "by", userOf(r), "actions", strings.Join(names, ","))
+	s.audit(r, "respond.change: response actions changed", "actions", strings.Join(names, ","))
 	writeJSON(w, http.StatusOK, s.respondConfig(r))
 }
 
@@ -218,7 +219,7 @@ func (s *Server) handleRespondTest(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), time.Minute)
 	defer cancel()
 	rep := s.Respond.Test(ctx, list[0], req.Target, req.Send, userOf(r))
-	s.Log.Info("response action tested", "audit", true, "by", userOf(r), "action", list[0].Name, "kind", list[0].Kind,
+	s.audit(r, "respond.test: response action tested", "target", list[0].Name, "kind", list[0].Kind,
 		"sent", rep.Run != nil, "ok", rep.OK)
 	writeJSON(w, http.StatusOK, rep)
 }

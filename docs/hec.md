@@ -37,7 +37,7 @@ curl https://siem.example.com:7779/services/collector/event \
 
 | Route | What it takes |
 |---|---|
-| `POST /services/collector/event` (also `/services/collector` and `/event/1.0`) | JSON objects one after another, each with `event` (text or an object) and optionally `time` (epoch seconds), `host`, `source`, `sourcetype`, `index` and `fields` |
+| `POST /services/collector/event` (also `/services/collector` and `/event/1.0`) | JSON objects one after another, each with `event` (text or an object) and optionally `time` (epoch seconds, or milliseconds), `host`, `source`, `sourcetype`, `index` and `fields` |
 | `POST /services/collector/raw` | lines of text, one event per line; `host`, `source`, `sourcetype` and `index` in the query string |
 | `GET /services/collector/health` | `{"text":"HEC is healthy","code":17}` while the intake is on |
 

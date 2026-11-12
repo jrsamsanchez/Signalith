@@ -139,6 +139,32 @@ func TestLimiterPerAddress(t *testing.T) {
 	}
 }
 
+// An address nobody listed as shared, locked by someone guessing many
+// accounts from it, still lets in the people who signed in from it
+// before with their current password; everyone else stays refused.
+func TestLimiterAddressLockSparesKnownAddresses(t *testing.T) {
+	l := NewLimiter()
+	l.Max, l.MaxPerAddress = 3, 5
+	nat := Client{Address: "198.51.100.7", Version: "v1"}
+	succeed(t, l, nat, "alice")
+	for i := 0; i < l.MaxPerAddress; i++ {
+		fail(t, l, nat, fmt.Sprintf("guess%d", i))
+	}
+	if ok, rf := allowed(l, nat, "bob"); ok || rf.Reason != ReasonLocked {
+		t.Errorf("a stranger at the locked address was let in: %+v", rf)
+	}
+	if ok, rf := allowed(l, nat, "alice"); !ok {
+		t.Errorf("alice, who signed in from this address before, was refused: %+v", rf)
+	}
+	// Her own account is still held to its own count.
+	for i := 0; i < l.Max; i++ {
+		fail(t, l, nat, "alice")
+	}
+	if ok, rf := allowed(l, nat, "alice"); ok || rf.Reason != ReasonLocked {
+		t.Errorf("alice's account was not locked for the address after Max failures: %+v", rf)
+	}
+}
+
 // Many addresses guessing one account slow it down for strangers, with a
 // wait that doubles after each failure, but never lock it.
 func TestLimiterSlowsAnAccountDown(t *testing.T) {
