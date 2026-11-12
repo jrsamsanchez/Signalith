@@ -4,9 +4,11 @@
 package clusterauth
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/shared"
@@ -189,6 +191,7 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 	// copied is the revision of the old document the new one copies, so
 	// the old one is deleted only at that revision (below).
 	copied := ""
+	var base UserBody
 	if v, _, ok := list.Get(name); !ok {
 		prev, prevTag, found := list.Get(old)
 		if !found || prev.Source != users.SourceBuiltin {
@@ -209,7 +212,7 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 			return "", err
 		}
 		if err == nil {
-			copied = prevTag
+			copied, base = prevTag, *prev
 		}
 	} else if v.Source != users.SourceBuiltin {
 		return "", fmt.Errorf("a user named %s exists already; rename or delete that user first", name)
@@ -217,7 +220,7 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 	if err := step(3); err != nil {
 		return "", err
 	}
-	if err := d.dropRenamed(ctx, by, old, name, copied); err != nil {
+	if err := d.dropRenamed(ctx, by, old, name, copied, &base); err != nil {
 		return "", err
 	}
 	if err := step(4); err != nil {
@@ -239,8 +242,10 @@ func (d *Docs) finishRename(ctx context.Context, by, old, name string, step func
 // the copy). A change to the old document since (another server turning
 // the built-in admin off, say) would otherwise be deleted with it: the new
 // document takes it first, and the delete is tried again at the revision
-// it took (AUTHRT-10).
-func (d *Docs) dropRenamed(ctx context.Context, by, old, name, copied string) error {
+// it took (AUTHRT-10). Only what changed on the old document since the
+// copy (base, the body at copied) is carried over: a password or two-step
+// sign-in changed on the new name meanwhile stays.
+func (d *Docs) dropRenamed(ctx context.Context, by, old, name, copied string, base *UserBody) error {
 	if old == name {
 		return nil
 	}
@@ -268,18 +273,19 @@ func (d *Docs) dropRenamed(ctx context.Context, by, old, name, copied string) er
 					v.Updated = time.Now().UTC()
 					return nil
 				}
-				off, epoch := v.Disabled, v.SessionEpoch
-				*v = *prev
-				v.Username, v.Role, v.Source = name, users.Admin, users.SourceBuiltin
-				// Turned off on either name stays off.
-				v.Disabled = v.Disabled || off
-				v.SessionEpoch = max(epoch, prev.SessionEpoch+1)
+				if !mergeChanged(v, base, prev) {
+					return errNoChange
+				}
 				v.Updated = time.Now().UTC()
 				return nil
 			}); err != nil && !errors.Is(err, errNoChange) {
 				return err
 			}
 			copied = etag
+			if ours {
+				// What is now carried over is the base of the next try.
+				*base = *prev
+			}
 		}
 		_, err := list.Delete(ctx, by, old, etag)
 		var stale *shared.StaleError
@@ -294,6 +300,46 @@ func (d *Docs) dropRenamed(ctx context.Context, by, old, name, copied string) er
 			return err
 		}
 	}
+}
+
+// mergeChanged carries onto v, the new name's document of a rename, the
+// fields of prev, the old name's document, that changed since base, the
+// old document as it was copied. A field changed on the new name since
+// is kept unless the old document changed it too; turned off on either
+// name stays off. It reports whether v changed, and moves v's session
+// epoch on when the password, two-step sign-in or turning off came over.
+func mergeChanged(v, base, prev *UserBody) bool {
+	changed, guard := false, false
+	str := func(dst *string, b, p string, g bool) {
+		if b != p && *dst != p {
+			*dst, changed = p, true
+			guard = guard || g
+		}
+	}
+	str(&v.Name, base.Name, prev.Name, false)
+	str(&v.Email, base.Email, prev.Email, false)
+	str(&v.PasswordHash, base.PasswordHash, prev.PasswordHash, true)
+	if base.MustChangePassword != prev.MustChangePassword && v.MustChangePassword != prev.MustChangePassword {
+		v.MustChangePassword, changed = prev.MustChangePassword, true
+	}
+	if prev.Disabled && !base.Disabled && !v.Disabled {
+		v.Disabled, changed, guard = true, true, true
+	}
+	if !reflect.DeepEqual(base.MFA, prev.MFA) && !reflect.DeepEqual(v.MFA, prev.MFA) {
+		v.MFA, changed, guard = prev.MFA, true, true
+	}
+	for k, p := range prev.Extra {
+		if b, ok := base.Extra[k]; (!ok || !bytes.Equal(b, p)) && !bytes.Equal(v.Extra[k], p) {
+			if v.Extra == nil {
+				v.Extra = shared.Extra{}
+			}
+			v.Extra[k], changed = p, true
+		}
+	}
+	if guard || prev.SessionEpoch != base.SessionEpoch {
+		v.SessionEpoch, changed = max(v.SessionEpoch, prev.SessionEpoch)+1, true
+	}
+	return changed
 }
 
 // errNoChange leaves a document as it is from a Mutate.
