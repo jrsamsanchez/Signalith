@@ -307,6 +307,8 @@ retention:
 or, with the CLI, add `-allow-unauthenticated` to `signalith archive verify` or
 `signalith archive restore -offline`. A manifest whose MAC doesn't match is refused
 even then. Only signalith.yaml can set this, never the page or the shared settings.
+A plain archive whose only MAC was made with a master key you have since removed
+(`signalith secrets rotate-master -prune`) needs it too.
 
 ### Snapshots are not archives
 
