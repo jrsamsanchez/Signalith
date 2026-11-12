@@ -28,13 +28,17 @@ import (
 // The engine refuses a result over search.MaxResultBytes, and the Search
 // page's result is written one row at a time (writeSearchResult).
 
-// searchRunRoutes are the routes that run a search the user wrote.
+// searchRunRoutes are the routes that run a search the user wrote, or a
+// detection's search on demand.
 var searchRunRoutes = []string{
 	"POST /api/search",
 	"POST /api/panels/run",
 	"POST /api/dashboards/{id}/run",
 	"POST /api/notebooks/{id}/run",
 	"GET /api/fields/values",
+	"POST /api/detections/test",
+	"POST /api/detections/backtest",
+	"POST /api/detections/{id}/run",
 }
 
 const (
@@ -237,8 +241,13 @@ func (w *deadlineWriter) Write(b []byte) (int, error) {
 func (w *deadlineWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
 // maxSearchResponse is the most writeSearchResult writes before it gives
-// up: twice search.MaxResultBytes, for text that JSON escapes.
-const maxSearchResponse = 2 * search.MaxResultBytes
+// up. The engine measures a result's text as it is (search.MaxResultBytes),
+// and JSON can write a byte as up to six (\u00XX for a control
+// character), so the cap is six times that, plus as much again for the
+// quotes, names and separators around each value: a result the engine
+// let through is never cut off part way. It bounds only what a client
+// can make the server send, not memory: rows are written one at a time.
+const maxSearchResponse = 7 * search.MaxResultBytes
 
 // errResponseTooLarge stops writing a search result past maxSearchResponse.
 var errResponseTooLarge = errors.New("search response too large")

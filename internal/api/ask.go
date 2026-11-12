@@ -127,28 +127,21 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// fanOutCommands are commands that run searches of their own.
-var fanOutCommands = map[string]bool{"map": true, "join": true, "append": true, "appendpipe": true, "union": true, "multisearch": true, "set": true}
-
 // runsMoreSearches reports whether q runs searches besides its own: a
 // subsearch in [ ] among its terms or in a where, or a command such as
-// map or join.
+// map or join (query.CountSubsearches, which the engine's own subsearch
+// cap counts with). appendpipe counts too: it runs commands over the
+// results again.
 func runsMoreSearches(q *query.Query) bool {
-	found := false
-	mark := func(*query.Subsearch) { found = true }
-	query.WalkSubsearches(q.Search, mark)
+	if query.CountSubsearches(q) > 0 {
+		return true
+	}
 	for _, c := range q.Commands {
-		switch c := c.(type) {
-		case *query.Where:
-			query.WalkSubsearches(c.Expr, mark)
-		case *query.InputLookup:
-			found = found || c.Append
-		}
-		if fanOutCommands[c.Name()] {
-			found = true
+		if _, ok := c.(*query.AppendPipe); ok {
+			return true
 		}
 	}
-	return found
+	return false
 }
 
 // AssetHints lets the translator recognize bare user and host names from

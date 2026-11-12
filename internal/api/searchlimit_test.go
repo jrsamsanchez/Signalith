@@ -211,3 +211,60 @@ func TestSearchResponseHasAWriteDeadline(t *testing.T) {
 		t.Errorf("deadline in %v, want %v", d, searchWriteTimeout)
 	}
 }
+
+// The routes that run a detection's search on demand are held to the
+// search limits too, and every route listed is one the server has.
+func TestSearchRunRoutesIncludeDetections(t *testing.T) {
+	for _, want := range []string{"POST /api/detections/test", "POST /api/detections/backtest", "POST /api/detections/{id}/run"} {
+		found := false
+		for _, r := range searchRunRoutes {
+			found = found || r == want
+		}
+		if !found {
+			t.Errorf("%s is not held to the search limits", want)
+		}
+	}
+	_, srv := newRoleServer(t)
+	patterns := map[string]bool{}
+	for _, rt := range srv.routes {
+		patterns[rt.Pattern] = true
+	}
+	for _, route := range searchRunRoutes {
+		if !patterns[route] {
+			t.Errorf("%s is not a route", route)
+		}
+	}
+}
+
+// A result the engine lets through is never cut off part way however much
+// JSON escaping grows it: a control character is written as six bytes.
+func TestSearchResponseCapAllowsEscaping(t *testing.T) {
+	esc, _ := json.Marshal("\x01")
+	if per := len(esc) - 2; maxSearchResponse < per*search.MaxResultBytes {
+		t.Errorf("maxSearchResponse %d is below %d times search.MaxResultBytes", maxSearchResponse, per)
+	}
+}
+
+// runsMoreSearches counts what the engine's subsearch cap counts, and
+// appendpipe.
+func TestRunsMoreSearches(t *testing.T) {
+	for q, want := range map[string]bool{
+		`process_name=wmic.exe | stats count by user`:               false,
+		`a | search [search b | fields user]`:                       true,
+		`a | inputlookup append=true users`:                         true,
+		`| multisearch [search b] [search c]`:                       true,
+		`| set union [search b] [search c]`:                         true,
+		`a | appendpipe [stats count]`:                              true,
+		`a | union [search b]`:                                      true,
+		`a | stats count by user | map search="search user=$user$"`: true,
+	} {
+		p, err := query.Parse(q)
+		if err != nil {
+			t.Errorf("%s: %v", q, err)
+			continue
+		}
+		if got := runsMoreSearches(p); got != want {
+			t.Errorf("runsMoreSearches(%s) = %v", q, got)
+		}
+	}
+}
