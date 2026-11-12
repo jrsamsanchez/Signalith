@@ -29,14 +29,28 @@ type Probe struct {
 }
 
 // cgroupHints are what /proc/1/cgroup names under cgroup v1 when process 1
-// runs in a container. Under cgroup v2 a container sees only "0::/".
-var cgroupHints = []string{"kubepods", "/docker/", "/docker-", "containerd", "/crio-", "/libpod-", "/lxc/"}
+// runs in an application container (Docker, Podman, Kubernetes). Under
+// cgroup v2 a container sees only "0::/".
+var cgroupHints = []string{"kubepods", "/docker/", "/docker-", "containerd", "/crio-", "/libpod-"}
+
+// systemHints are cgroup names of system containers (LXC, LXD, Proxmox):
+// a whole Linux system with its own accounts, more like a virtual machine
+// than an application container.
+var systemHints = []string{"/lxc/"}
 
 // Detect reports whether p describes a container: SIGNALITH_CONTAINER
 // when it is set to 1 or 0; else on Linux, Docker's and Podman's marker
 // files, the variable Kubernetes sets in every pod, or a container's
-// control group for process 1.
-func Detect(p Probe) bool {
+// control group for process 1 (a system container's too).
+func Detect(p Probe) bool { return detect(p, true) }
+
+// DetectApp is Detect for application containers only: an LXC, LXD or
+// Proxmox system container, which has accounts of its own like any
+// computer, is not one, unless SIGNALITH_CONTAINER says so. What relaxes
+// a check because "no other account runs here" uses it.
+func DetectApp(p Probe) bool { return detect(p, false) }
+
+func detect(p Probe, system bool) bool {
 	switch strings.ToLower(strings.TrimSpace(p.Getenv(EnvVar))) {
 	case "1", "true", "yes":
 		return true
@@ -59,6 +73,11 @@ func Detect(p Probe) bool {
 				return true
 			}
 		}
+		for _, h := range systemHints {
+			if system && strings.Contains(s, h) {
+				return true
+			}
+		}
 	}
 	return false
 }
@@ -70,10 +89,17 @@ func Kubernetes(getenv func(string) string) bool {
 	return getenv("KUBERNETES_SERVICE_HOST") != ""
 }
 
-// Here reports whether this process runs in a container, looked up once.
-var Here = sync.OnceValue(func() bool {
-	return Detect(Probe{GOOS: runtime.GOOS, Getenv: os.Getenv, ReadFile: os.ReadFile, Exists: func(path string) bool {
+// here is this process's Probe.
+func here() Probe {
+	return Probe{GOOS: runtime.GOOS, Getenv: os.Getenv, ReadFile: os.ReadFile, Exists: func(path string) bool {
 		_, err := os.Stat(path)
 		return err == nil
-	}})
-})
+	}}
+}
+
+// Here reports whether this process runs in a container, looked up once.
+var Here = sync.OnceValue(func() bool { return Detect(here()) })
+
+// AppHere reports whether this process runs in an application container
+// (DetectApp), looked up once.
+var AppHere = sync.OnceValue(func() bool { return DetectApp(here()) })

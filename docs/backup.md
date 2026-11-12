@@ -317,7 +317,11 @@ It works on OpenSearch 2.17 and 3.x.
 Every server shares these settings. Each snapshot holds Signalith's indices
 (`signalith-*`, `signalith_*` and the tenants' `signalith.t.*`), not OpenSearch's own
 settings or security configuration (`include_global_state: false`), and only copies
-what changed since the one before. The policy is Signalith's: a change made to it in
+what changed since the one before. Archive encryption (`retention.encrypt_archives`)
+doesn't cover snapshots: OpenSearch writes them itself, so events, users and sessions
+in them are as readable as the repository is (passwords and keys inside stay
+encrypted with the master key). Keep the repository on encrypted storage that only
+OpenSearch and its operators can read. The policy is Signalith's: a change made to it in
 OpenSearch is put back within a minute, so change the settings instead.
 
 Days in [cold storage](cold-storage.md) are left out. They are mounted from their own
@@ -375,7 +379,7 @@ snapshots, the role is not given to Signalith until you want scheduled snapshots
 
 - **Docker quick start:** `snapshot.sh register` (above) gives it to Signalith's
   certificates. Updates keep it while a snapshot repository or Signalith's policy
-  exists. `snapshot.sh unregister` takes it away again. From the release after 0.4.0,
+  exists. `snapshot.sh unregister` takes it away again. From 0.4.1,
   when OpenSearch cannot say at `docker compose up` whether the role is in use, the
   step keeps it as it last loaded it, or stops without changing anything; setting
   `SIGNALITH_SNAPSHOT_ROLE` to `on` or `off` for the `opensearch-security` service
@@ -383,7 +387,7 @@ snapshots, the role is not given to Signalith until you want scheduled snapshots
 - **Helm chart:** set `opensearch.snapshotRole: true`.
 - **OpenSearch from `signalith opensearch install`** (the Windows installer and the
   Linux packages): run `signalith opensearch snapshot-role on` as an administrator
-  (`off` takes it away). OpenSearch keeps the mapping through updates, so an install from before 0.4.0 still has the role: run `signalith opensearch snapshot-role off` once if you do not use scheduled snapshots.
+  (`off` takes it away). OpenSearch keeps the mapping through updates, so an install from before 0.4.0 still has the role: run `signalith opensearch snapshot-role off` once if you do not use scheduled snapshots. The Security page flags the role while scheduled snapshots are off.
 
 Until then, the Health page says the role is missing once scheduled snapshots are
 turned on. Installs from before 0.4.0 had the role mapped from the start; the Docker

@@ -434,9 +434,10 @@ func cloudTrailFromOTLP(attrs, resource map[string]any, t time.Time) map[string]
 }
 
 // cloudTrailText decodes a CloudTrail record from JSON text, or returns
-// nil when the text is not one.
+// nil when the text is not one. The text sat inside a string, past the
+// body's own depth check, so its depth is checked here (ING-09).
 func cloudTrailText(s string) map[string]any {
-	if len(s) > MaxRecordBytes {
+	if len(s) > MaxRecordBytes || depth([]byte(s)) > MaxDepth {
 		return nil
 	}
 	d := json.NewDecoder(strings.NewReader(s))

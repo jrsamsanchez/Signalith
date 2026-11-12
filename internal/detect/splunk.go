@@ -439,6 +439,9 @@ func splunkNeeds(r *splcheck.Rule) string {
 			return NeedsPowerShell
 		}
 	}
+	if needsAuditPolicy(splunkEvents[r.Node]) {
+		return NeedsAuditPolicy
+	}
 	return ""
 }
 

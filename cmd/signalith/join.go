@@ -197,6 +197,9 @@ type joinOptions struct {
 	token, config, name, listen, nodeURL       string
 	agentListen                                string
 	copySyslog, noStart, merge, yes, allowSkew bool
+	// tokenInArgs is true when the token was given as an argument, where
+	// other users can see it.
+	tokenInArgs bool
 }
 
 func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) (*joinOptions, error) {
@@ -214,8 +217,9 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	fs.BoolVar(&o.yes, "yes", false, "do not ask before joining")
 	fs.BoolVar(&o.allowSkew, "allow-version-skew", false, "join a cluster whose servers run another version")
 	fs.Usage = func() {
-		fmt.Fprintln(errOut, "usage: signalith join '<token>' [-c file] [--name name] [--listen addr] [--agent-listen addr] [--node-url url] [--copy-syslog] [--no-start] [--merge] [--yes]")
-		fmt.Fprintln(errOut, "The token may be - to read it from the standard input, or left out to be asked for it without showing it.")
+		fmt.Fprintln(errOut, "usage: signalith join [-] [-c file] [--name name] [--listen addr] [--agent-listen addr] [--node-url url] [--copy-syslog] [--no-start] [--merge] [--yes]")
+		fmt.Fprintln(errOut, "Leave the token out to be asked for it without showing it, or give - to read it from the standard input.")
+		fmt.Fprintln(errOut, "A token given in the command ('<token>') works, but other users of this computer can see it while join runs.")
 		fs.PrintDefaults()
 	}
 	pos, err := parseInterspersed(fs, args)
@@ -236,6 +240,7 @@ func parseJoinArgs(args []string, errOut io.Writer, getenv func(string) string) 
 	switch {
 	case len(pos) == 1:
 		o.token = pos[0]
+		o.tokenInArgs = o.token != "-"
 	case len(pos) == 0:
 		// SIGNALITH_JOIN, else asked for on the terminal.
 		o.token = getenv("SIGNALITH_JOIN")
@@ -393,7 +398,7 @@ func (j *joiner) tokenText() (string, error) {
 		return line, nil
 	case "":
 		if !j.env.terminal || j.env.readSecret == nil {
-			return "", failf(joinExitFailed, "Give the join token: signalith join '<token>', or signalith join - to read it from the standard input.")
+			return "", failf(joinExitFailed, "Give the join token: run signalith join in a terminal to be asked for it, or signalith join - to read it from the standard input.")
 		}
 		fmt.Fprint(j.env.out, "Join token (it is not shown): ")
 		text, err := j.env.readSecret()
@@ -402,6 +407,13 @@ func (j *joiner) tokenText() (string, error) {
 			return "", failf(joinExitFailed, "No join token was given.")
 		}
 		return text, nil
+	}
+	if j.o.tokenInArgs {
+		// It works once and expires, which limits what a copy is worth,
+		// but say so (CRYPTO-05).
+		fmt.Fprintln(j.env.errOut, "Warning: the join token was given in the command line, where other users of this computer can see it "+
+			"while join runs, and it stays in the shell's history. Next time leave it out to be asked for it (signalith join), "+
+			"or give it on the standard input (signalith join -).")
 	}
 	return j.o.token, nil
 }

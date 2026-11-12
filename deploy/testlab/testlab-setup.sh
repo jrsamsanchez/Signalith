@@ -281,8 +281,10 @@ $DOMAIN {
 	encode zstd gzip
 
 	# Agents, senders and joining servers use tokens rather than a
-	# sign-in: the test lab takes no data from outside. It has no single
-	# sign-on either, so its links are closed too.
+	# sign-in: the test lab takes no data from outside. Single sign-on
+	# is off on the lab, so its start and callback paths are closed too.
+	# internal/api's TestLabClosesEveryTokenRoute checks this list
+	# against the routes that work without signing in.
 	@closed path /api/ingest* /api/otlp/* /v1 /v1/* /services/collector* /api/osquery/* /api/sensor/* /api/agent/* /api/cluster/join* /api/syslog/* /api/scim/* /api/chat/* /metrics* /api/auth/oidc/* /api/auth/saml/*
 	respond @closed 404
 

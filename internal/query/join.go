@@ -27,7 +27,11 @@ const MaxJoinMatches = 100
 // its own.
 const MaxSubsearches = 10
 
-func countSubsearches(q *Query) int {
+// CountSubsearches counts the searches q runs besides its own: subsearches
+// in [ ] among its terms and in where, the searches of join, append,
+// union, set and multisearch, a map, and inputlookup append=true, and
+// those inside them.
+func CountSubsearches(q *Query) int {
 	n := exprSubsearches(q.Search)
 	for _, c := range q.Commands {
 		n += commandSubsearches(c)
@@ -39,7 +43,7 @@ func countSubsearches(q *Query) int {
 // them.
 func exprSubsearches(e Expr) int {
 	n := 0
-	WalkSubsearches(e, func(s *Subsearch) { n += 1 + countSubsearches(s.Query) })
+	WalkSubsearches(e, func(s *Subsearch) { n += 1 + CountSubsearches(s.Query) })
 	return n
 }
 
@@ -65,25 +69,25 @@ func WalkSubsearches(e Expr, fn func(*Subsearch)) {
 func commandSubsearches(c Command) int {
 	switch c := c.(type) {
 	case *Join:
-		return 1 + countSubsearches(c.Sub)
+		return 1 + CountSubsearches(c.Sub)
 	case *Append:
-		return 1 + countSubsearches(c.Sub)
+		return 1 + CountSubsearches(c.Sub)
 	case *Union:
 		n := 0
 		for _, s := range c.Subs {
-			n += 1 + countSubsearches(s)
+			n += 1 + CountSubsearches(s)
 		}
 		return n
 	case *Set:
 		n := 0
 		for _, s := range c.Subs {
-			n += 1 + countSubsearches(s)
+			n += 1 + CountSubsearches(s)
 		}
 		return n
 	case *MultiSearch:
 		n := 0
 		for _, s := range c.Subs {
-			n += 1 + countSubsearches(s)
+			n += 1 + CountSubsearches(s)
 		}
 		return n
 	case *AppendPipe:

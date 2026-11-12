@@ -542,19 +542,21 @@ listed again and can be approved again.
 
 ## join
 
-`signalith join '<token>'` adds the computer it runs on to a cluster, with a join
-token made on **Servers → Add a server** of a server of the cluster. Run it as root
-(`sudo`) or as an Administrator, after installing Signalith from a package, the
-`.msi` or the Docker image:
+`signalith join` adds the computer it runs on to a cluster, with a join token made on
+**Servers → Add a server** of a server of the cluster. Run it as root (`sudo`) or as
+an Administrator, after installing Signalith from a package, the `.msi` or the Docker
+image, and paste the token when it asks (it is not shown):
 
 ```
-sudo signalith join 'SJ1.eyJ1Ijoi...' --name siem-c --node-url https://siem-c.example.com:9000
+sudo signalith join --name siem-c --node-url https://siem-c.example.com:9000
 ```
 
-The token may also come from the standard input (`signalith join -`), or be left out
-to be asked for without being shown. Other users of the computer can see the command
-line of a running program, so on a shared computer give it one of these ways rather
-than in the command. It asks before it changes anything, unless `--yes`.
+The token may also come from the standard input (`signalith join -`, for scripts), or
+from `SIGNALITH_JOIN` (the Docker image). Given in the command itself (`signalith join
+'SJ1.eyJ1Ijoi...'`) it still works, but other users of the computer can see the
+command line of a running program and the shell keeps it in its history, so join
+prints a warning; the token works once and expires, which limits what a copy is
+worth. It asks before it changes anything, unless `--yes`.
 
 It checks the server the token names by the certificate the token pins, asks it for
 what a new server needs (sealed so only this computer can read it), and checks from
@@ -657,8 +659,12 @@ same as JSON, without the CA's key.
 server gets its own OpenSearch certificate (see
 [Each server's own OpenSearch certificate](servers.md#each-servers-own-opensearch-certificate)).
 Give it the CA's key; its certificate is `root-ca.pem` next to it unless `-cert` names
-another file. It refuses a CA that is not the one in `opensearch.ca_file`, and one other
-than the cluster keeps already. In Docker, use `bootstrap-docker -export-ca-key` instead.
+another file. It refuses a CA that is not the one in `opensearch.ca_file`. A CA other
+than the one the cluster keeps replaces it only once `opensearch.ca_file` no longer
+trusts the old one, as after a compromised server was removed and OpenSearch's
+certificates were made again under a new CA (see
+[Ending a server's OpenSearch access at once](servers.md#ending-a-servers-opensearch-access-at-once));
+until then it is refused. In Docker, use `bootstrap-docker -export-ca-key` instead.
 
 `opensearch-ca revoke` ends a server's OpenSearch access at once: every certificate the
 cluster issued it that has not expired goes on the revocation list, and it gets no new

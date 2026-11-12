@@ -9,7 +9,9 @@ Monitor.
 A playbook has three parts:
 
 - **When**: the detections it starts for (any detection, or only some) and the least
-  urgency, such as "high or above".
+  urgency, such as "high or above". A finding an analyst raises by hand starts only a
+  playbook that names `manual` among its detections, since its source IP, user and
+  host are whatever the analyst typed.
 - **Then**: the steps, in order.
 - **Ask for approval in**: an optional notification channel that is told when a step
   waits for approval.

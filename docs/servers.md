@@ -617,6 +617,13 @@ print this. After you remove a server you no longer trust, replace the CA
 prepared, the server may hold the new CA's key too: abort it, then prepare again. If one
 was switched but not retired, retire it, then replace the CA again.
 
+The same goes for OpenSearch's CA, when the cluster keeps one: revoking the removed
+server's OpenSearch certificates does not stop it from signing new ones, the admin's
+included. After removing a server that was compromised or stolen, replace that CA too
+(see [Ending a server's OpenSearch access at once](#ending-a-servers-opensearch-access-at-once)).
+In short, after a compromise: remove the server (which rotates the cluster key), replace
+the cluster's HTTPS CA, then replace OpenSearch's CA.
+
 A server that leaves keeps its HTTPS certificate and can't renew it. `leave` prints
 the date it expires. To use the server on its own after that, delete its `tls` folder
 before it starts, so it makes a CA of its own, and give its agents a new configuration.
@@ -807,11 +814,16 @@ makes it again too.
 A removed server's state folder still holds the cluster key and its copy of the shared
 settings (`cluster/cache.enc`), and together they open OpenSearch's CA key: whoever has
 that disk can still sign new certificates OpenSearch trusts. For a server that was
-compromised or stolen, also make a new OpenSearch CA. In Docker, run
-`bootstrap-docker -new-ca`, then `bootstrap-docker -export-ca-key` again, so the cluster
-keeps the new CA in place of the old (see
-[Replacing the CA](opensearch-security.md#replacing-the-ca)); without Docker, make
-OpenSearch's certificates again under a new CA. A revocation does not touch the shared
+compromised or stolen, also make a new OpenSearch CA, once the cluster key rotation that
+`signalith cluster remove` starts has finished (so the new CA's key is sealed under a
+cluster key that server never had). In Docker, run `bootstrap-docker -new-ca`, then
+`bootstrap-docker -export-ca-key` again, so the cluster keeps the new CA in place of the
+old (see [Replacing the CA](opensearch-security.md#replacing-the-ca)). Without Docker,
+make OpenSearch's certificates again under a new CA, set `opensearch.ca_file` to the new
+CA alone, then run `signalith cluster opensearch-ca import <new-root-ca-key.pem>`: once
+OpenSearch's connection no longer trusts the old CA, it replaces the one the cluster
+keeps, and every server gets a new certificate from it within a minute.
+`signalith cluster remove` and `leave` print this when the cluster keeps an OpenSearch CA. A revocation does not touch the shared
 `CN=signalith` certificate or a user name and password either: whoever holds those keeps
 OpenSearch access until `roles_mapping.yml` no longer gives them the `signalith_server`
 role (see [Each server's own OpenSearch certificate](#each-servers-own-opensearch-certificate)),
@@ -1224,7 +1236,8 @@ proxies must pass them on unchanged; they need no other setting.
 
 | Header | Sent by | Meaning |
 | --- | --- | --- |
-| `X-Signalith-Version` | Every answer | The Signalith version of the server that answered |
+| `X-Signalith-Build` | Every answer | The build token of the server that answered: the same on every server of one build, and different for another version. It does not name the version |
+| `X-Signalith-Version` | Every answer to a signed-in request, and to a successful sign-in | The Signalith version of the server that answered. Not sent to someone who has not signed in |
 | `X-Signalith-Config` | Every answer to a signed-in request, and to a successful sign-in, once the server has read the shared settings | How far it has read them, as `<id>.<number>`. The answer to a change says how far a server must have read them to see that change |
 | `X-Signalith-Config-Min` | The web pages, on each request to `/api/` | The highest `X-Signalith-Config` the page has seen. A server that has not read that far reads the shared settings once before it answers |
 | `X-Signalith-Stale` | A server that is still behind after that | `1`. The page asks again once for a read; a change is checked against OpenSearch anyway, so it is never made on old settings |
@@ -1235,12 +1248,15 @@ wait.
 
 **Upgrading behind a load balancer.** While servers of two versions share one
 address, a page from one version can ask a server of the other for its scripts. The
-pages therefore load their scripts and stylesheets from paths that name the version,
-`/v/<version>/…`, which only a server of that version serves, and which browsers may
-keep for a year. If one does not load, the page reloads itself, a few times with
+pages therefore load their scripts and stylesheets from paths that name the build,
+`/v/<build token>/…`, which only a server of that build serves, and which browsers may
+keep for a year. The token is a hash of the version and the web pages' files rather than
+the version itself, so the sign-in page does not tell someone who has not signed in
+which version runs (it is not a secret: the sign-in page's public files are the same
+in every copy of a release). If one does not load, the page reloads itself, a few times with
 growing pauses, until it gets a server of the version it came from or a page of the
 new one; after 5 tries it says that Signalith is being upgraded. A page that sees
-another version in `X-Signalith-Version` reloads once to get that version's pages;
+another build in `X-Signalith-Build` reloads once to get that version's pages;
 if a server of the other version answers again within 2 minutes, the page says that
 Signalith is being upgraded instead of reloading again. The plain
 paths (`/app.js` and so on) keep working, for pages of earlier versions.

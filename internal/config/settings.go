@@ -523,7 +523,12 @@ var Registry = []Setting{
 			{assistant.OpenAI, "Local model or OpenAI-compatible"}}},
 	{Key: "assistant.url", Scope: ScopeCluster, Section: "assistant", Label: "Address", Type: TypeURL,
 		Help:        "Where the model runs: the provider's own service, a model server on your own hardware such as Ollama, or another compatible service.",
-		Placeholder: "http://localhost:11434/v1", EmptyMeans: "the provider's own address", check: noSecretIn("put the key in API key below")},
+		Placeholder: "http://localhost:11434/v1", EmptyMeans: "the provider's own address", check: checkModelURL},
+	{Key: "assistant.allow_insecure_http", Scope: ScopeCluster, Section: "assistant", Label: "Allow plain http", Type: TypeBool,
+		Help: "Lets Signalith reach a model beyond your local network over http:// instead of https://. Without it, plain http to a public IP address turns the AI features off, " +
+			"and a name (such as ollama or ollama.lan) is reached only while it resolves to this computer or a private address (10.x, 172.16-31.x, 192.168.x, fd00::/8), checked at each connection, with a warning.",
+		Confirm: "Questions, the events Investigate with AI sends, the model's answers and any API key will cross the network unencrypted, where anyone on the way can read or change them. " +
+			"Use an https:// address instead when you can.", ConfirmWhen: "on"},
 	{Key: "assistant.model", Scope: ScopeCluster, Section: "assistant", Label: "Model", Type: TypeText,
 		Help:        "Which model answers. With an API key saved, the list comes from the provider itself. Required for a local model or OpenAI-compatible service, such as llama3.1 with Ollama.",
 		Placeholder: "llama3.1", EmptyMeans: "the provider's default model", problem: modelProblem},
@@ -592,6 +597,10 @@ var Registry = []Setting{
 	{Key: "auth.oidc.button_label", Scope: ScopeCluster, Section: "sso", Label: "Button label", Type: TypeText,
 		Help:        "The sign-in page's button.",
 		Placeholder: "Sign in with Okta", EmptyMeans: "Sign in with and the provider's name"},
+	{Key: "auth.oidc.require_mfa", Scope: ScopeCluster, Section: "sso", Label: "Check two-step sign-in", Type: TypeBool,
+		Help: "When Require two-step sign-in is Everyone, lets in only people whose ID token shows a second factor: its amr claim names mfa, or two or more ways of signing in. " +
+			"Turn it on once the provider asks Signalith's users for a second factor and sends amr (Microsoft Entra ID and Okta do; Keycloak with its AMR mapper; Google does not). " +
+			"Off, the provider alone decides. Upgrade every server first."},
 	{Key: "auth.saml.enabled", Scope: ScopeCluster, Section: "sso", Label: "SAML single sign-on", Type: TypeBool,
 		Help: "Shows a sign-in button for the SAML identity provider on the sign-in page. Works alongside OpenID Connect, local users, directory sign-in and the built-in admin."},
 	{Key: "auth.saml.provider", Scope: ScopeCluster, Section: "sso", Label: "Identity provider", Type: TypeChoice,
@@ -623,6 +632,11 @@ var Registry = []Setting{
 	{Key: "auth.saml.button_label", Scope: ScopeCluster, Section: "sso", Label: "Button label", Type: TypeText,
 		Help:        "The sign-in page's button.",
 		Placeholder: "Sign in with AD FS", EmptyMeans: "Sign in with and the provider's name"},
+	{Key: "auth.saml.mfa_context", Scope: ScopeCluster, Section: "sso", Label: "Two-step sign-in context", Type: TypeText,
+		Help: "When Require two-step sign-in is Everyone, asks the provider for this authentication context and lets in only people whose assertion names it " +
+			"(its AuthnContextClassRef, or Microsoft's authnmethodsreferences attribute). AD FS: http://schemas.microsoft.com/claims/multipleauthn. " +
+			"Empty, the provider alone decides. Upgrade every server first.",
+		Placeholder: "http://schemas.microsoft.com/claims/multipleauthn", EmptyMeans: "none asked for"},
 	{Key: "auth.scim.enabled", Scope: ScopeCluster, Section: "sso", Label: "Provisioning (SCIM)", Type: TypeBool,
 		Help: "Lets the identity provider add, update, disable and remove single sign-on users before they sign in, over SCIM 2.0. Roles still come from groups at each sign-in."},
 	{Key: "auth.scim.token_sha256", Scope: ScopeCluster, Section: "sso", Label: "SCIM token", Type: TypeText,
@@ -748,6 +762,10 @@ var Excluded = map[string]Exclusion{
 	"demo.enabled":               {ScopeServer, "Demo mode turns off sign-in with passwords, event intake and everything that reaches other systems, so only signalith.yaml or SIGNALITH_DEMO can turn it on or off, never a page. See docs/demo.md."},
 	"demo.admin_networks":        {ScopeServer, "It decides where password sign-in works in demo mode, so only signalith.yaml or SIGNALITH_DEMO_ADMIN_NETWORKS can set it, never a page. See docs/demo.md."},
 	"cluster.node_name":          {ScopeBootstrap, "This server's name is set in signalith.yaml or with SIGNALITH_NODE_NAME, and kept in its state folder once chosen. The Servers page shows it."},
+
+	// Only the file can let this server restore plain archives that no
+	// key authenticates, never a page or the shared settings.
+	"retention.allow_unauthenticated_archives": {ScopeServer, "It lets this server restore plain archives that no key authenticates, so only signalith.yaml can turn it on, for as long as such archives are restored. See docs/retention.md."},
 }
 
 // ScopeOf returns the scope of a setting of Config, on the page or not,
@@ -1109,6 +1127,15 @@ func checkReplicas(v any) error {
 
 // noSecretIn refuses an address with a password or key in it, which
 // would be shown on the page and in logs; why says where it goes instead.
+// checkModelURL checks assistant.url: no password or key in it, no ? or #
+// part, and not a link-local or cloud metadata address.
+func checkModelURL(v any) error {
+	if err := noSecretIn("put the key in API key below")(v); err != nil {
+		return err
+	}
+	return assistant.CheckURL(v.(string))
+}
+
 func noSecretIn(why string) func(any) error {
 	return func(v any) error {
 		if hasSecret(v.(string)) {

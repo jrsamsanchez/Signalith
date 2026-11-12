@@ -956,6 +956,7 @@ marks them, and each is tagged for what it needs:
 | `needs-sysmon` | Needs Sysmon | Sysmon events: tick **Sysmon** on the Windows install line |
 | `needs-process-auditing` | Needs process auditing | Program starts: Sysmon, or the Security log's 4688 events with the command line (**Audit Process Creation** and **Include command line in process creation events**) |
 | `needs-powershell-logging` | Needs PowerShell logging | PowerShell script block or module logging: tick **PowerShell** on the Windows install line and turn the logging on by group policy |
+| `needs-audit-policy` | Needs an audit policy | Security events of an audit subcategory Windows leaves off, turned on by group policy or `auditpol /set /subcategory:"<name>" /success:enable`: 4656, 4658, 4660 and 4663 (**File System**, **Registry**, **Kernel Object** or **Handle Manipulation**, with an audit entry on the objects), 4657 (**Registry**), 4661 (**SAM**), 4697 (**Security System Extension**), 4698 to 4702 (**Other Object Access Events**), 5136, 5137, 5139 and 5141 (**Directory Service Changes**), 5140 (**File Share**), 5145 (**Detailed File Share**), 5156 to 5158 (**Filtering Platform Connection**), 5447 (**Filtering Platform Policy Change**), 4886 and 4887 (**Certification Services**) |
 | `needs-auditd` | Needs the audit log | The Linux audit log, recording the programs that run |
 
 Type a tag in the filter of Browse rules to list those rules, such as `starter` or
@@ -1214,7 +1215,8 @@ when the field is present, `OR` binds tighter than `AND` (`a b OR c` is
 `a AND (b OR c)`), and `\\` is one backslash, quoted or not, as in Splunk's search
 syntax. Sysmon's user (`NT AUTHORITY\SYSTEM`) compares as the name alone
 (`SYSTEM`), the way Splunk's Sysmon add-on reads it. TTP rules raise findings and add risk; anomaly rules only
-add risk, as their authors intend. Anomalies are low. security_content now gives
+add risk, as their authors intend, with the risk score their authors give them
+(most add 20, a few 30 to 50). Anomalies are low. security_content now gives
 nearly every TTP the same risk score (50), so a TTP is ranked by the ATT&CK
 techniques it detects: critical for ransomware, recovery inhibited, wiping and the
 exploitation of a named CVE; high for credential theft, defenses disabled,

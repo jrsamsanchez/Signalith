@@ -91,6 +91,9 @@ func applyMakeMV(ctx context.Context, res *Result, c *query.MakeMV) error {
 		}
 		var parts []string
 		if re != nil {
+			if !ev.regexWork(re, len(s)) {
+				return ev.err
+			}
 			for _, m := range re.FindAllStringSubmatch(s, maxMultiValues) {
 				v := m[0]
 				if len(m) > 1 {

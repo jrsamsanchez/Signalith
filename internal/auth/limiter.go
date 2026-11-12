@@ -48,7 +48,17 @@ import (
 // An address that stands for many people (Client.Shared: a proxy, load
 // balancer or NAT) has neither of the first two buckets and is never known:
 // its sign-ins are counted per account, so nobody behind it can lock the
-// others out.
+// others out. It has a ceiling instead: past MaxPerShared failures within
+// a minute, further attempts from it are paced to MaxPerShared a minute
+// (one at a time, each a minute/MaxPerShared after the last failure), so it
+// cannot be used to guess across accounts or keep the server checking
+// passwords as fast as it can. Nothing is locked. The ceiling is checked
+// before the password, so it does not hold back a known browser or anyone
+// signing in to an account that was signed in to from that shared address
+// before (with the same password): junk-name failures from one person
+// behind a NAT then cannot keep everyone else behind it out (RT-01,
+// AUTHRT-02). Such a pair is not known in any other way: its failures
+// still count toward the account's strangers' slow-down.
 //
 // A successful sign-in clears only the failures of its own address (or
 // browser) and account, so signing in to one account never helps guess
@@ -72,7 +82,10 @@ type Limiter struct {
 	// KnownFor is how long an address stays known for an account after a
 	// successful sign-in from it.
 	KnownFor time.Duration
-	Now      func() time.Time
+	// MaxPerShared is the most failures within a minute from a shared
+	// address; 0 for no ceiling.
+	MaxPerShared int
+	Now          func() time.Time
 	// Divisor, when set, returns how many servers take sign-ins: Max,
 	// MaxPerAddress and MaxPerAccount are each divided by it (rounded up,
 	// and at least 3 unless they are lower), so a guesser spreading tries
@@ -93,6 +106,8 @@ type Limiter struct {
 	external map[string]time.Time
 	// lockSecret keys LockKey (SetLockSecret).
 	lockSecret []byte
+	// pruned is when buckets with nothing left in them were last let go.
+	pruned time.Time
 }
 
 // Lock scopes (Limiter.OnLock).
@@ -193,10 +208,11 @@ type bucket struct {
 // NewLimiter allows 10 failures per address and account and 30 per address
 // within 15 minutes, then refuses for 15 minutes; and slows an account down
 // for browsers and addresses that never signed in to it after 30 failures
-// within an hour, up to a 15 minute wait.
+// within an hour, up to a 15 minute wait. A shared address may fail 300
+// times a minute.
 func NewLimiter() *Limiter {
 	return &Limiter{Max: 10, MaxPerAddress: 30, MaxPerAccount: 30, Window: 15 * time.Minute, Lockout: 15 * time.Minute,
-		SlowWindow: time.Hour, MaxSlow: 15 * time.Minute, KnownFor: 30 * 24 * time.Hour,
+		SlowWindow: time.Hour, MaxSlow: 15 * time.Minute, KnownFor: 30 * 24 * time.Hour, MaxPerShared: 300,
 		Now: time.Now, buckets: map[string]*bucket{}, known: map[string]time.Time{}}
 }
 
@@ -258,7 +274,15 @@ type Failure struct {
 	// Slowed is how long strangers must now wait before trying this
 	// account again; 0 when they need not.
 	Slowed time.Duration
+	// SlowStarted is set when this failure started the account's
+	// slow-down for strangers (the first failure past MaxPerAccount),
+	// rather than adding to one already on.
+	SlowStarted bool
 }
+
+// Started reports whether this failure began a lock or slow-down, the
+// moment worth recording however many failures are recorded already.
+func (f Failure) Started() bool { return f.Locked || f.SlowStarted }
 
 // LockedOut reports whether further tries are refused or slowed for a
 // while.
@@ -266,10 +290,14 @@ func (f Failure) LockedOut() bool { return f.Locked || f.Slowed > 0 }
 
 // Bucket kinds.
 const (
-	kindLock  = iota // locks for Lockout at its limit
-	kindKnown        // known browsers' or known addresses' failures for an account
-	kindSlow         // strangers' failures for an account
+	kindLock    = iota // locks for Lockout at its limit
+	kindKnown          // known browsers' or known addresses' failures for an account
+	kindSlow           // strangers' failures for an account
+	kindCeiling        // a shared address's failures: waits, never locks
 )
+
+// sharedWindow is the window of MaxPerShared.
+const sharedWindow = time.Minute
 
 type slot struct {
 	key    string
@@ -287,14 +315,29 @@ type Attempt struct {
 	address string // known after a success; "" for a shared address
 	account string
 	version string
-	done    bool
+	// shared is the shared address, known for the account after a
+	// success only to pass its ceiling.
+	shared string
+	done   bool
 }
+
+// AccountKey is what the limiter keeps of an account name: a digest of
+// it, ignoring case and spacing, so a bucket costs the same whatever
+// length of name a guesser sends.
+func AccountKey(account string) string {
+	sum := sha256.Sum256([]byte(strings.ToLower(strings.TrimSpace(account))))
+	return hex.EncodeToString(sum[:16])
+}
+
+// pruneEvery is how often Begin lets go of buckets with nothing left in
+// them, however few there are.
+const pruneEvery = time.Minute
 
 // Begin starts an attempt to sign in to account from c, or returns a
 // *Refusal saying how long until one is allowed. Account names ignore case
 // and spacing.
 func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
-	account = strings.ToLower(strings.TrimSpace(account))
+	account = AccountKey(account)
 	lim := l.limits()
 	now := l.Now()
 	l.mu.Lock()
@@ -302,11 +345,21 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 	if l.buckets == nil {
 		l.buckets = map[string]*bucket{}
 	}
-	if len(l.buckets) > 50000 {
+	if len(l.buckets) > 50000 || now.Sub(l.pruned) >= pruneEvery || now.Before(l.pruned) {
 		l.pruneLocked(now)
+		l.pruned = now
 	}
 	a := &Attempt{l: l, account: account, version: c.Version}
 	known := !c.Shared && l.knownLocked(c.Address, account, c.Version, now)
+	if c.Shared {
+		a.shared = c.Address
+	}
+	// A known browser, or an account signed in to from this shared
+	// address before, is not held to its ceiling.
+	if c.Shared && c.Address != "" && l.MaxPerShared > 0 && c.Browser == "" &&
+		!l.knownLocked(sharedKnown+c.Address, account, c.Version, now) {
+		a.slots = append(a.slots, slot{"s\x00" + c.Address, kindCeiling, l.MaxPerShared, sharedWindow})
+	}
 	if !c.Shared {
 		a.address = c.Address
 		// Someone who signed in to this account from here before is not
@@ -379,6 +432,18 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 				refuse(Busy, ReasonBusy)
 			} else if w := b.failures[n-1].Add(l.slowWait(n, s.limit)).Sub(now); w > 0 {
 				refuse(w, ReasonSlowed)
+			}
+		case kindCeiling:
+			if n+b.pending < s.limit {
+				continue
+			}
+			// Past the ceiling, attempts are paced rather than held off
+			// for the rest of the minute: one at a time, each a
+			// window/limit after the last failure.
+			if n == 0 || b.pending > 0 {
+				refuse(Busy, ReasonBusy)
+			} else if w := b.failures[n-1].Add(s.window / time.Duration(s.limit)).Sub(now); w > 0 {
+				refuse(max(w, time.Second), ReasonBusy)
 			}
 		}
 	}
@@ -480,6 +545,7 @@ func (a *Attempt) Fail() Failure {
 			locks = append(locks, lock{scopeOf(s.key), LockKey(l.lockSecret, s.key), b.lockedUntil})
 		case s.kind == kindSlow && n >= s.limit:
 			f.Slowed = l.slowWait(n, s.limit)
+			f.SlowStarted = f.SlowStarted || n == s.limit
 			if l.MaxSlow > 0 && f.Slowed >= l.MaxSlow {
 				locks = append(locks, lock{ScopeSlow, LockKey(l.lockSecret, s.key), now.Add(f.Slowed)})
 			}
@@ -509,8 +575,13 @@ func (a *Attempt) Succeed() {
 			delete(l.buckets, a.own)
 		}
 	}
-	if a.address == "" {
-		return
+	address := a.address
+	if address == "" {
+		if a.shared == "" {
+			return
+		}
+		// Known only to pass the shared address's ceiling.
+		address = sharedKnown + a.shared
 	}
 	if l.known == nil {
 		l.known = map[string]time.Time{}
@@ -529,8 +600,12 @@ func (a *Attempt) Succeed() {
 			delete(l.known, k)
 		}
 	}
-	l.known[knownKey(a.address, a.account, a.version)] = now
+	l.known[knownKey(address, a.account, a.version)] = now
 }
+
+// sharedKnown prefixes a shared address in l.known, so it is never taken
+// for the same address unshared.
+const sharedKnown = "s\x00"
 
 // Done ends an attempt that neither failed nor succeeded, such as one the
 // directory could not answer.

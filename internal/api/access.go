@@ -290,7 +290,7 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 		s.noteName(r)
 		// Searches the request runs count against the user's share of
 		// the search slots.
-		ctx := search.ForUser(context.WithValue(r.Context(), userKey{}, p), searchUser(p))
+		ctx := search.ForUser(context.WithValue(r.Context(), userKey{}, p), s.searchUser(r, p))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -677,6 +677,39 @@ func (s *Server) beginAttempt(r *http.Request, from clientInfo, account, browser
 	return a, err
 }
 
+// signInFailsAMinute is the most failed sign-ins written to the audit
+// log in a minute from all clients together, and signInFailsPerClient
+// from one client (an IPv4 address or IPv6 /64). Anyone can fail a
+// sign-in with a made-up name, and a sender with many addresses, or
+// behind a shared one, is held back by no per-address limit.
+const (
+	signInFailsAMinute   = 120
+	signInFailsPerClient = 10
+)
+
+// auditSignInFailure says whether a failed sign-in goes to the audit log,
+// as how many of the client's failures the record stands for (0: none):
+// always when it started a lock or slow-down (the audit alerts tell of
+// lockouts), else within signInFailsPerClient and signInFailsAMinute.
+// Only the failure that starts one is exempt: once an account is slowed,
+// every guess at it is (Failure.LockedOut), and those must stay within
+// the caps. A wrong two-step code after a right password (code) has a
+// budget of its own, so wrong passwords and made-up names cannot crowd
+// out the records that say someone has the password. What the totals
+// leave out is said in one record (logSkipped).
+func (s *Server) auditSignInFailure(from clientInfo, f auth.Failure, code bool) int {
+	counter, what := &s.signInFailed, "failed sign-ins"
+	if code {
+		counter, what = &s.codeFailed, "wrong two-step codes"
+	}
+	n, skipped := counter.noteUpTo(from.key(), time.Now(), signInFailsPerClient, signInFailsAMinute)
+	s.logSkipped(what, skipped)
+	if n == 0 && f.Started() {
+		n = 1
+	}
+	return n
+}
+
 // noteFailure logs what a wrong password led to beyond the failure
 // itself: an address locked for every account may be many people behind
 // one proxy or NAT, which can be listed so that it never is.
@@ -689,6 +722,14 @@ func (s *Server) noteFailure(from clientInfo, f auth.Failure) {
 	}
 }
 
+// The longest username and password signIn checks, in bytes: past any
+// name an account can have, and past users.MaxPasswordLength characters
+// in any script.
+const (
+	maxSignInName     = 256
+	maxSignInPassword = 4 * users.MaxPasswordLength
+)
+
 // signIn checks a username and password for the sign-in page or Basic
 // auth: the built-in admin first, then local users, then the directory.
 // A local username is never looked up in the directory. Wrong passwords
@@ -697,6 +738,13 @@ func (s *Server) noteFailure(from clientInfo, f auth.Failure) {
 func (s *Server) signIn(r *http.Request, name, password string, step secondFactor, method string) (*principal, error) {
 	from := s.client(r)
 	name = strings.TrimSpace(name)
+	if len(name) > maxSignInName || len(password) > maxSignInPassword {
+		// No account has such a name or password: refused before the
+		// limits, the password check and the audit log, so a guesser
+		// cannot make the server keep or write what was sent.
+		s.Log.Debug("sign-in refused: username or password too long", slices.Concat(from.logAttrs(), []any{"method", method})...)
+		return nil, errWrongCredentials
+	}
 	attempt, err := s.beginAttempt(r, from, name, "")
 	if err != nil {
 		return nil, err
@@ -725,8 +773,17 @@ func (s *Server) signIn(r *http.Request, name, password string, step secondFacto
 			// that may not sign in: no guess was refused.
 			attempt.Done()
 		}
-		s.Log.Warn("sign-in failed", slices.Concat([]any{"audit", true, "user", name}, from.logAttrs(),
-			[]any{"method", method, "reason", reason, "locked_out", f.LockedOut()})...)
+		attrs := slices.Concat([]any{"user", name}, from.logAttrs(), []any{"method", method, "reason", reason, "locked_out", f.LockedOut()})
+		code := errors.Is(err, errWrongCode) || errors.Is(err, errPasskeyWrong) || errors.Is(err, errPasskeyCloned)
+		if n := s.auditSignInFailure(from, f, code); n > 0 {
+			if n > 1 {
+				// This client's failures since its last record.
+				attrs = append(attrs, "failures", n)
+			}
+			s.Log.Warn("sign-in failed", slices.Concat([]any{"audit", true}, attrs)...)
+		} else {
+			s.Log.Debug("sign-in failed", attrs...)
+		}
 		s.noteFailure(from, f)
 		return nil, err
 	}
@@ -736,6 +793,10 @@ func (s *Server) signIn(r *http.Request, name, password string, step secondFacto
 	attrs := []any{"method", method}
 	if method == "session" {
 		attrs = append(attrs, s.noticeLog()...)
+	}
+	if p.breakGlass {
+		// The audit alert for the built-in admin's sign-ins says so.
+		attrs = append(attrs, "break_glass", true)
 	}
 	if p.codeUsed != nil {
 		attrs = append(attrs, "mfa", string(p.codeUsed.Kind))
@@ -758,7 +819,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 		if s.builtinOff() {
 			// Answered as a wrong password, in the same time, so the
 			// well-known name never confirms a guessed password.
-			users.WasteTime(password)
+			store.WasteTime(name, password)
 			return nil, "built-in admin turned off", errWrongCredentials
 		}
 		ok, local := s.checkBuiltinPassword(password, true)
@@ -789,7 +850,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	}
 	d := s.dir()
 	if !d.Enabled() {
-		users.WasteTime(password)
+		store.WasteTime(name, password)
 		return nil, "no such user", errWrongCredentials
 	}
 	// DOMAIN\name is looked up as name, so a local or built-in name with a
@@ -797,7 +858,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	login := users.LoginName(name)
 	if !strings.EqualFold(login, name) {
 		if u, ok := store.Get(login); s.isBuiltin(login) || (ok && u.Source == users.SourceLocal) {
-			users.WasteTime(password)
+			store.WasteTime(name, password)
 			return nil, "a domain in front of a local user's or the built-in admin's name", errWrongCredentials
 		}
 	}
@@ -807,7 +868,7 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 	hashed := make(chan struct{})
 	go func() {
 		defer close(hashed)
-		users.WasteTime(password)
+		store.WasteTime(name, password)
 	}()
 	defer func() { <-hashed }()
 	ctx, cancel := context.WithTimeout(ctx, time.Minute)
@@ -994,6 +1055,9 @@ func (s *Server) revokeDirectoryUser(ctx context.Context, name, reason string) {
 	ended := s.sessions().EndUser(ctx, u.Username, "")
 	if changed || ended > 0 {
 		s.Log.Warn("directory user lost access", "audit", true, "user", u.Username, "reason", reason, "sessions_ended", ended, "by", "directory")
+	}
+	if changed {
+		s.noteTokensKeptBy("directory", u.Username)
 	}
 }
 

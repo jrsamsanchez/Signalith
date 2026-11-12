@@ -74,6 +74,108 @@ func TestRenameBuiltin(t *testing.T) {
 	}
 }
 
+// AUTHRT-10: the built-in admin turned off under its old name after the
+// copy and before the delete stays off under the new one.
+func TestRenameBuiltinKeepsATurnOffDuringTheRename(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("kim", users.Admin)
+	b.cycle()
+	t.Cleanup(func() { renameStep = nil })
+	renameStep = func(n int) error {
+		if n != 3 {
+			return nil
+		}
+		// Another server, still reading the old name's document, turns
+		// the built-in admin off there.
+		_, err := b.docs.Users().Mutate(ctx, "other", "admin", func(v *UserBody) error {
+			v.Disabled = true
+			v.SessionEpoch++
+			return nil
+		})
+		return err
+	}
+	if _, err := a.docs.RenameBuiltin(ctx, "test", "root"); err != nil {
+		t.Fatal(err)
+	}
+	renameStep = nil
+	for _, s := range []*server{a, b} {
+		s.cycle()
+		after, _, ok := s.docs.BuiltinUser()
+		if !ok || after.Username != "root" || !after.Disabled {
+			t.Errorf("%s: built-in admin after the rename %+v %v, want root turned off", s.name, after, ok)
+		}
+		if _, _, ok := s.docs.Users().Get("admin"); ok {
+			t.Errorf("%s: the old name's document is still there", s.name)
+		}
+	}
+}
+
+// AUTHRT-10: carrying over a change made to the old name's document
+// during a rename takes only what changed there; a password set on the
+// new name meanwhile is not put back to the old one.
+func TestRenameBuiltinMergesOnlyTheOldDocumentsChanges(t *testing.T) {
+	_, a, b, _ := pair(t)
+	ctx := context.Background()
+	a.addUser("kim", users.Admin)
+	b.cycle()
+	t.Cleanup(func() { renameStep = nil })
+	renameStep = func(n int) error {
+		if n != 3 {
+			return nil
+		}
+		// The new name's password changes on this server...
+		if _, err := a.docs.Users().Mutate(ctx, "test", "root", func(v *UserBody) error {
+			v.PasswordHash = "new-name-hash"
+			v.MFA = &users.StoredMFA{}
+			v.SessionEpoch++
+			return nil
+		}); err != nil {
+			return err
+		}
+		// ...while another server turns the old name off and renames
+		// its display name.
+		_, err := b.docs.Users().Mutate(ctx, "other", "admin", func(v *UserBody) error {
+			v.Disabled = true
+			v.Name = "Old Admin"
+			v.SessionEpoch++
+			return nil
+		})
+		return err
+	}
+	if _, err := a.docs.RenameBuiltin(ctx, "test", "root"); err != nil {
+		t.Fatal(err)
+	}
+	renameStep = nil
+	for _, s := range []*server{a, b} {
+		s.cycle()
+		after, _, ok := s.docs.BuiltinUser()
+		if !ok || after.Username != "root" {
+			t.Fatalf("%s: built-in admin after the rename %+v %v", s.name, after, ok)
+		}
+		if after.PasswordHash != "new-name-hash" || after.MFA == nil {
+			t.Errorf("%s: the new name's password or two-step sign-in was reverted: %q %v", s.name, after.PasswordHash, after.MFA)
+		}
+		if !after.Disabled || after.Name != "Old Admin" {
+			t.Errorf("%s: the old name's changes were not carried over: disabled %v name %q", s.name, after.Disabled, after.Name)
+		}
+	}
+}
+
+func TestMergeChangedTakesOnlyChangedFields(t *testing.T) {
+	base := UserBody{PasswordHash: "h0", Name: "A", SessionEpoch: 1}
+	prev := base
+	v := base
+	v.PasswordHash, v.SessionEpoch = "h-new", 2
+	if mergeChanged(&v, &base, &prev) {
+		t.Error("an unchanged old document changed the new one")
+	}
+	prev.PasswordHash, prev.SessionEpoch = "h-old", 2
+	if !mergeChanged(&v, &base, &prev) || v.PasswordHash != "h-old" || v.SessionEpoch <= 2 {
+		t.Errorf("a password changed on the old name did not carry over: %+v", v)
+	}
+}
+
 // A rename keeps everything that guards the built-in admin's sign-in: a
 // built-in admin turned off stays off under the new name, and its
 // two-step sign-in and passkeys go with it. A server watching sees the

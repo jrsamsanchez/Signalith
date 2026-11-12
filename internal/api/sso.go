@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -13,6 +14,7 @@ import (
 	"html"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strings"
 	"sync"
@@ -121,7 +123,13 @@ func localPath(next string) string {
 	}
 	u, err := url.Parse(next)
 	if err != nil || u.Scheme != "" || u.Host != "" || u.User != nil || u.Opaque != "" || !strings.HasPrefix(u.Path, "/") ||
-		strings.HasPrefix(u.Path, "//") || strings.HasPrefix(u.Path, "/api/") || u.Path == "/login" {
+		strings.HasPrefix(u.Path, "//") {
+		return "/"
+	}
+	// Checked and used as the browser resolves it: /./api/x is /api/x,
+	// and /.//host is /host (WEB-06).
+	u.Path, u.RawPath = path.Clean(u.Path), ""
+	if p := strings.ToLower(u.Path); strings.HasPrefix(p, "//") || p == "/api" || strings.HasPrefix(p, "/api/") || p == "/login" {
 		return "/"
 	}
 	out := u.EscapedPath()
@@ -141,7 +149,8 @@ func localPath(next string) string {
 // answer, and is always written to the audit log. One that names nobody
 // can be made by anyone, not signed in, as often as they like (a link
 // to the start page, a callback with made-up text): it is written at
-// most once a minute for each address, with how many there were since,
+// most once a minute for each address (an IPv6 /64 counting as one),
+// with how many there were since, and 60 times a minute in all,
 // and not at all while single sign-on is off, so it can neither flood
 // the audit log nor crowd out the audit alerts.
 func (s *Server) ssoFail(w http.ResponseWriter, r *http.Request, code, user, detail string) {
@@ -151,7 +160,9 @@ func (s *Server) ssoFail(w http.ResponseWriter, r *http.Request, code, user, det
 		c := s.conf()
 		n := 0
 		if c.OIDCOn() || c.SAMLOn() {
-			n = s.ssoRefused.note(s.client(r).Addr.String(), time.Now())
+			var skipped int
+			n, skipped = s.ssoRefused.noteAll(s.client(r).key(), time.Now())
+			s.logSkipped("failed single sign-ons", skipped)
 		}
 		if audited = n > 0; audited {
 			attrs = append(attrs, "failures", n)
@@ -166,37 +177,72 @@ func (s *Server) ssoFail(w http.ResponseWriter, r *http.Request, code, user, det
 }
 
 // ssoFailsAMinute is the most failed single sign-ons that name no user
-// written to the audit log in a minute, from all addresses together.
+// written to the audit log in a minute, from all addresses together; and
+// the same for refused SCIM tokens and metrics scrapes.
 const ssoFailsAMinute = 60
 
-// ssoRefusals limits the audit records of failed single sign-ons that
-// name no user: one a minute for each address, as for refused SCIM
-// tokens, and ssoFailsAMinute in all, as one sender may have many
-// addresses.
+// ssoRefusals limits the audit records of refusals anyone can cause
+// (failed single sign-ons that name no user, refused SCIM tokens and
+// scrapes, failed sign-ins): one a minute for each client, an IPv6 /64
+// counting as one, and ssoFailsAMinute in all, as one sender may have
+// many addresses (noteUpTo sets other limits). What the total keeps
+// out is counted, and reported once the minute is over (noteAll), so
+// the audit log says that records are missing.
 type ssoRefusals struct {
 	by    scimRefusals
 	mu    sync.Mutex
 	since time.Time
 	count int
+	// skipped is how many the total kept out this minute, and unsaid
+	// how many it kept out in the minute before, not yet reported.
+	skipped int
+	unsaid  int
 }
 
-// note counts a failure from addr, and returns how many to log now (0 to
+// note counts a refusal from key, and returns how many to log now (0 to
 // log nothing).
-func (f *ssoRefusals) note(addr string, now time.Time) int {
-	n := f.by.note(addr, now)
-	if n == 0 {
-		return 0
-	}
+func (f *ssoRefusals) note(key string, now time.Time) int {
+	n, _ := f.noteAll(key, now)
+	return n
+}
+
+// noteAll is note, and also returns how many refusals the total kept out
+// of the audit log in the minute before, once, for the caller to write
+// in one record (Server.logSkipped).
+func (f *ssoRefusals) noteAll(key string, now time.Time) (n, skipped int) {
+	return f.noteUpTo(key, now, 1, ssoFailsAMinute)
+}
+
+// noteUpTo is noteAll with up to perKey records a minute for a client and
+// perMinute in all.
+func (f *ssoRefusals) noteUpTo(key string, now time.Time, perKey, perMinute int) (n, skipped int) {
+	n = f.by.noteUpTo(key, now, perKey)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if now.Sub(f.since) >= time.Minute {
-		f.since, f.count = now, 0
+	if now.Sub(f.since) >= time.Minute || now.Before(f.since) {
+		f.unsaid += f.skipped
+		f.since, f.count, f.skipped = now, 0, 0
 	}
-	if f.count >= ssoFailsAMinute {
-		return 0
+	skipped, f.unsaid = f.unsaid, 0
+	if n == 0 {
+		return 0, skipped
+	}
+	if f.count >= perMinute {
+		f.skipped += n
+		return 0, skipped
 	}
 	f.count++
-	return n
+	return n, skipped
+}
+
+// logSkipped writes one audit record saying that n of what (failed
+// single sign-ons, say) were not written to the audit log in the minute
+// before, as there were too many; it writes nothing for 0.
+func (s *Server) logSkipped(what string, n int) {
+	if n > 0 {
+		s.Log.Warn("audit records left out", "audit", true, "what", what, "count", n,
+			"reason", "too many in a minute, from all addresses together")
+	}
 }
 
 // handleSSOStart sends the browser to the identity provider.
@@ -236,8 +282,7 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 	req := oidc.NewRequest()
 	st := ssoState{State: req.State, Nonce: req.Nonce, Verifier: req.Verifier, Next: next, Issuer: set.Issuer,
 		Expires: time.Now().Add(ssoWait).Unix(), Agreed: agreed}
-	data, _ := json.Marshal(st)
-	http.SetCookie(w, &http.Cookie{Name: s.ssoCookieName(r), Value: base64.RawURLEncoding.EncodeToString(data), Path: "/",
+	http.SetCookie(w, &http.Cookie{Name: s.ssoCookieName(r), Value: s.sealSSOState(st), Path: "/",
 		MaxAge: int(ssoWait.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookie(r)})
 	target := oidc.AuthURL(md, oidc.Settings{Issuer: set.Issuer, ClientID: set.ClientID, RedirectURL: ssoRedirectURL(c), Scopes: set.Scopes}, req)
 	http.Redirect(w, r, target, http.StatusSeeOther)
@@ -253,11 +298,47 @@ func (s *Server) readSSOState(w http.ResponseWriter, r *http.Request) (ssoState,
 	if err != nil {
 		return st, false
 	}
-	data, err := base64.RawURLEncoding.DecodeString(ck.Value)
-	if err != nil || json.Unmarshal(data, &st) != nil || st.State == "" || st.Nonce == "" || st.Verifier == "" {
+	st, ok := s.openSSOState(ck.Value)
+	if !ok || st.State == "" || st.Nonce == "" || st.Verifier == "" {
 		return st, false
 	}
 	return st, time.Now().Unix() <= st.Expires
+}
+
+// ssoStatePurpose keys the MAC of the OpenID Connect sign-in cookie.
+const ssoStatePurpose = "oidc sign-in"
+
+// sealSSOState returns the cookie value of st: its JSON, and a MAC under
+// the servers' shared key, as sealSAMLState does, so a cookie Signalith
+// did not make, or changed, is refused. That stops a forged cookie, not
+// login CSRF (AUTHRT-11): someone who can set this browser's cookies can
+// plant a genuine one from a sign-in they started and finish it with
+// their own code. What stops that is the __Host- prefix over HTTPS, which
+// no other site can set; over plain HTTP whoever is on the path can set
+// (and read) any cookie, so no further cookie binding the state to the
+// browser would help. docs/sso.md says to use HTTPS.
+func (s *Server) sealSSOState(st ssoState) string {
+	data, _ := json.Marshal(st)
+	body := base64.RawURLEncoding.EncodeToString(data)
+	return body + "." + base64.RawURLEncoding.EncodeToString(s.browserKey().MAC(ssoStatePurpose, []byte(body)))
+}
+
+// openSSOState checks and reads a cookie value sealSSOState made.
+func (s *Server) openSSOState(v string) (ssoState, bool) {
+	var st ssoState
+	body, mac, ok := strings.Cut(v, ".")
+	if !ok {
+		return st, false
+	}
+	got, err := base64.RawURLEncoding.DecodeString(mac)
+	if err != nil || !hmac.Equal(got, s.browserKey().MAC(ssoStatePurpose, []byte(body))) {
+		return st, false
+	}
+	data, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil || json.Unmarshal(data, &st) != nil {
+		return st, false
+	}
+	return st, true
 }
 
 // handleSSOCallback finishes a sign-in: the provider sent the browser
@@ -306,6 +387,12 @@ func (s *Server) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 	claims, err := cl.Verify(ctx, md, set.ClientID, st.Nonce, tok.IDToken)
 	if err != nil {
 		s.ssoFail(w, r, "failed", "", err.Error())
+		return
+	}
+	// Read from the signed ID token only, before userinfo adds claims.
+	if c.MFARequiredMode() == "everyone" && set.RequireMFA && !claims.MFA() {
+		s.ssoFail(w, r, "mfa", claims.String(set.UsernameClaim), "the ID token does not show a second factor (amr: "+
+			oidcText(strings.Join(claims.Strings("amr"), " "))+"); have the identity provider ask Signalith's users for one, or turn Check two-step sign-in off")
 		return
 	}
 	note := ""

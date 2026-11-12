@@ -170,6 +170,7 @@
     notice: NOTICE_REFUSED,
     https: ['SAML sign-in needs HTTPS.', 'Open Signalith at its https:// address and try again, or ask a Signalith admin.'],
     replay: ['That sign-in was already used.', 'Start a new sign-in from this page.'],
+    mfa: ['Signalith needs you to sign in with two steps at your identity provider.', 'Your identity provider didn’t say you used a second factor. Try again, or ask a Signalith admin.'],
     domain: ['Your email address isn’t in a domain that can use Signalith.', 'Sign in with your work account, or ask a Signalith admin.'],
     role: ['Your account can’t use Signalith yet.', 'It isn’t in a group that Signalith lets in. Ask a Signalith admin to add you to one.'],
     new: ['You haven’t used Signalith before, and new users aren’t added.', 'Ask a Signalith admin to let you in.'],

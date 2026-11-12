@@ -21,6 +21,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/config"
+	"github.com/jrsamsanchez/signalith/internal/httpserver"
 	"github.com/jrsamsanchez/signalith/internal/shared"
 )
 
@@ -238,6 +239,11 @@ func TestProbes(t *testing.T) {
 	}
 	if code, out, h := get("/livez"); code != 200 || out["live"] != true || len(out) != 1 || h.Get("Cache-Control") != "no-store" {
 		t.Errorf("livez %d %v", code, out)
+	}
+	// WEB-08: the browser protections, as on every other answer.
+	if _, _, h := get("/livez"); h.Get("Content-Security-Policy") != httpserver.ContentSecurityPolicy ||
+		h.Get("X-Frame-Options") != "DENY" || h.Get("X-Content-Type-Options") != "nosniff" || h.Get("Permissions-Policy") == "" {
+		t.Errorf("livez headers %v", h)
 	}
 	eventually(t, "ready", func() bool { code, _, _ := get("/readyz"); return code == 200 })
 	if code, out, _ := get("/readyz"); code != 200 || out["ready"] != true || len(out) != 1 {

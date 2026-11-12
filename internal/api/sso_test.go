@@ -337,6 +337,14 @@ func TestSSONextStaysHere(t *testing.T) {
 		"/%2F%2Fevil.example":   "/",
 		"/\r\nSet-Cookie: x=1":  "/",
 		"/a\"><script>":         "/a%22%3E%3Cscript%3E",
+		// WEB-06: checked as the browser resolves the path.
+		"/./api/logout":    "/",
+		"/x/../api/users":  "/",
+		"/.//evil.example": "/evil.example",
+		"/login/":          "/",
+		"/Login":           "/",
+		"/API/users":       "/",
+		"/a/./b/?q=1#x":    "/a/b?q=1#x",
 	} {
 		if got := localPath(in); got != want {
 			t.Errorf("localPath(%q) = %q, want %q", in, got, want)
@@ -490,7 +498,7 @@ func TestSSONextCheckedAtCallback(t *testing.T) {
 	p.Set(func(p *oidctest.Provider) {
 		p.Claims = map[string]any{"preferred_username": "fay", "groups": []any{"/soc"}}
 	})
-	ts, _ := newSSOServer(t, p, nil)
+	ts, srv := newSSOServer(t, p, nil)
 	b := browser(t, p)
 	b.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := b.Get(ts.URL + "/api/auth/oidc/start")
@@ -509,14 +517,20 @@ func TestSSONextCheckedAtCallback(t *testing.T) {
 	if ck == nil {
 		t.Fatal("no sign-in cookie")
 	}
-	raw, _ := base64.RawURLEncoding.DecodeString(ck.Value)
-	var st ssoState
-	if err := json.Unmarshal(raw, &st); err != nil {
-		t.Fatal(err)
+	st, ok := srv.openSSOState(ck.Value)
+	if !ok {
+		t.Fatal("the sign-in cookie does not open")
 	}
+	// A cookie changed by anyone but the server is refused (AUTHRT-11).
+	raw, _ := json.Marshal(ssoState{State: st.State, Nonce: st.Nonce, Verifier: st.Verifier, Issuer: st.Issuer, Expires: st.Expires})
+	for _, forged := range []string{base64.RawURLEncoding.EncodeToString(raw), base64.RawURLEncoding.EncodeToString(raw) + ".AAAA", ""} {
+		if _, ok := srv.openSSOState(forged); ok {
+			t.Errorf("a forged cookie %q opens", forged)
+		}
+	}
+	// One the server made with a next that is not local still lands on /.
 	st.Next = "//evil.example.com/"
-	raw, _ = json.Marshal(st)
-	b.Jar.SetCookies(base, []*http.Cookie{{Name: ssoCookie, Value: base64.RawURLEncoding.EncodeToString(raw), Path: "/"}})
+	b.Jar.SetCookies(base, []*http.Cookie{{Name: ssoCookie, Value: srv.sealSSOState(st), Path: "/"}})
 	b.CheckRedirect = nil
 	resp, err = b.Get(auth)
 	if err != nil {
@@ -526,5 +540,67 @@ func TestSSONextCheckedAtCallback(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), `content="0;url=/"`) || strings.Contains(string(body), "evil") {
 		t.Errorf("landing = %s", body)
+	}
+}
+
+// With two-step sign-in required of everyone and Check two-step sign-in
+// on, only an ID token whose amr shows a second factor lets someone in
+// (AUTH-209).
+func TestSSORequiresSecondFactorFromProvider(t *testing.T) {
+	p := oidctest.New(t)
+	base := map[string]any{"preferred_username": "dana", "email": "dana@corp.example.com", "email_verified": true, "groups": []any{"/soc"}}
+	for _, tc := range []struct {
+		name     string
+		mode     string
+		check    bool
+		claims   map[string]any
+		userinfo map[string]any
+		want     string // sso_error, or "" for signed in
+	}{
+		{name: "no amr", mode: "everyone", check: true, want: "mfa"},
+		{name: "password only", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd"}}, want: "mfa"},
+		{name: "mfa", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd", "mfa"}}},
+		{name: "password and code", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd", "otp"}}},
+		{name: "key and fingerprint", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"hwk", "fpt"}}},
+		{name: "password and federation", mode: "everyone", check: true, claims: map[string]any{"amr": []any{"pwd", "fed"}}, want: "mfa"},
+		// Only the signed ID token counts, not what userinfo adds.
+		{name: "amr from userinfo only", mode: "everyone", check: true, claims: map[string]any{"groups": nil},
+			userinfo: map[string]any{"groups": []any{"/soc"}, "amr": []any{"mfa"}}, want: "mfa"},
+		{name: "check off", mode: "everyone", check: false},
+		{name: "admins only", mode: "admins", check: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, s := newSSOServer(t, p, func(o *config.OIDC) { o.RequireMFA = tc.check })
+			s.Config.Auth.MFARequired = tc.mode
+			p.Set(func(p *oidctest.Provider) {
+				p.Claims = map[string]any{}
+				for k, v := range base {
+					p.Claims[k] = v
+				}
+				for k, v := range tc.claims {
+					if v == nil {
+						delete(p.Claims, k)
+					} else {
+						p.Claims[k] = v
+					}
+				}
+				p.UserInfo = tc.userinfo
+				if p.UserInfo == nil {
+					p.UserInfo = map[string]any{}
+				}
+			})
+			b := browser(t, p)
+			at, _ := ssoSignIn(t, b, ts, "")
+			code, _ := me(t, b, ts)
+			if tc.want != "" {
+				if at.Path != "/login" || at.Query().Get("sso_error") != tc.want || code != 401 {
+					t.Fatalf("ended at %s (me %d), want sso_error=%s", at, code, tc.want)
+				}
+				return
+			}
+			if code != 200 {
+				t.Fatalf("not signed in: ended at %s, me %d", at, code)
+			}
+		})
 	}
 }

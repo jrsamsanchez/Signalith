@@ -333,6 +333,9 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 
 	ret := newRetention(c, cl, log)
 	archiveCrypto(ret.Archive, c, t.r.clusterKey)
+	if err := recordLegacyArchives(ret.Archive, c); err != nil {
+		log.Warn("could not list the archives written before manifests had MACs; encrypted ones among them will need retention.allow_unauthenticated_archives to restore", "err", err)
+	}
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
 	pipeline := &ingest.Pipeline{Store: store.NewBulkGroup(cl, 0), Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log,
 		Rollover: &ingest.Rollover{Client: cl, Prefix: prefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log}}

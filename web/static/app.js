@@ -130,10 +130,16 @@ const looksLikeIP = (v) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v) || /^[0-9a-f]*:[0-9
 // api calls the Signalith API. Paths are relative to the page so the UI
 // works behind a proxy; a signed-out session goes to the sign-in page and
 // comes back here afterwards.
+// A session that ended (idle timeout, maximum age, ended by an admin, a
+// password change) signs out as the Sign out button does, so the next
+// person to sign in on this browser does not get this user's last query
+// or page; a password change or two-step setup the server asks for keeps
+// the same user and their state.
 let signingIn = false;
 const toSignIn = (change, mfa) => {
   if (signingIn) return;
   signingIn = true;
+  if (!change && !mfa) clearUserStorage();
   location.assign('login?' + (change ? 'change=1&' : '') + (mfa ? 'mfa=setup&' : '') + 'next=' + encodeURIComponent(location.pathname + location.search + location.hash));
 };
 // A request made with no one using the page in the last few seconds,
@@ -153,8 +159,8 @@ const backgroundAfter = 10000;
 // behind catches up before it answers, and a change saved through one
 // server is never shown as the old value by the next. A server that could
 // not catch up in time says so (X-Signalith-Stale), and a read is asked
-// again once. Every answer also carries the server's version: a page from
-// another version reloads once to match it (see apiVersion).
+// again once. Every answer also carries the server's build token: a page
+// from another build reloads once to match it (see apiVersion).
 const PAGE_VERSION = (document.querySelector('meta[name="signalith-version"]') || {}).content || '';
 const CONFIG_KEY = 'signalith.config';
 const configSeen = (() => {
@@ -181,8 +187,11 @@ function noteConfig(resp) {
 // upgrade under way): the page says so once instead of reloading again.
 const VERSION_KEY = 'signalith.versionReload';
 let versionNoted = false;
+// The page and the header carry the build token, not the version (the
+// sign-in page is public); a server from before build tokens sends only
+// X-Signalith-Version, which never matches a token, as it should not.
 function apiVersion(resp) {
-  const v = resp.headers.get('X-Signalith-Version');
+  const v = resp.headers.get('X-Signalith-Build') || resp.headers.get('X-Signalith-Version');
   if (!v || !PAGE_VERSION || v === PAGE_VERSION || versionNoted) return;
   versionNoted = true;
   let last = 0;
@@ -193,7 +202,7 @@ function apiVersion(resp) {
     return;
   }
   if (typeof toast === 'function') {
-    toast(`Some pages may not work until every server runs the same version. This page is ${PAGE_VERSION}; a server answered with ${v}.`, null,
+    toast('Some pages may not work until every server runs the same version. This page came from a server of another version than the one that just answered.', null,
       { tone: 'warning', title: 'Signalith is being upgraded' });
   }
 }
@@ -386,9 +395,13 @@ async function fetchMe(tries) {
     return fetchMe(tries - 1);
   }
 }
+// freshStorage is true when this browser's stored state belonged to
+// someone else and was just removed (see claimUserStorage).
+let freshStorage = false;
 const meReady = fetchMe(5).then((m) => {
   if (m.must_change_password) { toSignIn(true); return m; }
   if (m.must_setup_mfa) { toSignIn(false, true); return m; }
+  freshStorage = claimUserStorage(m.username || m.user || '');
   me = m;
   setRole(m.role);
   setScope(m);
@@ -893,6 +906,20 @@ function clearUserStorage() {
     sessionStorage.clear();
   } catch (_) { /* storage may be blocked */ }
 }
+// claimUserStorage keys what is stored to the user signed in: the
+// username is kept beside it (signalith.user), and when someone else
+// signs in on this browser, say after a session that ended with the tab
+// closed, the last user's state is removed first. It says whether it was.
+const USER_STORAGE_KEY = 'signalith.user';
+function claimUserStorage(name) {
+  try {
+    const was = localStorage.getItem(USER_STORAGE_KEY);
+    const other = was !== name;
+    if (other) clearUserStorage();
+    localStorage.setItem(USER_STORAGE_KEY, name);
+    return other;
+  } catch (_) { return false; /* storage may be blocked */ }
+}
 
 // ---------- app shell: menus and keys ----------
 // details.menu closes on a click outside it, on Esc, and when Tab moves
@@ -1136,7 +1163,10 @@ try { firstPage = firstPage || localStorage.getItem('signalith.page'); } catch (
 if (!firstPage || !$('page-' + firstPage)) firstPage = HOME_PAGE;
 // A page only some roles may open waits for the role.
 if (!pageRole(firstPage)) selectPage(firstPage);
-document.addEventListener('DOMContentLoaded', () => meReady.then(() => showPage(firstPage, { replace: true })));
+// A page remembered for another user gives way to the home page.
+document.addEventListener('DOMContentLoaded', () => meReady.then(() => {
+  showPage(freshStorage && firstPage !== pageFromHash() ? HOME_PAGE : firstPage, { replace: true });
+}));
 
 // ---------- query text helpers ----------
 // splitPipes returns [search, rest] split at the first | outside quotes.
@@ -2294,18 +2324,23 @@ function fmtTime(v) {
 }
 
 // ---------- export ----------
-// exportResults downloads what the open tab shows as CSV. Cells that a
-// spreadsheet would run as a formula get a leading quote.
+// csvCell writes one value as a CSV cell. A cell that a spreadsheet would
+// run as a formula gets a leading quote. The test is on the text written,
+// so a multivalue field is checked after its values are joined; only a
+// number is left as it is, so a negative count stays a number.
+function csvCell(v) {
+  let s = v == null ? '' : Array.isArray(v) ? v.join(', ') : String(v);
+  if (typeof v !== 'number' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+// exportResults downloads what the open tab shows as CSV (see csvCell).
 function exportResults() {
   const run = lastSearch;
   if (!run) return;
   const res = run.tab === 'events' && run.events ? run.events : run.res;
   const cols = res.columns || [];
-  const cell = (v) => {
-    let s = v == null ? '' : Array.isArray(v) ? v.join(', ') : String(v);
-    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;
-    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  };
+  const cell = csvCell;
   const csv = [cols.map(cell).join(','), ...(res.rows || []).map((r) => cols.map((c) => cell(r[c])).join(','))].join('\r\n');
   const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
   const d = new Date();
@@ -2792,7 +2827,8 @@ async function ask(question, mode) {
   // A query the translator was unsure of waits for the analyst, so a
   // half-understood question does not show results for another one.
   if (!res.run) {
-    kids.splice(kids.length - 1, 0, el('span', { class: 'ask-read__warn' }, icon('triangle-alert'), 'Not run: part of the question was not understood. Check the query, then ',
+    kids.splice(kids.length - 1, 0, el('span', { class: 'ask-read__warn' }, icon('triangle-alert'),
+      res.run_note ? 'Not run: the AI model’s query runs more searches of its own (map, join or a subsearch). Check the query, then ' : 'Not run: part of the question was not understood. Check the query, then ',
       el('button', { type: 'button', class: 'link-btn', onclick: () => runSearch() }, 'run it'), '.'));
   }
   showAskResult(...kids);
@@ -5153,6 +5189,9 @@ function healthPageError(e) {
     const models = await api('api/datamodels');
     $('b-datamodel').append(...models.map((m) => el('option', { value: m.name, title: m.description }, m.name.replace('_', ' '))));
   } catch (_) { /* shown on search */ }
+  // The last query is read once api/me has said who is signed in, so a
+  // query stored for someone else is gone by then (claimUserStorage).
+  const m = await meReady;
   let saved = null, savedTime = null;
   try {
     saved = localStorage.getItem('signalith.query');
@@ -5163,7 +5202,6 @@ function healthPageError(e) {
   } else {
     // Until someone picks a range, the Search page starts with the
     // default time range set on the Settings page.
-    const m = await meReady;
     const d = m && m.search_default_earliest != null ? (m.search_default_earliest || '0') : '';
     if (d && [...$('time').options].some((o) => o.value === d)) $('time').value = d;
   }
