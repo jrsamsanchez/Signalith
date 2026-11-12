@@ -165,9 +165,13 @@ folder on Linux, and on Windows an access list of its own (SYSTEM, Administrator
 the service account, `NT SERVICE\Signalith`). On Windows the key is also encrypted
 with DPAPI for the computer, so a copy of the file is useless on another computer.
 
-On Linux, Signalith warns (in `signalith secrets status`, `signalith validate`, the
-log and the **Health** page) when other accounts can read or change the key file,
-such as a key restored from a backup with `cp`, and says how to fix it (`chmod 600`).
+On Linux and other Unix systems, the server does not start when other accounts can
+read or change the master key file, such as a key restored from a backup with `cp`,
+and says how to fix it (`chmod 600`, or `chown` when another account owns it);
+`signalith secrets status` and `signalith validate` show the same. In a container
+it only warns (in the log and on the **Health** page), since Docker and Kubernetes
+mount secrets readable by all by default and no other account runs there; set
+`defaultMode: 0400` on a Kubernetes secret volume anyway.
 A key file it is not allowed to read is an error that names the file and the fix
 (`sudo chown -R signalith /var/lib/signalith/keys`); Signalith never makes a second
 key while there is one it cannot read.
