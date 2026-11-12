@@ -1100,10 +1100,11 @@ func logMasterKey(c *config.Config, log *slog.Logger) {
 
 // masterKeyFileProblem refuses to start the server when other accounts on
 // this computer can read or replace the master key file, and says how to
-// fix it. In a container only the warning stays: Docker and Kubernetes
-// mount secrets readable by all (mode 0644) by default, and no other
-// account runs there. On Windows the key file has its own access list and
-// there is nothing to check.
+// fix it. In an application container (Docker, Podman, Kubernetes) only
+// the warning stays: they mount secrets readable by all (mode 0644) by
+// default, and no other account runs there. An LXC system container is
+// not one (incontainer.AppHere). On Windows the warning is the key file's
+// access list allowing broad groups such as Users (CRYPTO-06).
 func masterKeyFileProblem(c *config.Config, inContainer bool) error {
 	src, err := c.Keyring().Source()
 	if err != nil || src.Warning == "" || inContainer {
@@ -1155,7 +1156,7 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	if err := masterKeyFileProblem(c, incontainer.Here()); err != nil {
+	if err := masterKeyFileProblem(c, incontainer.AppHere()); err != nil {
 		return err
 	}
 	// The first start of the Docker quick start with this version decides
