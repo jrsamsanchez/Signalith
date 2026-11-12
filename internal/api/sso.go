@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
@@ -274,8 +275,7 @@ func (s *Server) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 	req := oidc.NewRequest()
 	st := ssoState{State: req.State, Nonce: req.Nonce, Verifier: req.Verifier, Next: next, Issuer: set.Issuer,
 		Expires: time.Now().Add(ssoWait).Unix(), Agreed: agreed}
-	data, _ := json.Marshal(st)
-	http.SetCookie(w, &http.Cookie{Name: s.ssoCookieName(r), Value: base64.RawURLEncoding.EncodeToString(data), Path: "/",
+	http.SetCookie(w, &http.Cookie{Name: s.ssoCookieName(r), Value: s.sealSSOState(st), Path: "/",
 		MaxAge: int(ssoWait.Seconds()), HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: s.secureCookie(r)})
 	target := oidc.AuthURL(md, oidc.Settings{Issuer: set.Issuer, ClientID: set.ClientID, RedirectURL: ssoRedirectURL(c), Scopes: set.Scopes}, req)
 	http.Redirect(w, r, target, http.StatusSeeOther)
@@ -291,11 +291,44 @@ func (s *Server) readSSOState(w http.ResponseWriter, r *http.Request) (ssoState,
 	if err != nil {
 		return st, false
 	}
-	data, err := base64.RawURLEncoding.DecodeString(ck.Value)
-	if err != nil || json.Unmarshal(data, &st) != nil || st.State == "" || st.Nonce == "" || st.Verifier == "" {
+	st, ok := s.openSSOState(ck.Value)
+	if !ok || st.State == "" || st.Nonce == "" || st.Verifier == "" {
 		return st, false
 	}
 	return st, time.Now().Unix() <= st.Expires
+}
+
+// ssoStatePurpose keys the MAC of the OpenID Connect sign-in cookie.
+const ssoStatePurpose = "oidc sign-in"
+
+// sealSSOState returns the cookie value of st: its JSON, and a MAC under
+// the servers' shared key, as sealSAMLState does, so a cookie Signalith
+// did not make, or changed, is refused. Over plain HTTP, where the
+// cookie's prefix does not keep others from setting it, someone on the
+// path could otherwise plant one with a state of their own and sign the
+// browser in as themselves (AUTHRT-11).
+func (s *Server) sealSSOState(st ssoState) string {
+	data, _ := json.Marshal(st)
+	body := base64.RawURLEncoding.EncodeToString(data)
+	return body + "." + base64.RawURLEncoding.EncodeToString(s.browserKey().MAC(ssoStatePurpose, []byte(body)))
+}
+
+// openSSOState checks and reads a cookie value sealSSOState made.
+func (s *Server) openSSOState(v string) (ssoState, bool) {
+	var st ssoState
+	body, mac, ok := strings.Cut(v, ".")
+	if !ok {
+		return st, false
+	}
+	got, err := base64.RawURLEncoding.DecodeString(mac)
+	if err != nil || !hmac.Equal(got, s.browserKey().MAC(ssoStatePurpose, []byte(body))) {
+		return st, false
+	}
+	data, err := base64.RawURLEncoding.DecodeString(body)
+	if err != nil || json.Unmarshal(data, &st) != nil {
+		return st, false
+	}
+	return st, true
 }
 
 // handleSSOCallback finishes a sign-in: the provider sent the browser
