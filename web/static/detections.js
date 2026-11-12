@@ -1600,6 +1600,15 @@ function detectionRow(d) {
   return tr;
 }
 
+// packLink links to a web page a content pack or a rule from one names
+// (its licence, its source, the original rule). Only an http or https
+// address becomes a link; anything else is shown as plain text.
+function packLink(href, text) {
+  return typeof href === 'string' && /^https?:\/\//i.test(href)
+    ? el('a', { href, target: '_blank', rel: 'noopener' }, text)
+    : el('span', {}, text);
+}
+
 // renderPacks draws a card per content pack: what it is, how many of its
 // rules are on, and (for admins) one click to turn on its strongest rules.
 // While a pack is browsed, the card turns into the bar for that view.
@@ -1615,8 +1624,7 @@ function renderPacks(list) {
     const strong = rules.filter((d) => !d.enabled && info.strong(d));
     const dark = rules.filter((d) => ruleNeeds(d)).length;
     const credit = el('p', { class: 'dx-pack__credit' }, info.by,
-      el('a', { href: p.license_url, target: '_blank', rel: 'noopener' }, info.license), ' · ',
-      el('a', { href: p.source, target: '_blank', rel: 'noopener' }, info.home));
+      packLink(p.license_url, info.license), ' · ', packLink(p.source, info.home));
     const actions = [];
     if (browsing) {
       actions.push(dxBtn('ghost', 'Back to your detections', () => { det.source = ''; det.limit = DET_PAGE; renderDetections(); }, { sm: true, icon: 'arrow-left' }));
@@ -2008,8 +2016,8 @@ function renderDetectionInspector() {
       d.origin ? dxSection('Source', dxKv([
         ['From', d.origin.pack_title],
         d.origin.author ? ['Author', d.origin.author] : null,
-        ['Licence', el('a', { href: d.origin.license_url, target: '_blank', rel: 'noopener' }, d.origin.license === 'DRL-1.1' ? 'Detection Rule License 1.1' : d.origin.license)],
-        ['Rule', el('a', { href: d.origin.url, target: '_blank', rel: 'noopener' }, 'View the original rule')],
+        ['Licence', packLink(d.origin.license_url, d.origin.license === 'DRL-1.1' ? 'Detection Rule License 1.1' : d.origin.license)],
+        ['Rule', packLink(d.origin.url, 'View the original rule')],
         d.origin.status ? ['Maturity', d.origin.status === 'stable' ? 'Stable' : d.origin.status === 'test' ? 'Tested by its authors' : d.origin.status] : null,
         (d.origin.references || []).length ? ['References', el('div', { class: 'dx-refs' }, ...d.origin.references.slice(0, 5).map((u) => /^https?:\/\//.test(u) ? el('a', { href: u, target: '_blank', rel: 'noopener noreferrer' }, u.replace(/^https?:\/\//, '')) : el('span', {}, u)))] : null,
       ])) : null,

@@ -4,6 +4,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,29 +12,28 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/httpserver"
 )
 
-// contentSecurityPolicy lets pages load only Signalith's own scripts,
-// styles, fonts and images, never be framed, and never submit forms or
-// change their base URL to another site.
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; " +
-	"object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
-
 // securityHeaders sets the browser protections on every response,
-// including the sign-in page and errors.
+// including the sign-in page and errors: those of
+// httpserver.SecurityHeaders (CSP, framing, Permissions-Policy and the
+// rest), and HSTS over HTTPS.
 func (s *Server) securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
-		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
-		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("Content-Security-Policy", contentSecurityPolicy)
-		h.Set("Cross-Origin-Opener-Policy", "same-origin")
-		h.Set("Cross-Origin-Resource-Policy", "same-origin")
-		if s.overHTTPS(r) && hstsHost(r.Host) {
+		httpserver.SecurityHeaders(h)
+		https := s.overHTTPS(r)
+		if mutating(r.Method) {
+			// What sameOrigin compares the browser's Origin with.
+			r = r.WithContext(context.WithValue(r.Context(), originKey{}, requestOrigin{https: https, public: originOf(s.conf().Server.PublicURL)}))
+		}
+		if https && hstsHost(r.Host) {
 			// Browsers then use only HTTPS for this site for a year. Sent
 			// only over HTTPS, directly or through a trusted proxy;
 			// browsers ignore it over plain HTTP or with a certificate
@@ -52,6 +52,121 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(s.withErrorLog(w, r), r)
 	})
+}
+
+// mutating reports whether a request of this method may change something.
+func mutating(method string) bool {
+	switch method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions:
+		return false
+	}
+	return true
+}
+
+// originKey is the request context key of requestOrigin.
+type originKey struct{}
+
+// requestOrigin is what sameOrigin compares a browser's Origin with,
+// set by securityHeaders.
+type requestOrigin struct {
+	// https: the request reached Signalith over HTTPS, itself or through
+	// a trusted proxy (overHTTPS).
+	https bool
+	// public is server.public_url's origin, "" when it is not set.
+	public string
+}
+
+// sameOrigin rejects state-changing requests a browser sent from another
+// site (WEB-03):
+//
+//   - Sec-Fetch-Site, when sent, must say same-origin or none.
+//   - Origin, when sent, must be this very site: the same host and port
+//     as the request, and the same scheme. A request that came over
+//     HTTPS refuses an http:// page, which anyone on the network can
+//     change. A request that came over plain HTTP also takes an https://
+//     page of its host, which is what a proxy that adds HTTPS but is not
+//     listed in server.trusted_proxies sends on.
+//   - With an https:// server.public_url, a request for its host must
+//     come from an https:// page, whatever the proxy says. Other hosts
+//     (a server's own address, say) are not refused: a public_url set
+//     wrong must not lock everyone out of signing in, and a page of
+//     another host (DNS rebinding) never has the session cookie, which
+//     is bound to the host it was set by.
+//
+// Requests with neither header pass. They come from API clients, and
+// from no browser that keeps cookies to one site: the session cookie is
+// SameSite=Strict, so a cross-site request from a browser never carries
+// it, and every browser that honours SameSite sends Sec-Fetch-Site or
+// Origin on these requests anyway.
+func sameOrigin(r *http.Request) bool {
+	if !mutating(r.Method) {
+		return true
+	}
+	site := r.Header.Get("Sec-Fetch-Site")
+	if site != "" && site != "same-origin" && site != "none" {
+		return false
+	}
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	got := originOf(origin)
+	if got == "" {
+		return false // "null", or not a web origin
+	}
+	ro, ok := r.Context().Value(originKey{}).(requestOrigin)
+	if !ok {
+		ro = requestOrigin{https: r.TLS != nil}
+	}
+	if strings.HasPrefix(ro.public, "https://") && sameHost(hostOfOrigin(ro.public), r.Host, ro.public) {
+		// Every page of an HTTPS public address is HTTPS, whatever the
+		// proxy in front says.
+		ro.https = true
+	}
+	scheme, _, _ := strings.Cut(got, "://")
+	if ro.https && scheme != "https" {
+		return false
+	}
+	return sameHost(hostOfOrigin(got), r.Host, got)
+}
+
+// originOf returns the origin of an absolute http or https URL, as a
+// browser writes it in Origin (lower case, without a default port),
+// and "" for anything else.
+func originOf(raw string) string {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || u.Host == "" || u.User != nil {
+		return ""
+	}
+	scheme := strings.ToLower(u.Scheme)
+	if scheme != "http" && scheme != "https" {
+		return ""
+	}
+	host := strings.ToLower(u.Hostname())
+	if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	if p := u.Port(); p != "" && !(scheme == "http" && p == "80" || scheme == "https" && p == "443") {
+		host += ":" + p
+	}
+	return scheme + "://" + host
+}
+
+// hostOfOrigin is the host[:port] part of an origin from originOf.
+func hostOfOrigin(origin string) string {
+	_, h, _ := strings.Cut(origin, "://")
+	return h
+}
+
+// sameHost reports whether host (from an origin, without a default port)
+// names the same host and port as hostHeader, a request's Host, whose
+// default port is that of origin's scheme.
+func sameHost(host, hostHeader, origin string) bool {
+	if hostHeader == "" {
+		return false
+	}
+	scheme, _, _ := strings.Cut(origin, "://")
+	return originOf(scheme+"://"+hostHeader) == scheme+"://"+host
 }
 
 // hstsHost reports whether browsers should be told to use only HTTPS for

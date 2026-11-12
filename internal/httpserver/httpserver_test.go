@@ -386,6 +386,79 @@ func TestRequestsInProgressAreLimited(t *testing.T) {
 	}
 }
 
+// WEB-07: behind a trusted reverse proxy on this machine (exempt as a
+// client itself), requests are counted under the client its header
+// names, so one visitor cannot use up everyone's share, and others still
+// get in. A header from a proxy that is not trusted is not believed.
+func TestRequestsBehindATrustedProxyCountPerClient(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 10)
+	h := limitRequests(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		started <- struct{}{}
+		<-release
+	}), Limits{Max: 100, PerClient: 2, ClientProxies: func() ([]netip.Prefix, string) {
+		return []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32"), netip.MustParsePrefix("10.0.0.0/8")}, "X-Forwarded-For"
+	}}, nil)
+	send := func(remote, xff string) chan *httptest.ResponseRecorder {
+		out := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			r := httptest.NewRequest("GET", "/", nil)
+			r.RemoteAddr = remote
+			if xff != "" {
+				r.Header.Set("X-Forwarded-For", xff)
+			}
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, r)
+			out <- w
+		}()
+		return out
+	}
+	var held []chan *httptest.ResponseRecorder
+	for range 2 {
+		// The client's own claim (left) is ignored; the right-most
+		// untrusted entry, added by the proxy, counts.
+		held = append(held, send("127.0.0.1:1", "198.51.100.9, 203.0.113.7, 10.1.2.3"))
+		<-started
+	}
+	select {
+	case w := <-send("127.0.0.1:2", "203.0.113.7"):
+		if w.Code != 503 {
+			t.Errorf("third request of one visitor through the proxy: %d", w.Code)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("third request of one visitor through the proxy was let in")
+	}
+	// Another visitor through the same proxy gets in.
+	held = append(held, send("127.0.0.1:3", "203.0.113.8"))
+	<-started
+	// A proxy that is not trusted cannot name someone else: it counts as
+	// itself.
+	held = append(held, send("192.0.2.1:4", "203.0.113.7"))
+	<-started
+	close(release)
+	for _, ch := range held {
+		if w := <-ch; w.Code != 200 {
+			t.Errorf("held request: %d", w.Code)
+		}
+	}
+	lim := Limits{ClientProxies: func() ([]netip.Prefix, string) {
+		return []netip.Prefix{netip.MustParsePrefix("127.0.0.1/32")}, "Forwarded"
+	}}
+	for hdr, want := range map[string]string{
+		`for=203.0.113.7;proto=https`:             "203.0.113.7",
+		`for="[2001:db8::7]:4711", for=127.0.0.1`: "2001:db8::7",
+		`for=unknown`: "127.0.0.1",
+		`proto=https`: "127.0.0.1",
+	} {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = "127.0.0.1:9"
+		r.Header.Set("Forwarded", hdr)
+		if got := lim.requestClient(r).String(); got != want {
+			t.Errorf("Forwarded: %s: counted as %s, want %s", hdr, got, want)
+		}
+	}
+}
+
 // TestHTTP2StreamsCountAgainstTheClient reproduces the HTTP/2 part of
 // dos-2: over HTTPS one connection carries many requests, and each must
 // count against its client's budget, not just the connection.
