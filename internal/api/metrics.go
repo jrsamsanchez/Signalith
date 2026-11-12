@@ -105,10 +105,13 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 }
 
 // noteMetricsRefusal logs a refused scrape, at most once a minute for
-// each address, with how many were refused since.
+// each address (an IPv6 /64 counting as one), with how many were refused
+// since, and at most ssoFailsAMinute times a minute in all.
 func (s *Server) noteMetricsRefusal(r *http.Request, why string) {
 	c := s.client(r)
-	if n := s.metricsRefused.note(c.Addr.String(), time.Now()); n > 0 {
+	n, skipped := s.metricsRefused.noteAll(c.key(), time.Now())
+	s.logSkipped("refused metrics scrapes", skipped)
+	if n > 0 {
 		s.Log.Warn("metrics scrape refused", slices.Concat([]any{"audit", true, "why", why, "refusals", n}, c.logAttrs())...)
 	}
 }

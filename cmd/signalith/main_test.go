@@ -59,7 +59,7 @@ func captureStdout(t *testing.T, f func()) string {
 func TestPasswdKeepsEnvironmentSecretsOutOfTheFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "signalith.yaml")
 	captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path, "-admin-password", "first-password"}); err != nil {
+		if err := initWithPassword("first-password", "-c", path); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -257,7 +257,7 @@ func TestInitAgentPortFollowsListen(t *testing.T) {
 	for listen, want := range map[string]string{"127.0.0.1:9000": "127.0.0.1:7779", "0.0.0.0:9000": "0.0.0.0:7779"} {
 		path := filepath.Join(t.TempDir(), "signalith.yaml")
 		captureStdout(t, func() {
-			if err := cmdInit([]string{"-c", path, "-admin-password", "first-password", "-listen", listen}); err != nil {
+			if err := initWithPassword("first-password", "-c", path, "-listen", listen); err != nil {
 				t.Fatal(err)
 			}
 		})
@@ -286,7 +286,7 @@ func TestInitNamesBuiltinAdminSignalithadmin(t *testing.T) {
 	t.Setenv("SIGNALITH_PUBLIC_URL", "")
 	path := filepath.Join(t.TempDir(), "signalith.yaml")
 	out := captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path, "-admin-password", "first-password"}); err != nil {
+		if err := initWithPassword("first-password", "-c", path); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -319,7 +319,7 @@ func TestInitTurnsOnHTTPS(t *testing.T) {
 	t.Setenv("SIGNALITH_PUBLIC_URL", "")
 	path := filepath.Join(t.TempDir(), "signalith.yaml")
 	out := captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path, "-admin-password", "first-password", "-listen", "0.0.0.0:8080"}); err != nil {
+		if err := initWithPassword("first-password", "-c", path, "-listen", "0.0.0.0:8080"); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -345,7 +345,7 @@ func TestInitTurnsOnHTTPS(t *testing.T) {
 	// -syslog-tls "" leaves it off.
 	path2 := filepath.Join(t.TempDir(), "signalith.yaml")
 	captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path2, "-admin-password", "first-password", "-syslog-tls="}); err != nil {
+		if err := initWithPassword("first-password", "-c", path2, "-syslog-tls="); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -380,5 +380,33 @@ func TestInitTakesAdminPasswordFromEnvironment(t *testing.T) {
 	err = cmdInit([]string{"-c", filepath.Join(t.TempDir(), "signalith.yaml")})
 	if err == nil || !strings.Contains(err.Error(), "SIGNALITH_NEW_PASSWORD") {
 		t.Errorf("a weak password from the environment: %v", err)
+	}
+}
+
+// initWithPassword runs signalith init with args and the admin password
+// pw in SIGNALITH_NEW_PASSWORD, which is as it was again afterwards.
+func initWithPassword(pw string, args ...string) error {
+	old, had := os.LookupEnv(newPasswordEnv)
+	os.Setenv(newPasswordEnv, pw)
+	defer func() {
+		if had {
+			os.Setenv(newPasswordEnv, old)
+		} else {
+			os.Unsetenv(newPasswordEnv)
+		}
+	}()
+	return cmdInit(args)
+}
+
+// AUTHRT-12: a password on init's command line is refused, and nothing
+// is written.
+func TestInitRefusesAPasswordOnTheCommandLine(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "signalith.yaml")
+	err := cmdInit([]string{"-c", path, "-admin-password", "first-password"})
+	if err == nil || !strings.Contains(err.Error(), newPasswordEnv) {
+		t.Fatalf("init with -admin-password: %v", err)
+	}
+	if _, err := os.Stat(path); err == nil {
+		t.Error("a config was written")
 	}
 }

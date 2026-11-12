@@ -337,6 +337,14 @@ func TestSSONextStaysHere(t *testing.T) {
 		"/%2F%2Fevil.example":   "/",
 		"/\r\nSet-Cookie: x=1":  "/",
 		"/a\"><script>":         "/a%22%3E%3Cscript%3E",
+		// WEB-06: checked as the browser resolves the path.
+		"/./api/logout":    "/",
+		"/x/../api/users":  "/",
+		"/.//evil.example": "/evil.example",
+		"/login/":          "/",
+		"/Login":           "/",
+		"/API/users":       "/",
+		"/a/./b/?q=1#x":    "/a/b?q=1#x",
 	} {
 		if got := localPath(in); got != want {
 			t.Errorf("localPath(%q) = %q, want %q", in, got, want)
@@ -490,7 +498,7 @@ func TestSSONextCheckedAtCallback(t *testing.T) {
 	p.Set(func(p *oidctest.Provider) {
 		p.Claims = map[string]any{"preferred_username": "fay", "groups": []any{"/soc"}}
 	})
-	ts, _ := newSSOServer(t, p, nil)
+	ts, srv := newSSOServer(t, p, nil)
 	b := browser(t, p)
 	b.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	resp, err := b.Get(ts.URL + "/api/auth/oidc/start")
@@ -509,14 +517,20 @@ func TestSSONextCheckedAtCallback(t *testing.T) {
 	if ck == nil {
 		t.Fatal("no sign-in cookie")
 	}
-	raw, _ := base64.RawURLEncoding.DecodeString(ck.Value)
-	var st ssoState
-	if err := json.Unmarshal(raw, &st); err != nil {
-		t.Fatal(err)
+	st, ok := srv.openSSOState(ck.Value)
+	if !ok {
+		t.Fatal("the sign-in cookie does not open")
 	}
+	// A cookie changed by anyone but the server is refused (AUTHRT-11).
+	raw, _ := json.Marshal(ssoState{State: st.State, Nonce: st.Nonce, Verifier: st.Verifier, Issuer: st.Issuer, Expires: st.Expires})
+	for _, forged := range []string{base64.RawURLEncoding.EncodeToString(raw), base64.RawURLEncoding.EncodeToString(raw) + ".AAAA", ""} {
+		if _, ok := srv.openSSOState(forged); ok {
+			t.Errorf("a forged cookie %q opens", forged)
+		}
+	}
+	// One the server made with a next that is not local still lands on /.
 	st.Next = "//evil.example.com/"
-	raw, _ = json.Marshal(st)
-	b.Jar.SetCookies(base, []*http.Cookie{{Name: ssoCookie, Value: base64.RawURLEncoding.EncodeToString(raw), Path: "/"}})
+	b.Jar.SetCookies(base, []*http.Cookie{{Name: ssoCookie, Value: srv.sealSSOState(st), Path: "/"}})
 	b.CheckRedirect = nil
 	resp, err = b.Get(auth)
 	if err != nil {

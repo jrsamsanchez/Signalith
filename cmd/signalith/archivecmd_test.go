@@ -45,12 +45,21 @@ func TestArchiveCommands(t *testing.T) {
 		}
 	}
 
-	out, err = capture(t, func() error { return cmdArchive([]string{"verify", "-c", path, "-dir", dir, m.ID}) })
+	// The day was archived plain without any key, so its manifest has no
+	// MAC: refused while archives are encrypted, unless overridden.
+	if _, err := capture(t, func() error { return cmdArchive([]string{"verify", "-c", path, "-dir", dir, m.ID}) }); err == nil {
+		t.Error("verify of a plain archive no key authenticates passed without -allow-unauthenticated")
+	}
+	out, err = capture(t, func() error {
+		return cmdArchive([]string{"verify", "-c", path, "-dir", dir, "-allow-unauthenticated", m.ID})
+	})
 	if err != nil || !strings.Contains(out, m.File+": OK, 2 events, sha256 "+m.SHA256) {
 		t.Errorf("verify: %v\n%s", err, out)
 	}
 	// By its file path, with the folder taken from it.
-	out, err = capture(t, func() error { return cmdArchive([]string{"verify", "-c", path, filepath.Join(dir, m.File)}) })
+	out, err = capture(t, func() error {
+		return cmdArchive([]string{"verify", "-c", path, "-allow-unauthenticated", filepath.Join(dir, m.File)})
+	})
 	if err != nil || !strings.Contains(out, ": OK, 2 events") {
 		t.Errorf("verify by path: %v\n%s", err, out)
 	}
@@ -68,7 +77,9 @@ func TestArchiveCommands(t *testing.T) {
 		t.Errorf("decrypted:\n%s", plain)
 	}
 
-	if _, err := capture(t, func() error { return cmdArchive([]string{"verify", "-c", path, "-dir", dir, m.ID, "no-such-id"}) }); err == nil ||
+	if _, err := capture(t, func() error {
+		return cmdArchive([]string{"verify", "-c", path, "-dir", dir, "-allow-unauthenticated", m.ID, "no-such-id"})
+	}); err == nil ||
 		!strings.Contains(err.Error(), "1 of 2 failed") {
 		t.Errorf("verify of a missing id: %v", err)
 	}

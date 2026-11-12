@@ -192,6 +192,14 @@ func (s *Server) handleInvestigate(w http.ResponseWriter, r *http.Request) {
 		}
 		s.Log.Warn("Investigate with AI stopped: the model searched for a masked value", "audit", true, "by", userOf(r), "finding", f.ID,
 			"model", inv.Model.Name(), "sent_to", sentTo)
+		// Planted text may stop investigations on purpose, to keep AI away
+		// from the findings an attacker cares about: that is a signal on
+		// the finding, so it is noted there for whoever looks next.
+		if s.Findings != nil {
+			if _, err := s.updateFinding(context.WithoutCancel(r.Context()), f.ID, findings.Update{Comment: investigate.StoppedNote}, "Investigate with AI"); err != nil {
+				s.Log.Warn("could not note the stopped AI investigation on the finding", "finding", f.ID, "err", err)
+			}
+		}
 		send(investigate.Event{Type: "error", Text: err.Error()})
 		return
 	}

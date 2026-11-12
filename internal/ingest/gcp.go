@@ -271,7 +271,8 @@ func ParseGCP(rec map[string]any) Event {
 			}
 		}
 	}
-	if raw, err := json.Marshal(r); err == nil {
+	raw, rawErr := json.Marshal(r)
+	if rawErr == nil {
 		f["message"] = truncateUTF8(string(raw), MaxRecordBytes)
 	}
 	set := func(k, v string) {
@@ -341,9 +342,12 @@ func ParseGCP(rec map[string]any) Event {
 	if t, err := time.Parse(time.RFC3339Nano, str(r, "timestamp")); err == nil {
 		ev.Time = t.UTC()
 	}
-	// The same entry, delivered twice by Pub/Sub, is stored once.
-	if id := str(r, "insertId"); id != "" {
-		ev.ID = sensorDocID("gcp", logName+"\n"+id+"\n"+str(r, "timestamp"))
+	// The same entry, delivered twice by Pub/Sub, is stored once. The ID
+	// covers the whole entry, not just its log name, insertId and time,
+	// so an entry sent with a real one's insertId before it arrives
+	// cannot take its place (ING-06).
+	if id := str(r, "insertId"); id != "" && rawErr == nil {
+		ev.ID = sensorDocID("gcp", logName+"\n"+id+"\n"+str(r, "timestamp")+"\n"+string(raw))
 	}
 	switch {
 	case service == workspaceLogin:

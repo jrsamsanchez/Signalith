@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -209,6 +210,52 @@ func TestAPITokenExpiry(t *testing.T) {
 	}
 	if !strings.Contains(c.a.logs.String(), "reason=revoked") {
 		t.Errorf("no audit record of the revoked token's use:\n%s", c.a.logs.String())
+	}
+}
+
+// AUTHRT-09: deleting an admin who made API tokens says which of them
+// keep working, in the answer and the audit log.
+func TestDeletedAdminsTokensAreNamed(t *testing.T) {
+	c := newMemberCluster(t, nil)
+	if _, err := c.a.srv.Users.Create(context.Background(), users.NewUser{Username: "ada", Role: users.Admin, Password: "admin-password-1"}); err != nil {
+		t.Fatal(err)
+	}
+	ada, code := c.a.signIn("ada", "admin-password-1")
+	if ada == nil {
+		t.Fatalf("sign in: %d", code)
+	}
+	if code, out, _ := c.a.call("POST", "/api/api-tokens", `{"name":"Ada's script","role":"viewer"}`, ada, nil); code != http.StatusCreated {
+		t.Fatalf("create: %d %v", code, out)
+	}
+	admin, _ := c.a.signIn("admin", "s3cret-pass")
+	code, out, _ := c.a.call("DELETE", "/api/users/ada", "", admin, nil)
+	if code != http.StatusOK || !strings.Contains(stringOf(out["api_tokens"]), "Ada's script") {
+		t.Fatalf("delete: %d %v", code, out)
+	}
+	if !strings.Contains(c.a.logs.String(), "api_token.kept") {
+		t.Errorf("no audit record of the tokens kept:\n%s", c.a.logs.String())
+	}
+}
+
+// AUTHRT-09: provisioning (SCIM) and the directory turning a user off
+// name the API tokens the user made that keep working, as the Users page
+// does.
+func TestTokensKeptAreNamedWithoutAnAdmin(t *testing.T) {
+	c := newMemberCluster(t, nil)
+	if _, _, err := c.a.docs.CreateAPIToken(context.Background(), "ada", "Ada's script", users.Viewer, 30, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	c.a.cycle()
+	r := httptest.NewRequest("PATCH", "/scim/v2/Users/x", nil)
+	c.a.srv.noteTokensKept(r, "ada", nil)
+	c.a.srv.noteTokensKeptBy("directory", "ada")
+	logs := c.a.logs.String()
+	if n := strings.Count(logs, "api_token.kept"); n != 2 || !strings.Contains(logs, "Ada's script") || !strings.Contains(logs, "by=directory") {
+		t.Errorf("%d records of the tokens kept:\n%s", n, logs)
+	}
+	c.a.srv.noteTokensKeptBy("directory", "bob")
+	if n := strings.Count(c.a.logs.String(), "api_token.kept"); n != 2 {
+		t.Error("a user with no tokens was named")
 	}
 }
 

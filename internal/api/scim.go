@@ -104,9 +104,12 @@ func (s *Server) scimAuth(next http.HandlerFunc) http.Handler {
 		}
 		scheme, token, _ := strings.Cut(r.Header.Get("Authorization"), " ")
 		if !strings.EqualFold(scheme, "Bearer") || !c.SCIMToken(strings.TrimSpace(token)) {
-			if n := s.scimRefused.note(s.client(r).Addr.String(), time.Now()); n > 0 {
+			from := s.client(r)
+			n, skipped := s.scimRefused.noteAll(from.key(), time.Now())
+			s.logSkipped("SCIM token refusals", skipped)
+			if n > 0 {
 				s.Log.Warn("SCIM token refused", slices.Concat([]any{"audit", true, "method", r.Method, "path", r.URL.Path, "refusals", n},
-					s.client(r).logAttrs())...)
+					from.logAttrs())...)
 			}
 			w.Header().Set("WWW-Authenticate", `Bearer realm="Signalith SCIM"`)
 			scimFail(w, http.StatusUnauthorized, "", "the SCIM token is missing or wrong")
@@ -116,40 +119,54 @@ func (s *Server) scimAuth(next http.HandlerFunc) http.Handler {
 	})
 }
 
-// scimRefusals limits the log of refused SCIM tokens to one line a
-// minute for each address, with how many were refused since, so a client
-// cannot flood the log.
+// scimRefusals limits the log of refused SCIM tokens, and of other
+// refusals anyone can cause, to one line a minute for each client (its
+// IPv4 address or IPv6 /64, clientInfo.key), with how many were refused
+// since, so a client cannot flood the log. ssoRefusals adds a total for
+// all clients.
 type scimRefusals struct {
 	mu   sync.Mutex
 	seen map[string]scimRefusal
 }
 
 type scimRefusal struct {
-	logged time.Time
-	count  int
+	// start is when the minute that lines are counted in began, lines
+	// how many were written in it, and count the refusals since the
+	// last line.
+	start time.Time
+	lines int
+	count int
 }
 
-// note counts a refusal from addr, and returns how many to log now (0 to
+// note counts a refusal from key, and returns how many to log now (0 to
 // log nothing).
-func (f *scimRefusals) note(addr string, now time.Time) int {
+func (f *scimRefusals) note(key string, now time.Time) int { return f.noteUpTo(key, now, 1) }
+
+// noteUpTo is note, logging up to perKey lines a minute for a client.
+func (f *scimRefusals) noteUpTo(key string, now time.Time, perKey int) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.seen == nil {
 		f.seen = map[string]scimRefusal{}
 	}
-	e := f.seen[addr]
+	e := f.seen[key]
 	e.count++
-	if !e.logged.IsZero() && now.Sub(e.logged) < time.Minute {
-		f.seen[addr] = e
+	if e.start.IsZero() || now.Sub(e.start) >= time.Minute || now.Before(e.start) {
+		e.start, e.lines = now, 0
+	}
+	if e.lines >= max(perKey, 1) {
+		f.seen[key] = e
 		return 0
 	}
 	n := e.count
-	f.seen[addr] = scimRefusal{logged: now}
+	e.count = 0
+	e.lines++
+	f.seen[key] = e
 	if len(f.seen) > 10000 {
 		// Forget what is over a minute old, or everything, rather than
 		// grow without end.
 		for k, v := range f.seen {
-			if now.Sub(v.logged) >= time.Minute {
+			if now.Sub(v.start) >= time.Minute {
 				delete(f.seen, k)
 			}
 		}
@@ -442,6 +459,7 @@ func (s *Server) scimChange(w http.ResponseWriter, r *http.Request, cur users.Us
 		if u.Disabled {
 			ended := s.sessions().EndUser(r.Context(), u.Username, "")
 			s.scimAudit(r, "user disabled", "user", u.Username, "sessions_ended", ended)
+			s.noteTokensKept(r, u.Username, nil)
 		} else {
 			s.scimAudit(r, "user enabled", "user", u.Username)
 		}
@@ -461,6 +479,7 @@ func (s *Server) handleSCIMDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	ended := s.sessions().EndUser(r.Context(), u.Username, "")
 	s.scimAudit(r, "user deleted", "user", u.Username, "source", u.Source, "sessions_ended", ended)
+	s.noteTokensKept(r, u.Username, nil)
 	s.releaseNotebooks(r.Context(), u.Username, scimActor, u.Tenant == "")
 	w.WriteHeader(http.StatusNoContent)
 }

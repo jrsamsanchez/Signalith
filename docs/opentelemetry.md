@@ -42,7 +42,7 @@ Any OTLP/HTTP sender works. Point it at:
 | Setting | Value |
 | --- | --- |
 | Logs endpoint | `https://<server>:7779/api/otlp/v1/logs` (or endpoint `https://<server>:7779/api/otlp`, to which the exporter adds `/v1/logs`), on the [agent port](sending-data.md#the-agent-port), not the web page's port |
-| Header | `Authorization: Bearer <agent token>`; make one on **Add data** under **Agent tokens**, or with `signalith tokens create` (see [agent-tokens.md](agent-tokens.md#create-a-token)) |
+| Header | `Authorization: Bearer <agent token>`; make one on **Add data** under **Agent tokens**, or with `signalith tokens create` (see [agent-tokens.md](agent-tokens.md#create-a-token)). It must be made for OpenTelemetry (purpose `otel`) or for no purpose: a token made for Fluent Bit, osquery or the Signalith Agent is refused with `403` (see [Token purposes](agent-tokens.md#token-purposes)) |
 | Encoding | protobuf (`application/x-protobuf`, the Collector's default) or JSON (`application/json`) |
 | Compression | gzip (the Collector's default) or none |
 | CA | Signalith's CA certificate (`/api/tls/ca.pem`), unless the server has a certificate your systems trust |
@@ -103,13 +103,14 @@ than an hour ahead is filed under the time it arrived (see [Ingest limits](sendi
 ## Limits and errors
 
 The same limits as agent batches apply: up to 16 MB per request (also after gzip is
-undone), 200,000 records of at most 1 MB each, values nested at most 32 levels. Every
+undone), 200,000 records of at most 1 MB each, values nested at most 32 levels. A
+record that is split into several events (an Event Hub message's records, or the Okta,
+Kubernetes or GitHub events a body holds) counts as that many records. In OTLP/JSON a
+record may hold at most 65,536 objects, lists and list entries. Every
 record's event carries a copy of its resource's attributes and its scope's name, so a
 request may come to at most 64 MB counting both once per record (and the resource's
-`host.name` once for each event of a record that is split into several, such as an Event
-Hub message); a request over that is refused with `413` (when it is the copies of
-`host.name` that take it over, the records before that one are already stored, and
-count as duplicates if they are sent again). Each attribute list (a
+`host.name` once for each event of a record that is split into several); a request over
+that is refused with `413` before anything from it is stored. Each attribute list (a
 resource's, a record's, or a map value) keeps its first 256 attributes, a scope name and
 `service.name` their first 256 bytes, and `host.name` its first 255. A
 record over the size or nesting limit, or one that does not decode, is turned away on

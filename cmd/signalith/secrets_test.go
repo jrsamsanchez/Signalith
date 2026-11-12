@@ -33,6 +33,8 @@ import (
 // TestMain keeps the tests away from this computer's own Signalith: no
 // systemd service settings, master key variables or state folder.
 func TestMain(m *testing.M) {
+	// Cheap password hashes; internal/users checks the production cost.
+	users.UseFastHashesInTests()
 	readServiceSettings = func() *serviceSettings { return nil }
 	for _, k := range []string{"SIGNALITH_STATE_DIR", "SIGNALITH_MASTER_KEY", "SIGNALITH_MASTER_KEY_FILE", "CREDENTIALS_DIRECTORY",
 		"SIGNALITH_OPENSEARCH_PASSWORD", "SIGNALITH_ASSISTANT_API_KEY", "SIGNALITH_INGEST_TOKEN", "SIGNALITH_LDAP_BIND_PASSWORD", "SIGNALITH_LOOKUPS_DIR",
@@ -510,7 +512,7 @@ func TestEncryptStoresAtStartup(t *testing.T) {
 func TestInitWritesEncryptedValues(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "signalith.yaml")
 	out := captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path, "-admin-password", "first-password"}); err != nil {
+		if err := initWithPassword("first-password", "-c", path); err != nil {
 			t.Fatal(err)
 		}
 	})

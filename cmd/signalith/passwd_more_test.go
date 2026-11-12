@@ -27,7 +27,7 @@ func initForPasswd(t *testing.T) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "signalith.yaml")
 	captureStdout(t, func() {
-		if err := cmdInit([]string{"-c", path, "-admin-password", "first-password-1"}); err != nil {
+		if err := initWithPassword("first-password-1", "-c", path); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -112,15 +112,15 @@ func TestInitRefusesToOverwrite(t *testing.T) {
 	passwdEnv(t)
 	path := initForPasswd(t)
 	before, _ := os.ReadFile(path)
-	if _, err := capture(t, func() error { return cmdInit([]string{"-c", path, "-admin-password", "other-password-1"}) }); err == nil || !strings.Contains(err.Error(), "use -force to overwrite it") {
+	if _, err := capture(t, func() error { return initWithPassword("other-password-1", "-c", path) }); err == nil || !strings.Contains(err.Error(), "use -force to overwrite it") {
 		t.Errorf("init over a config: %v", err)
 	}
 	if after, _ := os.ReadFile(path); string(after) != string(before) {
 		t.Error("the config was changed")
 	}
 	if _, err := capture(t, func() error {
-		return cmdInit([]string{"-c", path, "-force", "-admin-password", config.DefaultAdminUser + "-password"})
-	}); err == nil || !strings.Contains(err.Error(), "-admin-password") {
+		return initWithPassword(config.DefaultAdminUser+"-password", "-c", path, "-force")
+	}); err == nil || !strings.Contains(err.Error(), newPasswordEnv) {
 		t.Errorf("a password with the username in it: %v", err)
 	}
 	// A generated password is shown once.

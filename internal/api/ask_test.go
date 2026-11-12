@@ -12,6 +12,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/nlq"
+	"github.com/jrsamsanchez/signalith/internal/query"
 )
 
 func TestAskWithoutAI(t *testing.T) {
@@ -68,6 +69,33 @@ func TestAskFallsBackToAI(t *testing.T) {
 	code, out = do(t, ts, "POST", "/api/ask", `{"question":"lateral movement via wmi remote process creation","mode":"rules"}`, true)
 	if code != 200 || out["source"] != "rules" {
 		t.Fatalf("rules mode %d %v", code, out)
+	}
+}
+
+// A model's query that runs more searches of its own is shown, not run
+// (AI-04).
+func TestAskDoesNotRunModelFanOut(t *testing.T) {
+	reply := ""
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{"content": []map[string]string{{"type": "text", "text": reply}}})
+	}))
+	defer model.Close()
+	ts, _ := newTestServerWith(t, func(s *Server) { s.Assistant = assistant.New(assistant.Anthropic, model.URL, "", "k") })
+	for q, run := range map[string]bool{
+		`datamodel=Endpoint process_name=wmic.exe`:                                         true,
+		`datamodel=Authentication | stats count by user | map search="search user=$user$"`: false,
+		`datamodel=Authentication | join user [search datamodel=Endpoint]`:                 false,
+		`datamodel=Authentication [search datamodel=Endpoint | fields user]`:               false,
+		`datamodel=Authentication | append [search datamodel=Endpoint]`:                    false,
+	} {
+		if _, err := query.Parse(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+		reply = q
+		code, out := do(t, ts, "POST", "/api/ask", `{"question":"lateral movement via wmi","mode":"ai"}`, true)
+		if code != 200 || out["source"] != "ai" || out["run"] != run || (out["run_note"] != nil) == run {
+			t.Errorf("%s: %d %v", q, code, out)
+		}
 	}
 }
 

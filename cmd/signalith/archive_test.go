@@ -57,7 +57,8 @@ func TestArchiveRestoreInstallsTheTemplate(t *testing.T) {
 	t.Setenv("SIGNALITH_ADMIN_PASSWORD", "long-enough-password")
 	stdout := os.Stdout
 	os.Stdout, _ = os.Open(os.DevNull)
-	err := cmdArchive([]string{"restore", "-c", cfg, "-dir", arch.Dir, index})
+	// A plain archive written without keys needs the override (CRYPTO-01).
+	err := cmdArchive([]string{"restore", "-c", cfg, "-dir", arch.Dir, "-allow-unauthenticated", index})
 	os.Stdout = stdout
 	if err != nil {
 		t.Fatal(err)

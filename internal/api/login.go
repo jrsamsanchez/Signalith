@@ -54,7 +54,7 @@ func (s *Server) routeLogin(mux *http.ServeMux) {
 		// Only the assets folder, never the app's own pages and scripts.
 		if assets, err := fs.Sub(s.UI, "assets"); err == nil {
 			mux.Handle("GET /assets/", http.StripPrefix("/assets", staticFiles(assets, false)))
-			if v := versionSegment(s.Version); v != "" {
+			if v := s.buildToken(); v != "" {
 				prefix := "/v/" + v + "/assets"
 				mux.Handle("GET "+prefix+"/", versionedFiles(s.Version, false, http.StripPrefix(prefix, staticFiles(assets, false))))
 			}
@@ -132,23 +132,6 @@ func (s *Server) unauthorized(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusUnauthorized, errors.New("sign in required"))
 }
 
-// sameOrigin rejects state-changing requests a browser sent from another
-// site. Requests without browser headers (API clients) pass.
-func sameOrigin(r *http.Request) bool {
-	switch r.Method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		return true
-	}
-	if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
-		return site == "same-origin" || site == "none"
-	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		return err == nil && strings.EqualFold(u.Host, r.Host)
-	}
-	return true
-}
-
 // secureCookie reports whether the session cookie is sent over HTTPS
 // only: when this very request reached Signalith over HTTPS, itself or
 // through a trusted reverse proxy that says so with X-Forwarded-Proto.
@@ -168,6 +151,9 @@ func (s *Server) cookieName(r *http.Request) string {
 	}
 	return sessionCookie
 }
+
+// maxLoginBody is the largest sign-in request read.
+const maxLoginBody = 64 << 10
 
 // handleLogin signs in from the sign-in page. A user who must change
 // their password gets a session that only allows that (see allow), and
@@ -195,6 +181,8 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		// Agreed is the sign-in notice's I agree (see notice.go).
 		Agreed bool `json:"agreed"`
 	}
+	// A sign-in is a few hundred bytes, a passkey's answer a few KB.
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginBody)
 	if err := readJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

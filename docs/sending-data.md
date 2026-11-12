@@ -309,6 +309,12 @@ Over UDP the sender address can be forged, so for trusted senders use TCP or TLS
 restrict the port with a firewall as well. The Windows installer limits its firewall
 rules to the `syslog.allow` senders.
 
+Without `syslog.allow`, any computer that can reach a listener can send syslog in any
+device's name, over TLS too (TLS proves the server to the device, not the device to the
+server). Signalith keeps taking it, so an existing setup keeps working, but says so in its
+log each time it starts (`syslog is accepted from any computer that can reach these
+listeners`), naming each listener that is not on `127.0.0.1` or `::1`.
+
 Ports below 1024 need extra permission on Linux. The systemd unit grants it; when
 running Signalith another way, use a port such as `0.0.0.0:1514`. When devices send to a
 different port than Signalith listens on, because Docker or a firewall forwards it, set

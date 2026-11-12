@@ -330,6 +330,8 @@ function invShowResult(f, r, { show, close, alive }) {
       el('div', {},
         el('div', { class: 'inv-verdict__label' }, v.label, el('span', { class: 'inv-verdict__conf' }, `${r.confidence} confidence`)),
         el('p', { class: 'inv-verdict__summary' }, r.summary || 'The model gave no summary.'))),
+    r.caution ? el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'),
+      el('div', {}, el('b', {}, 'Check this verdict yourself'), el('p', {}, r.caution))) : null,
     (r.actions || []).length ? el('section', { class: 'inv-part' },
       el('h3', { class: 'section-title' }, 'Suggested response', el('span', { class: 'count' }, String(r.actions.length))),
       el('ul', { class: 'inv-actions' }, ...actions),
@@ -357,6 +359,7 @@ function invShowResult(f, r, { show, close, alive }) {
 function invText(f, r) {
   const v = INV_VERDICT[r.verdict] || INV_VERDICT.unsure;
   const lines = [`Investigate with AI: ${v.label} (${r.confidence} confidence)`, `Finding: ${f.title} (${f.id})`, `Model: ${r.model}, ${fmtTime(r.finished)}`, '', r.summary || ''];
+  if (r.caution) lines.push('', 'Caution: ' + r.caution);
   const list = (title, items) => { if (items.length) lines.push('', title, ...items); };
   list('Timeline:', (r.timeline || []).map((t) => `- ${invTime(t.time)}: ${t.text}`));
   list('Evidence:', (r.evidence || []).map((e) => `- ${e.text}` + (e.steps && e.steps.length ? ` (step ${e.steps.join(', ')})` : '')));

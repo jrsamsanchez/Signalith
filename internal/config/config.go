@@ -803,6 +803,13 @@ type Retention struct {
 	// true; false writes plain gzip files, for tools that read them
 	// directly. Archives already written stay as they are.
 	EncryptArchives *bool `yaml:"encrypt_archives,omitempty"`
+	// AllowUnauthenticatedArchives restores plain archives whose manifest
+	// no key of this server authenticates while archives are encrypted:
+	// ones written plain before encryption was turned on, or before
+	// manifests were authenticated. Off by default, since a forged plain
+	// archive could otherwise stand in for an encrypted one; turn it on
+	// only for as long as such archives are restored.
+	AllowUnauthenticatedArchives bool `yaml:"allow_unauthenticated_archives,omitempty"`
 }
 
 // RetentionInterval returns retention.interval as a duration (1h if unset
@@ -1342,6 +1349,11 @@ type Assistant struct {
 	URL    string `yaml:"url,omitempty"`
 	Model  string `yaml:"model,omitempty"`
 	APIKey string `yaml:"api_key,omitempty"`
+	// AllowInsecureHTTP lets URL be plain http beyond the local network
+	// (a public address or a dotted name). Off, such an address turns the
+	// AI features off (see AssistantInsecure). Plain http to this computer,
+	// a private address or a single-label name needs nothing.
+	AllowInsecureHTTP bool `yaml:"allow_insecure_http,omitempty"`
 	// Investigate lets analysts use Investigate with AI on a finding,
 	// which sends the finding's events and the results of read-only
 	// searches to the model. Off unless an admin turns it on.
@@ -1431,12 +1443,29 @@ func (c *Config) AssistantClient() *assistant.Client {
 		// A public demo never sends anything to an AI model.
 		return nil
 	}
+	if c.AssistantInsecure() || assistant.CheckURL(c.Assistant.URL) != nil {
+		// Warnings and Validate say why.
+		return nil
+	}
 	a := c.Assistant
 	cl := assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
 	if cl != nil {
 		cl.HTTP.Timeout = c.AssistantRequestTimeout()
+		if a.AllowInsecureHTTP {
+			cl.AllowPlainHTTP()
+		}
 	}
 	return cl
+}
+
+// AssistantInsecure reports whether the AI model's address is plain http
+// to a public IP address (assistant.Insecure) without
+// assistant.allow_insecure_http: questions,
+// events and the model's answers would cross the network unencrypted, and
+// answers changed on the way would become verdicts and queries, so the AI
+// features stay off.
+func (c *Config) AssistantInsecure() bool {
+	return c.Assistant.Provider != "" && !c.Assistant.AllowInsecureHTTP && assistant.Insecure(c.AssistantURL())
 }
 
 // Backup turns on OpenSearch snapshots of Signalith's indices on a
@@ -2898,6 +2927,8 @@ func (c *Config) Validate() error {
 	if c.Assistant.URL != "" {
 		if u, err := url.Parse(c.Assistant.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			p = append(p, fmt.Sprintf("assistant.url %q must be http(s)://host[:port][/path]", redact.URL(c.Assistant.URL)))
+		} else if err := assistant.CheckURL(c.Assistant.URL); err != nil {
+			p = append(p, fmt.Sprintf("assistant.url %q: %v", redact.URL(c.Assistant.URL), err))
 		}
 	}
 	if _, ok := m365Clouds[c.M365.Cloud]; !ok && c.M365.Cloud != "" {
@@ -3017,8 +3048,25 @@ func (c *Config) Warnings() []string {
 	if u, err := url.Parse(o.URL); err == nil && u.Scheme == "http" && o.AllowInsecureHTTP && (o.Username != "" || o.Password != "") && !isLoopback(u.Hostname()) {
 		w = append(w, "opensearch.allow_insecure_http is on, so the OpenSearch username and password cross the network to "+u.Host+" unencrypted. Use an https:// opensearch.url.")
 	}
-	if u, err := url.Parse(c.Assistant.URL); err == nil && c.Assistant.Provider != "" && u.Scheme == "http" && c.Assistant.APIKey != "" && !isLoopback(u.Hostname()) {
-		w = append(w, "assistant.url is plain http to "+u.Host+", so the AI model's API key crosses the network unencrypted. Use https://.")
+	if u, err := url.Parse(c.AssistantURL()); err == nil && c.Assistant.Provider != "" && assistant.PlainRemote(c.AssistantURL()) {
+		if c.Assistant.AllowInsecureHTTP && (assistant.Insecure(c.AssistantURL()) || assistant.PlainName(c.AssistantURL())) {
+			w = append(w, "assistant.allow_insecure_http is on, so questions, the events Investigate with AI sends, the AI model's answers and its API key cross the network to "+
+				u.Host+" unencrypted, wherever it is, where they can be read or changed. Use an https:// assistant.url.")
+		} else if assistant.PlainName(c.AssistantURL()) {
+			w = append(w, "assistant.url is plain http to "+u.Host+", so questions, the events Investigate with AI sends, the AI model's answers and any API key "+
+				"cross your network unencrypted. Signalith connects to it only while "+u.Hostname()+" resolves to this computer or a private address (checked at each connection); "+
+				"if it resolves to a public address, the AI features fail with an error saying so. Use https:// when you can, or, to reach a public address over plain http, "+
+				"set assistant.allow_insecure_http: true.")
+		} else if !assistant.Insecure(c.AssistantURL()) {
+			w = append(w, "assistant.url is plain http to "+u.Host+", so questions, the events Investigate with AI sends, the AI model's answers and any API key "+
+				"cross your network unencrypted. Use https:// when you can.")
+		} else if c.Assistant.AllowInsecureHTTP {
+			w = append(w, "assistant.allow_insecure_http is on, so questions, the events Investigate with AI sends, the AI model's answers and its API key cross the network to "+
+				u.Host+" unencrypted, where they can be read or changed. Use an https:// assistant.url.")
+		} else {
+			w = append(w, "assistant.url is plain http to "+u.Host+", beyond your local network, so the AI features are off: questions, events and the model's answers would cross the network unencrypted, "+
+				"and answers changed on the way would become verdicts and queries. Use https://, or, to accept the risk, set assistant.allow_insecure_http: true.")
+		}
 	}
 	if u, err := url.Parse(c.Vulns.NVDURL); err == nil && u.Scheme == "http" && c.Vulns.NVDAPIKey != "" && !isLoopback(u.Hostname()) {
 		w = append(w, "vulns.nvd_url is plain http to "+u.Host+", so the NVD API key crosses the network unencrypted. Use https://.")
@@ -3057,6 +3105,13 @@ func (c *Config) Warnings() []string {
 	if (c.Server.ProxyProtocol || c.Syslog.ProxyProtocol) && len(c.Server.TrustedProxyList()) == 0 {
 		w = append(w, "PROXY protocol is on (server.proxy_protocol or syslog.proxy_protocol) but server.trusted_proxies is empty, so no PROXY header is accepted. "+
 			"List your load balancer's address under server.trusted_proxies.")
+	}
+	if len(c.Server.TrustedProxyList()) > 0 && c.Server.ClientAddressHeader() == "" && !c.Server.ProxyProtocol {
+		// AUTHRT-02: every request through such a proxy is one shared
+		// client, which no per-address sign-in limit holds back.
+		w = append(w, "server.trusted_proxies is set but server.client_header is empty, so Signalith does not read the client's address from the proxy: "+
+			"everyone who comes through it counts as one shared client, with no per-address limit on sign-in attempts, and the audit log shows the proxy's address. "+
+			"If the proxy sets X-Forwarded-For (or Forwarded) itself, choose it under server.client_header.")
 	}
 	for _, p := range c.Server.TrustedProxyList() {
 		if p.Bits() == 0 {

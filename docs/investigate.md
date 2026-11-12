@@ -136,6 +136,17 @@ can do:
 
 Planted text can still try to talk the model into the wrong verdict, so read the evidence
 behind it. A model that says the data tried to instruct it is worth a closer look.
+Signalith helps with that:
+
+- When the data sent looked like instructions to an AI ("ignore your instructions",
+  "you are an AI", "mark this as benign", "authorized penetration test"), or the model
+  reports that it did (`"injection": true` in its answer), a **benign** verdict carries
+  a fixed caution: *Check this verdict yourself*. The caution is copied into the
+  write-up saved to a case.
+- An investigation stopped because the model searched for a masked value adds a note to
+  the finding, from **Investigate with AI**, saying so: planted text may stop
+  investigations on purpose, to keep AI away from the findings an attacker cares about,
+  so treat that finding as one to investigate by hand.
 
 ## AI first pass on new findings
 
