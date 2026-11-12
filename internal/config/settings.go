@@ -523,7 +523,11 @@ var Registry = []Setting{
 			{assistant.OpenAI, "Local model or OpenAI-compatible"}}},
 	{Key: "assistant.url", Scope: ScopeCluster, Section: "assistant", Label: "Address", Type: TypeURL,
 		Help:        "Where the model runs: the provider's own service, a model server on your own hardware such as Ollama, or another compatible service.",
-		Placeholder: "http://localhost:11434/v1", EmptyMeans: "the provider's own address", check: noSecretIn("put the key in API key below")},
+		Placeholder: "http://localhost:11434/v1", EmptyMeans: "the provider's own address", check: checkModelURL},
+	{Key: "assistant.allow_insecure_http", Scope: ScopeCluster, Section: "assistant", Label: "Allow plain http", Type: TypeBool,
+		Help: "Lets Signalith reach a model on another computer over http:// instead of https://. Without it, a plain http address other than this computer's own (localhost) turns the AI features off.",
+		Confirm: "Questions, the events Investigate with AI sends, the model's answers and any API key will cross the network unencrypted, where anyone on the way can read or change them. " +
+			"Use an https:// address instead when you can.", ConfirmWhen: "on"},
 	{Key: "assistant.model", Scope: ScopeCluster, Section: "assistant", Label: "Model", Type: TypeText,
 		Help:        "Which model answers. With an API key saved, the list comes from the provider itself. Required for a local model or OpenAI-compatible service, such as llama3.1 with Ollama.",
 		Placeholder: "llama3.1", EmptyMeans: "the provider's default model", problem: modelProblem},
@@ -1113,6 +1117,15 @@ func checkReplicas(v any) error {
 
 // noSecretIn refuses an address with a password or key in it, which
 // would be shown on the page and in logs; why says where it goes instead.
+// checkModelURL checks assistant.url: no password or key in it, no ? or #
+// part, and not a link-local or cloud metadata address.
+func checkModelURL(v any) error {
+	if err := noSecretIn("put the key in API key below")(v); err != nil {
+		return err
+	}
+	return assistant.CheckURL(v.(string))
+}
+
 func noSecretIn(why string) func(any) error {
 	return func(v any) error {
 		if hasSecret(v.(string)) {

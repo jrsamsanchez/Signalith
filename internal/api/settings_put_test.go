@@ -138,6 +138,19 @@ func TestTestAssistantFields(t *testing.T) {
 			t.Errorf("%s: %d %v", body, code, out)
 		}
 	}
+	// Plain http to another computer is refused unless allowed (AI-02),
+	// and an address with a ? part or a metadata address always (AI-03):
+	// nothing is sent.
+	for _, body := range []string{
+		`{"values":{"assistant.provider":"openai","assistant.url":"http://192.0.2.1:11434/v1","assistant.model":"m"}}`,
+		`{"values":{"assistant.provider":"openai","assistant.url":"http://127.0.0.1:1/admin?","assistant.model":"m"}}`,
+		`{"values":{"assistant.provider":"openai","assistant.url":"http://169.254.169.254/v1","assistant.model":"m","assistant.allow_insecure_http":"true"}}`,
+	} {
+		code, out := test(body)
+		if fields, _ := out["fields"].(map[string]any); code != http.StatusBadRequest || fields["assistant.url"] == nil {
+			t.Errorf("%s: %d %v", body, code, out)
+		}
+	}
 }
 
 // A failed assistant test is worded by what failed, and names the

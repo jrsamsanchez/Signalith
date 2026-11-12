@@ -47,6 +47,7 @@ environment variable wins over the page, which wins over `signalith.yaml`. See
 | `retention.days` | `90` | Days of events to keep (`0` keeps everything) until a default policy is saved on the Data retention page |
 | `retention.interval` | `1h` | How often retention policies are enforced |
 | `retention.archive_dir` | `archive` next to `lookups.dir` | Folder for archived days |
+| `retention.allow_unauthenticated_archives` | `false` | Restore plain archives whose manifest no key authenticates while archives are encrypted (only signalith.yaml); see [Authenticated manifests](retention.md#authenticated-manifests) |
 | `retention.default`, `retention.policies.<category>` | none | Policies that override the page; see [Data retention](retention.md) |
 | `retention.guard` | on, 85%, 7 days | Disk guard: `enabled`, `max_disk_percent`, `min_days` |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalithadmin` on a new install (`admin` on one made before 0.3.1, which keeps it) | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
@@ -90,7 +91,8 @@ environment variable wins over the page, which wins over `signalith.yaml`. See
 | `dashboards.dir` | `dashboards` | Folder for custom dashboards, one YAML file each, relative to the config file |
 | `dashboards.stale_after` | `2h` | How long a host and source type can be quiet before the posture dashboard lists it as stopped |
 | `assistant.provider` | off | Optional AI model for **Ask**: `anthropic`, or `openai` for any OpenAI-compatible API (OpenAI, Ollama, LM Studio, vLLM) |
-| `assistant.url`, `assistant.model`, `assistant.api_key` | per provider | Endpoint, model name and key; `anthropic` defaults to `claude-sonnet-5-5` |
+| `assistant.url`, `assistant.model`, `assistant.api_key` | per provider | Endpoint, model name and key; `anthropic` defaults to `claude-sonnet-5-5`. The address takes no `?` or `#` part and no link-local or cloud metadata address (169.254.0.0/16, fe80::/10, fd00:ec2::/32) |
+| `assistant.allow_insecure_http` | `false` | Lets `assistant.url` be plain `http://` to another computer. Without it such an address turns the AI features off (with a warning), since questions, events, answers and the key would cross the network unencrypted; `http://localhost` needs nothing |
 | `assistant.investigate` | `false` | Lets analysts use **Investigate with AI** on a finding, which sends the finding's events to the model. See [docs/investigate.md](investigate.md) |
 | `assistant.mask_fields` | none | Fields whose values are replaced with stand-ins before Investigate with AI sends anything; `_raw` leaves out the event text. Passwords, tokens, keys and cookies are always masked |
 | `assistant.request_timeout` | `3m` | How long one answer from the model may take (Test and each Investigate with AI turn), from 30s to 1h. A local model on a CPU without a GPU may need `15m` or more |

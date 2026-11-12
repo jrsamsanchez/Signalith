@@ -1349,6 +1349,9 @@ type Assistant struct {
 	URL    string `yaml:"url,omitempty"`
 	Model  string `yaml:"model,omitempty"`
 	APIKey string `yaml:"api_key,omitempty"`
+	// AllowInsecureHTTP lets URL be plain http to another computer. Off,
+	// such an address turns the AI features off (see AssistantInsecure).
+	AllowInsecureHTTP bool `yaml:"allow_insecure_http,omitempty"`
 	// Investigate lets analysts use Investigate with AI on a finding,
 	// which sends the finding's events and the results of read-only
 	// searches to the model. Off unless an admin turns it on.
@@ -1403,12 +1406,25 @@ func (c *Config) AssistantClient() *assistant.Client {
 		// A public demo never sends anything to an AI model.
 		return nil
 	}
+	if c.AssistantInsecure() || assistant.CheckURL(c.Assistant.URL) != nil {
+		// Warnings and Validate say why.
+		return nil
+	}
 	a := c.Assistant
 	cl := assistant.New(a.Provider, a.URL, a.Model, a.APIKey)
 	if cl != nil {
 		cl.HTTP.Timeout = c.AssistantRequestTimeout()
 	}
 	return cl
+}
+
+// AssistantInsecure reports whether the AI model's address is plain http
+// to another computer without assistant.allow_insecure_http: questions,
+// events and the model's answers would cross the network unencrypted, and
+// answers changed on the way would become verdicts and queries, so the AI
+// features stay off.
+func (c *Config) AssistantInsecure() bool {
+	return c.Assistant.Provider != "" && !c.Assistant.AllowInsecureHTTP && assistant.Insecure(c.AssistantURL())
 }
 
 // Backup turns on OpenSearch snapshots of Signalith's indices on a
@@ -2870,6 +2886,8 @@ func (c *Config) Validate() error {
 	if c.Assistant.URL != "" {
 		if u, err := url.Parse(c.Assistant.URL); err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			p = append(p, fmt.Sprintf("assistant.url %q must be http(s)://host[:port][/path]", redact.URL(c.Assistant.URL)))
+		} else if err := assistant.CheckURL(c.Assistant.URL); err != nil {
+			p = append(p, fmt.Sprintf("assistant.url %q: %v", redact.URL(c.Assistant.URL), err))
 		}
 	}
 	if _, ok := m365Clouds[c.M365.Cloud]; !ok && c.M365.Cloud != "" {
@@ -2989,8 +3007,14 @@ func (c *Config) Warnings() []string {
 	if u, err := url.Parse(o.URL); err == nil && u.Scheme == "http" && o.AllowInsecureHTTP && (o.Username != "" || o.Password != "") && !isLoopback(u.Hostname()) {
 		w = append(w, "opensearch.allow_insecure_http is on, so the OpenSearch username and password cross the network to "+u.Host+" unencrypted. Use an https:// opensearch.url.")
 	}
-	if u, err := url.Parse(c.Assistant.URL); err == nil && c.Assistant.Provider != "" && u.Scheme == "http" && c.Assistant.APIKey != "" && !isLoopback(u.Hostname()) {
-		w = append(w, "assistant.url is plain http to "+u.Host+", so the AI model's API key crosses the network unencrypted. Use https://.")
+	if u, err := url.Parse(c.AssistantURL()); err == nil && c.Assistant.Provider != "" && assistant.Insecure(c.AssistantURL()) {
+		if c.Assistant.AllowInsecureHTTP {
+			w = append(w, "assistant.allow_insecure_http is on, so questions, the events Investigate with AI sends, the AI model's answers and its API key cross the network to "+
+				u.Host+" unencrypted, where they can be read or changed. Use an https:// assistant.url.")
+		} else {
+			w = append(w, "assistant.url is plain http to "+u.Host+", so the AI features are off: questions, events and the model's answers would cross the network unencrypted, "+
+				"and answers changed on the way would become verdicts and queries. Use https://, or, to accept the risk, set assistant.allow_insecure_http: true.")
+		}
 	}
 	if u, err := url.Parse(c.Vulns.NVDURL); err == nil && u.Scheme == "http" && c.Vulns.NVDAPIKey != "" && !isLoopback(u.Hostname()) {
 		w = append(w, "vulns.nvd_url is plain http to "+u.Host+", so the NVD API key crosses the network unencrypted. Use https://.")

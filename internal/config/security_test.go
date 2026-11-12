@@ -146,8 +146,31 @@ func TestWarnings(t *testing.T) {
 	c.OpenSearch.TLSSkipVerify = true
 	c.Assistant = Assistant{Provider: "openai", URL: "http://ollama.lan:11434/v1", Model: "llama3.1", APIKey: "k"}
 	w := strings.Join(c.Warnings(), "\n")
-	if !strings.Contains(w, "tls_skip_verify") || !strings.Contains(w, "ca_file") || !strings.Contains(w, "AI model's API key") {
+	if !strings.Contains(w, "tls_skip_verify") || !strings.Contains(w, "ca_file") || !strings.Contains(w, "AI features are off") {
 		t.Errorf("warnings: %s", w)
+	}
+	// Plain http to another computer turns the AI off unless allowed
+	// (AI-02); this computer's own address needs nothing.
+	if c.AssistantClient() != nil || !c.AssistantInsecure() {
+		t.Error("an AI model client over plain http to another computer")
+	}
+	c.Assistant.AllowInsecureHTTP = true
+	if c.AssistantClient() == nil || !strings.Contains(strings.Join(c.Warnings(), "\n"), "allow_insecure_http is on") {
+		t.Errorf("allowed: %v", c.Warnings())
+	}
+	c.Assistant = Assistant{Provider: "openai", URL: "http://localhost:11434/v1", Model: "llama3.1"}
+	if c.AssistantClient() == nil {
+		t.Error("no client for a model on this computer")
+	}
+	// No ? or # part, and no metadata address (AI-03).
+	for _, bad := range []string{"http://localhost:11434/v1?", "http://169.254.169.254/v1"} {
+		c.Assistant.URL = bad
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "assistant.url") {
+			t.Errorf("%s: %v", bad, err)
+		}
+		if s, _ := Lookup("assistant.url"); s.Check(bad) == nil {
+			t.Errorf("the page takes %s", bad)
+		}
 	}
 }
 
