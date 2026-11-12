@@ -281,9 +281,6 @@ turned off.
 
 ## Audit alerts
 
-!!! note "Arriving with the next release"
-    Audit alerts are on `main` and come with the release after 0.4.0.
-
 Audit alerts tell admins about Signalith itself: who signs in to admin accounts, failed
 sign-ins and lockouts, changes to users, tenants, tokens and settings, deletions, and audit
 records that were lost. They come from Signalith's [audit records](audit.md), not from

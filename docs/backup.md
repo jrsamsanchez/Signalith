@@ -375,7 +375,7 @@ snapshots, the role is not given to Signalith until you want scheduled snapshots
 
 - **Docker quick start:** `snapshot.sh register` (above) gives it to Signalith's
   certificates. Updates keep it while a snapshot repository or Signalith's policy
-  exists. `snapshot.sh unregister` takes it away again. From the release after 0.4.0,
+  exists. `snapshot.sh unregister` takes it away again. From 0.4.1,
   when OpenSearch cannot say at `docker compose up` whether the role is in use, the
   step keeps it as it last loaded it, or stops without changing anything; setting
   `SIGNALITH_SNAPSHOT_ROLE` to `on` or `off` for the `opensearch-security` service
