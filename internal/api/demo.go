@@ -109,7 +109,7 @@ func (s *Server) demoSessions() *auth.Sessions {
 		s.demoSess = auth.NewSessions(demoIdle)
 		s.demoSess.MaxAge = demoMaxAge
 		s.demoSess.Limit = demoLimit
-		s.demoLimits = tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour}
+		s.demoLimits = tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour, Fresh: 1000}
 	})
 	return s.demoSess
 }
@@ -205,7 +205,10 @@ func writeDemoReadOnly(w http.ResponseWriter) {
 }
 
 // demoRate limits how often visitors start a session: 10 a minute from
-// one address (an IPv6 /64), 3000 an hour in all.
+// one address (an IPv6 /64), 3000 an hour in all, of which 1000 are kept
+// for addresses that started none in the hour, so a few addresses
+// starting sessions again and again cannot keep new visitors out
+// (AUTHRT-05).
 func (s *Server) demoRate() *tokenRate {
 	s.demoSessions()
 	return &s.demoLimits

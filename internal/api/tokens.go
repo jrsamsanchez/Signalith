@@ -410,10 +410,16 @@ type tokenRate struct {
 	// every key together may take within AllPer.
 	Each, All   int
 	Per, AllPer time.Duration
+	// Fresh, when set, is how many of All are kept for keys that took
+	// none within AllPer, so a few keys taking again and again cannot
+	// use up All and keep everyone new out.
+	Fresh int
 
 	mu     sync.Mutex
 	byUser map[string][]time.Time
 	all    []time.Time
+	// seen is when each key last took, for Fresh.
+	seen map[string]time.Time
 }
 
 // take counts one creation by user at now, or returns how long to wait.
@@ -449,12 +455,37 @@ func (t *tokenRate) take(user string, now time.Time) time.Duration {
 	if len(mine) == 0 {
 		delete(t.byUser, user)
 	}
+	limit := all
+	if t.Fresh > 0 {
+		if t.seen == nil {
+			t.seen = map[string]time.Time{}
+		}
+		if len(t.seen) > 2*all {
+			for k, at := range t.seen {
+				if now.Sub(at) >= allPer {
+					delete(t.seen, k)
+				}
+			}
+		}
+		// A key that took within AllPer, and the empty one (it stands
+		// for everyone the server cannot tell apart), may not take
+		// what is kept for fresh ones.
+		if at, ok := t.seen[user]; user == "" || (ok && now.Sub(at) < allPer) {
+			limit = max(all-t.Fresh, 0)
+		}
+	}
 	switch {
 	case user != "" && len(mine) >= each:
 		t.byUser[user] = mine
 		return per - now.Sub(mine[0])
-	case len(t.all) >= all:
-		return allPer - now.Sub(t.all[0])
+	case len(t.all) >= limit:
+		if len(t.all) == 0 {
+			return allPer
+		}
+		return max(allPer-now.Sub(t.all[min(len(t.all)-limit, len(t.all)-1)]), time.Second)
+	}
+	if t.Fresh > 0 {
+		t.seen[user] = now
 	}
 	if user == "" {
 		t.all = append(t.all, now)

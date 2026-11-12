@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,7 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/users"
@@ -317,6 +319,34 @@ func TestDemoSignInsAreLimited(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusTooManyRequests || resp.Header.Get("Retry-After") == "" {
 		t.Errorf("the 11th demo sign-in in a minute = %d, want 429 with Retry-After", resp.StatusCode)
+	}
+}
+
+// AUTHRT-05: a few addresses signing in to the demo again and again
+// cannot use up the total and keep new visitors out.
+func TestDemoSignInsKeepRoomForNewVisitors(t *testing.T) {
+	r := tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour, Fresh: 1000}
+	now := time.Now()
+	// Six addresses, ten a minute each, for an hour.
+	for m := range 60 {
+		for a := range 6 {
+			for range 10 {
+				r.take(fmt.Sprintf("198.51.100.%d", a), now.Add(time.Duration(m)*time.Minute))
+			}
+		}
+	}
+	at := now.Add(60 * time.Minute)
+	for i := range 500 {
+		if wait := r.take(fmt.Sprintf("2001:db8:%x::/64", i), at); wait != 0 {
+			t.Fatalf("new visitor %d refused for %s", i, wait)
+		}
+	}
+	if wait := r.take("198.51.100.1", at.Add(time.Second)); wait == 0 {
+		t.Error("an address that took its share was let into what is kept for new ones")
+	}
+	// Shared clients (no key) count as seen.
+	if wait := r.take("", at); wait == 0 {
+		t.Error("the empty key took from what is kept for new ones")
 	}
 }
 
