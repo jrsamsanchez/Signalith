@@ -310,10 +310,13 @@ const ssoStatePurpose = "oidc sign-in"
 
 // sealSSOState returns the cookie value of st: its JSON, and a MAC under
 // the servers' shared key, as sealSAMLState does, so a cookie Signalith
-// did not make, or changed, is refused. Over plain HTTP, where the
-// cookie's prefix does not keep others from setting it, someone on the
-// path could otherwise plant one with a state of their own and sign the
-// browser in as themselves (AUTHRT-11).
+// did not make, or changed, is refused. That stops a forged cookie, not
+// login CSRF (AUTHRT-11): someone who can set this browser's cookies can
+// plant a genuine one from a sign-in they started and finish it with
+// their own code. What stops that is the __Host- prefix over HTTPS, which
+// no other site can set; over plain HTTP whoever is on the path can set
+// (and read) any cookie, so no further cookie binding the state to the
+// browser would help. docs/sso.md says to use HTTPS.
 func (s *Server) sealSSOState(st ssoState) string {
 	data, _ := json.Marshal(st)
 	body := base64.RawURLEncoding.EncodeToString(data)
