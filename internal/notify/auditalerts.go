@@ -109,6 +109,14 @@ var AuditAlerts = []AuditAlert{
 		},
 	},
 	{
+		ID: "ai_masked_value", Name: "AI went after a masked value", Urgency: "high",
+		Description: "The AI model, investigating a finding, searched for a value that masking hid from it, so the finding or its data may carry instructions aimed at the model. The investigation was stopped.",
+		messages: []string{
+			"Investigate with AI stopped: the model searched for a masked value",
+			"AI first pass stopped: the model searched for a masked value",
+		},
+	},
+	{
 		ID: "builtin_signin", Name: "Built-in admin signs in", Urgency: "high",
 		Description: "Someone signs in as the built-in admin. Most teams keep it for emergencies, or turn it off once they have admins of their own.",
 		messages:    []string{"signed in"},

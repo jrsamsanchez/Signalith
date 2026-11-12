@@ -21,10 +21,10 @@ import (
 // records an alert covers through another message. A record is matched
 // by its message, or by the action before the first ":" of it.
 var notAlerted = []string{
-	"AI first pass failed", "AI first pass stopped: the model searched for a masked value",
+	"AI first pass failed",
 	"finding looked at by the AI first pass", "detection.export",
 	"AI detection draft failed", "AI investigation search refused", "AI query translation failed",
-	"Investigate with AI failed", "Investigate with AI stopped: the model searched for a masked value",
+	"Investigate with AI failed",
 	"Signalith started again", "Slack channel's workspace recorded", "Teams app added to a Teams conversation",
 	"Teams app channel move declined", "Teams app channel now posts to a Teams conversation",
 	"Teams app removed from the Teams channel it posted to",

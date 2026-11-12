@@ -311,6 +311,7 @@ the **Audit alerts** card on the Notifications page.
 | Audit alert | Urgency | Sent when |
 | --- | --- | --- |
 | Audit records lost or settings tampered with | Critical | Audit records could not be kept (an `audit.lost` record), a response action's audit record could not be written, shared settings, the cluster document or a sign-in session were changed in OpenSearch outside Signalith, a forged or replayed cluster request was refused, the cluster key was exported or imported, or a passkey that may have been copied was used |
+| AI went after a masked value | High | The AI model, investigating a finding, searched for a value that masking hid from it, which can mean the finding carries instructions aimed at the model; the investigation was stopped |
 | Built-in admin signs in | High | Someone signs in as the built-in admin |
 | Sign-ins locked out | High | Wrong passwords or codes lock an account, or pause sign-ins from one address; or so many sign-ins fail in a minute that some are left out of the audit log |
 | Users, roles and two-step sign-in change | High | A user is added, changed, turned off or on, or deleted; a role changes; a password is reset or changed; a passkey is added or removed; recovery codes are made or used; a chat account is linked; two-step sign-in or passkeys are turned off or reset; the built-in admin is turned on again, renamed or gets a new password; the directory settings change |
@@ -325,7 +326,7 @@ the **Audit alerts** card on the Notifications page.
 
 Every audit record Signalith writes is either covered by one of these alerts or deliberately left out as everyday work; a test keeps that list complete.
 
-A good start is the first six, sent to the channel your security team watches. **Failed
+A good start is the first seven, sent to the channel your security team watches. **Failed
 sign-ins and refused tokens** is marked *Noisy*: on a server the internet can reach it can
 send many messages. **Sign-ins locked out** tells you about guessing with far fewer.
 
