@@ -55,7 +55,7 @@ add `-explain` to see the compiled request. `signalith ask "failed logins from
 | `"a.b"=value`, `"a{}" IN (x, y)` | A field name in quotes, as Splunk writes names with dots or braces |
 | `word` or `"a phrase"` | Text in the raw event (`_raw`). A word matches a whole word, or the start of a name with dots or underscores (`mimikatz` finds `mimikatz.exe`), but not text inside a word: use `*katz*` for that |
 | `NOT term`, `( ... )` | Negation and grouping |
-| `[ \| inputlookup owners \| fields user ]` | A subsearch. It runs first, and each of its result rows becomes a term: `field=value` for each of the row's fields (fields that start with `_` are skipped), ANDed within a row, ORed across rows, as in Splunk. A subsearch with no rows matches nothing, so `NOT [ ... ]` keeps everything. A plain event search inside it takes up to `search.max_events` events, the newest, and the result is marked *Sampled* when more match. Rows that repeat the same values count once; it may give at most 1,000 values, so narrow it with `fields`, `dedup` or `head` |
+| `[ \| inputlookup owners \| fields user ]` | A subsearch. It runs first, and each of its result rows becomes a term: `field=value` for each of the row's fields (fields that start with `_` are skipped), ANDed within a row, ORed across rows, as in Splunk. A subsearch with no rows matches nothing, so `NOT [ ... ]` keeps everything. A plain event search inside it takes up to `search.max_events` events, the newest, and the result is marked *Sampled* when more match. Rows that repeat the same values count once; it may give at most 1,000 values, so narrow it with `fields`, `dedup` or `head`. A value is matched as it is: a `*` or `?` in an event's value is that character, not a wildcard (the `search` and `query` fields are read as search terms and text, as in Splunk) |
 | `a OR b` | Either. As in SPL, OR binds tighter than the implicit AND, so `x a OR b` means `x AND (a OR b)` |
 | `earliest=-7d@d latest=now` | Time range; overrides the UI time picker |
 
@@ -136,7 +136,7 @@ In a regular expression that means `\.` stays `\.`, and a literal backslash is
 | `abstract` | `abstract maxlines=3` | Shortens each event's `_raw` to its `maxlines=` (5) lines with the most words, in order, with `...` in front of a line that follows left-out lines. `maxterms=` (1000) caps the words counted on a line. `excerpt` is the same command |
 | `highlight` | `highlight failed root` | Accepted so Splunk searches run as written; the results stay as they are |
 | `iplocation` | `iplocation src` | Adds where each address is, from a GeoIP database an admin adds ([GeoIP database](https://github.com/jrsamsanchez/signalith/blob/main/docs/lookups.md#geoip-database-for-iplocation)): `City`, `Region`, `Country`, `lat` and `lon`; `allfields=true` adds `Continent`, `MetroCode` and `Timezone`. `prefix=src_` starts each name with `src_`, and `lang=de` gives names in another language where the database has them. An address the database lists gets every field, empty where it has no value, as in Splunk; private addresses and ones it does not list get none |
-| `map` | `map maxsearches=20 search="search EventCode=4624 TargetLogonId=$TargetLogonId$"` | Runs the search once for each of the first rows (10 unless `maxsearches=` says, at most 100 in a query), with each `$field$` replaced by that row's value, and gives the rows of all those searches. A value is always one value: outside quotes it is quoted unless it is a number or a plain name, and inside quotes it is escaped, so no value can add conditions or commands. A row missing a field the search names runs no search. `$$` is a `$`. The search cannot use `join`, `append`, `appendpipe` or `map`, and gets the outer time range unless it sets its own. Each search takes up to `search.max_events` events, and the result is marked *Sampled* when more match |
+| `map` | `map maxsearches=20 search="search EventCode=4624 TargetLogonId=$TargetLogonId$"` | Runs the search once for each of the first rows (10 unless `maxsearches=` says, at most 100 in a query), with each `$field$` replaced by that row's value, and gives the rows of all those searches. A value is always one value: outside quotes it is quoted unless it is a number or a plain name, and inside quotes it is escaped, so no value can add conditions or commands. A field compared with a whole `$field$` value matches it as it is: a `*` or `?` in the row's value is not a wildcard. A row missing a field the search names runs no search. `$$` is a `$`. The search cannot use `join`, `append`, `appendpipe` or `map`, and gets the outer time range unless it sets its own. Each search takes up to `search.max_events` events, and the result is marked *Sampled* when more match |
 | `accum` | `accum bytes AS total_bytes` | Sets the running total of a number field over the rows so far (into the field itself unless `AS` names another). Rows without a number get no total |
 | `delta` | `delta count AS change p=1` | Sets `delta(count)`, or the `AS` name, to the field's number minus the number `p=` rows earlier (default 1), counting only rows that have a number, up to `p=10000` |
 | `autoregress` | `autoregress count p=1-3` | Copies a field from earlier rows: `count_p1` from the row before, `count_p2` from two rows before, and so on (`p=` is one number or a range, at most 100 fields; `AS` names the field when `p=` is one number) |
@@ -261,7 +261,12 @@ value counts 48 bytes besides its text toward the 256 MB, on every row that hold
 about five million short values fit in one search), one
 expression has at most 10,000 terms, and one search evaluates at most 500 million
 expression steps (about 100 steps for each of 20 assignments over 100,000 events fits
-with room to spare).
+with room to spare). Each regular expression a command or function runs over a value
+counts toward those steps by the value's length times the pattern's size, so the search's
+time limit applies between values; one that would run for more than about a second over
+one value (a pattern such as `a{0,900}Z` over 250 KB) is refused, so shorten the value
+first, with `substr` for example. Values that `fillnull` adds count toward the 256 MB like
+those `eval` builds.
 
 ## Asking in plain English
 
@@ -351,7 +356,13 @@ The AI assistant can also be set on the **Settings** page (see
 - At most 8 searches run at once (detections are counted separately), and one user's
   searches take at most 4 of those turns. Others wait their turn for up to 15 seconds,
   then fail with "Signalith is busy running other searches" (or "You already have several
-  searches running"); try again shortly.
+  searches running"); try again shortly. A search's turn lasts until its result has been
+  sent, and the client has 2 minutes to read it.
+- A search's result (on the Search page, in a dashboard panel or a notebook) may come to at
+  most 128 MB, counting each value every time a row holds it; 10,000 events of several KB
+  each fit. Keep fewer fields with `fields` or `table`, or fewer rows with `head`.
+- One user may start 60 searches at once and one a second after that (the Search page
+  sends a few for each search you run); past that the answer is `429` with `Retry-After`.
 
 Use **Explain** in the UI, or `signalith query -explain "<query>"`, to see the plain-English
 steps and the exact OpenSearch request.

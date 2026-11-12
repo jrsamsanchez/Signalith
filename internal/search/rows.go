@@ -149,7 +149,7 @@ func applyCommand(ctx context.Context, res *Result, c query.Command) error {
 		}
 		sortRows(res.Rows, c.SortBy)
 	case *query.Fillnull:
-		applyFillnull(res, c)
+		return applyFillnull(evaluatorFor(ctx), res, c)
 	case *query.EventStats:
 		return applyEventStats(ctx, res, c)
 	case *query.StreamStats:
@@ -640,6 +640,15 @@ func (m *matcher) regex(pattern, s string) bool {
 		}
 		m.regexes[pattern] = re
 	}
+	if m.ev == nil {
+		m.ev = evaluatorFor(m.ctx)
+	}
+	if !m.ev.regexWork(re.re, len(s)) {
+		if m.err == nil {
+			m.err = m.ev.err
+		}
+		return false
+	}
 	return re.MatchString(s)
 }
 
@@ -733,6 +742,12 @@ func (m *matcher) compare(e *query.Compare, v any, r Row) bool {
 		if w, ok := r[e.Value]; ok && w != nil {
 			return compareOp(e.Op, compareValues(v, w))
 		}
+	}
+	switch {
+	case e.Exact && e.Op == "=":
+		return compareValues(v, e.Value) == 0
+	case e.Exact && e.Op == "!=":
+		return compareValues(v, e.Value) != 0
 	}
 	switch e.Op {
 	case "=":
@@ -1038,7 +1053,9 @@ func checkPatterns(q *query.Query) error {
 				check(v, where)
 			}
 		case *query.Compare:
-			check(e.Value, where)
+			if !e.Exact {
+				check(e.Value, where)
+			}
 		}
 	}
 	walk(q.Search, false)

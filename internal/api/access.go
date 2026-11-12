@@ -290,7 +290,7 @@ func (s *Server) requireUser(next http.Handler) http.Handler {
 		s.noteName(r)
 		// Searches the request runs count against the user's share of
 		// the search slots.
-		ctx := search.ForUser(context.WithValue(r.Context(), userKey{}, p), searchUser(p))
+		ctx := search.ForUser(context.WithValue(r.Context(), userKey{}, p), s.searchUser(r, p))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

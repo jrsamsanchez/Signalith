@@ -208,7 +208,9 @@ func subsearchTerms(res *Result) (query.Expr, error) {
 				case "query":
 					alt.Children = append(alt.Children, &query.Text{Value: v})
 				default:
-					alt.Children = append(alt.Children, &query.Compare{Field: k, Op: "=", Value: v})
+					// The value is the event's, character for character:
+					// a * in it is no wildcard (SRCH-04).
+					alt.Children = append(alt.Children, &query.Compare{Field: k, Op: "=", Value: v, Exact: true})
 				}
 			}
 			switch len(alt.Children) {

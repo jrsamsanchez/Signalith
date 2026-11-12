@@ -294,6 +294,7 @@ func applyRegex(ctx context.Context, res *Result, c *query.Regex) error {
 	if err != nil {
 		return &QueryError{Msg: fmt.Sprintf("regex pattern: %v", err)}
 	}
+	ev := evaluatorFor(ctx)
 	out := res.Rows[:0:0]
 	work := 0
 	for i, r := range res.Rows {
@@ -311,6 +312,9 @@ func applyRegex(ctx context.Context, res *Result, c *query.Regex) error {
 					return err
 				}
 				work = 0
+			}
+			if !ev.regexWork(re, len(s)) {
+				return ev.err
 			}
 			if re.MatchString(s) {
 				matched = true

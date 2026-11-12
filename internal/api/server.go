@@ -407,6 +407,10 @@ type Server struct {
 	demoOnce   sync.Once
 	demoSess   *auth.Sessions
 	demoLimits tokenRate
+	// searchLim holds the limits on the routes that run a user's
+	// search (searchlimit.go).
+	searchLimitsOnce sync.Once
+	searchLim        *searchLimits
 	// metricsRate limits scrapes of GET /metrics by address,
 	// metricsRefused the log of refused scrape tokens, and metricsSlow
 	// keeps what scrapes ask OpenSearch for a little while (metrics.go).
@@ -552,7 +556,7 @@ func (s *Server) Handler() http.Handler {
 	s.routes = api.routes
 	s.apiMux = api.mux
 	s.routeLogin(mux)
-	mux.Handle("/", s.requireUser(s.configToken(false, s.awaitConfig(api.mux))))
+	mux.Handle("/", s.requireUser(s.configToken(false, s.awaitConfig(s.searchGate(api.mux)))))
 	return limitBodies(s.securityHeaders(s.configHeaders(s.guardAPI(mux))))
 }
 
@@ -1040,7 +1044,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res.Drill = q.Drilldown()
-	writeJSON(w, http.StatusOK, res)
+	writeSearchResult(w, res)
 }
 
 func (s *Server) handleExplain(w http.ResponseWriter, r *http.Request) {

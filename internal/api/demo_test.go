@@ -321,23 +321,31 @@ func TestDemoSignInsAreLimited(t *testing.T) {
 }
 
 // Each demo visitor's searches count against a share of the search slots
-// of their own; everyone else's against their user's.
-func TestSearchUserPerDemoSession(t *testing.T) {
+// for the address they come from, however many sessions they start, and
+// everyone else's against their user's (SRCH-03).
+func TestSearchUserPerDemoAddress(t *testing.T) {
+	_, srv := newDemoServer(t)
+	from := func(addr string) *http.Request {
+		r := httptest.NewRequest("POST", "/api/search", nil)
+		r.RemoteAddr = addr
+		return r
+	}
 	a, b := demoPrincipal(), demoPrincipal()
 	a.token, b.token = "token-a", "token-b"
-	if searchUser(a) == searchUser(b) {
-		t.Errorf("two visitors share %q", searchUser(a))
+	if got, other := srv.searchUser(from("198.51.100.7:1000"), a), srv.searchUser(from("198.51.100.7:2000"), b); got != other {
+		t.Errorf("two sessions from one address: %q and %q", got, other)
 	}
-	if !strings.HasPrefix(searchUser(a), demoUser+":") {
-		t.Errorf("visitor's search user = %q", searchUser(a))
+	if got := srv.searchUser(from("198.51.100.7:1000"), a); !strings.HasPrefix(got, demoUser+"@") {
+		t.Errorf("visitor's search user = %q", got)
 	}
-	a2 := demoPrincipal()
-	a2.token = "token-a"
-	if searchUser(a) != searchUser(a2) {
-		t.Error("one session's search user changes")
+	if srv.searchUser(from("198.51.100.7:1000"), a) == srv.searchUser(from("198.51.100.8:1000"), a) {
+		t.Error("visitors from two addresses share a search user")
+	}
+	if srv.searchUser(from("[2001:db8:1:2::1]:1000"), a) != srv.searchUser(from("[2001:db8:1:2::99]:1000"), b) {
+		t.Error("one IPv6 /64 has more than one search user")
 	}
 	u := &principal{Username: "alice", Source: "local", token: "token-a"}
-	if got := searchUser(u); got != "alice" {
+	if got := srv.searchUser(from("198.51.100.7:1000"), u); got != "alice" {
 		t.Errorf("user's search user = %q, want alice", got)
 	}
 }

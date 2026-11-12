@@ -39,9 +39,11 @@ and the server 3,000 an hour in all; past that the button answers `429` with
 `Retry-After`. Someone with many addresses can use up the hourly total and keep
 everyone else out for the rest of the hour; if that happens, limit requests per
 address in front of the server (at the cloud firewall or a rate-limiting proxy)
-and restart Signalith to start the count again. Each visitor's searches count
-against a share of the search slots of their own, so one visitor's slow searches
-don't hold back the others. A restart ends every visitor's session, and a visitor's session
+and restart Signalith to start the count again. The searches from one visitor's
+address (an IPv6 /64) count against a share of the search slots of their own,
+however many sessions it starts, so one visitor's slow searches don't hold back
+the others, and visitors together have at most half of the searches that may be
+running or answering at once, so signed-in users always have room. A restart ends every visitor's session, and a visitor's session
 works only on the server that made it: run a demo on one server, or keep each
 visitor on one server (sticky sessions) behind a load balancer.
 

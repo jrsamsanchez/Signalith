@@ -4,8 +4,6 @@
 package api
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"net/http"
 	"slices"
@@ -140,16 +138,21 @@ func (s *Server) demoVisitor(r *http.Request) *principal {
 	return p
 }
 
-// searchUser is whose share of the search slots p's searches count
-// against: the user's, or for the demo's visitors, who are all the same
-// user, the session's, so one visitor's slow searches never hold back
-// the others.
-func searchUser(p *principal) string {
+// searchUser is whose share of the search slots p's searches, made in
+// request r, count against: the user's, or for the demo's visitors, who
+// are all the same user, the address they come from (an IPv6 /64), so one
+// visitor's slow searches never hold back the others, and a visitor
+// cannot get more by starting more sessions (SRCH-03). Visitors behind
+// an address that stands for many share one.
+func (s *Server) searchUser(r *http.Request, p *principal) string {
 	if p.Source != sourceDemo {
 		return p.Username
 	}
-	sum := sha256.Sum256([]byte(p.token))
-	return demoUser + ":" + hex.EncodeToString(sum[:6])
+	c := s.client(r)
+	if !c.Addr.IsValid() || c.Shared {
+		return demoUser
+	}
+	return demoUser + "@" + clientaddr.Key(c.Addr).String()
 }
 
 // demoAdminClient reports whether r comes from demo.admin_networks, where
