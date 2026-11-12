@@ -49,9 +49,16 @@ import (
 // balancer or NAT) has neither of the first two buckets and is never known:
 // its sign-ins are counted per account, so nobody behind it can lock the
 // others out. It has a ceiling instead: past MaxPerShared failures within
-// a minute, further attempts from it wait until the oldest is a minute
-// old, so it cannot be used to guess across accounts or keep the server
-// checking passwords as fast as it can. Nothing is locked.
+// a minute, further attempts from it are paced to MaxPerShared a minute
+// (one at a time, each a minute/MaxPerShared after the last failure), so it
+// cannot be used to guess across accounts or keep the server checking
+// passwords as fast as it can. Nothing is locked. The ceiling is checked
+// before the password, so it does not hold back a known browser or anyone
+// signing in to an account that was signed in to from that shared address
+// before (with the same password): junk-name failures from one person
+// behind a NAT then cannot keep everyone else behind it out (RT-01,
+// AUTHRT-02). Such a pair is not known in any other way: its failures
+// still count toward the account's strangers' slow-down.
 //
 // A successful sign-in clears only the failures of its own address (or
 // browser) and account, so signing in to one account never helps guess
@@ -300,7 +307,10 @@ type Attempt struct {
 	address string // known after a success; "" for a shared address
 	account string
 	version string
-	done    bool
+	// shared is the shared address, known for the account after a
+	// success only to pass its ceiling.
+	shared string
+	done   bool
 }
 
 // AccountKey is what the limiter keeps of an account name: a digest of
@@ -333,7 +343,13 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 	}
 	a := &Attempt{l: l, account: account, version: c.Version}
 	known := !c.Shared && l.knownLocked(c.Address, account, c.Version, now)
-	if c.Shared && c.Address != "" && l.MaxPerShared > 0 {
+	if c.Shared {
+		a.shared = c.Address
+	}
+	// A known browser, or an account signed in to from this shared
+	// address before, is not held to its ceiling.
+	if c.Shared && c.Address != "" && l.MaxPerShared > 0 && c.Browser == "" &&
+		!l.knownLocked(sharedKnown+c.Address, account, c.Version, now) {
 		a.slots = append(a.slots, slot{"s\x00" + c.Address, kindCeiling, l.MaxPerShared, sharedWindow})
 	}
 	if !c.Shared {
@@ -413,10 +429,13 @@ func (l *Limiter) Begin(c Client, account string) (*Attempt, error) {
 			if n+b.pending < s.limit {
 				continue
 			}
-			if n == 0 {
+			// Past the ceiling, attempts are paced rather than held off
+			// for the rest of the minute: one at a time, each a
+			// window/limit after the last failure.
+			if n == 0 || b.pending > 0 {
 				refuse(Busy, ReasonBusy)
-			} else {
-				refuse(max(b.failures[0].Add(s.window).Sub(now), time.Second), ReasonBusy)
+			} else if w := b.failures[n-1].Add(s.window / time.Duration(s.limit)).Sub(now); w > 0 {
+				refuse(max(w, time.Second), ReasonBusy)
 			}
 		}
 	}
@@ -547,8 +566,13 @@ func (a *Attempt) Succeed() {
 			delete(l.buckets, a.own)
 		}
 	}
-	if a.address == "" {
-		return
+	address := a.address
+	if address == "" {
+		if a.shared == "" {
+			return
+		}
+		// Known only to pass the shared address's ceiling.
+		address = sharedKnown + a.shared
 	}
 	if l.known == nil {
 		l.known = map[string]time.Time{}
@@ -567,8 +591,12 @@ func (a *Attempt) Succeed() {
 			delete(l.known, k)
 		}
 	}
-	l.known[knownKey(a.address, a.account, a.version)] = now
+	l.known[knownKey(address, a.account, a.version)] = now
 }
+
+// sharedKnown prefixes a shared address in l.known, so it is never taken
+// for the same address unshared.
+const sharedKnown = "s\x00"
 
 // Done ends an attempt that neither failed nor succeeded, such as one the
 // directory could not answer.

@@ -371,9 +371,16 @@ func TestLimiterSharedCeiling(t *testing.T) {
 		}
 		c.t = c.t.Add(time.Second)
 	}
+	// Past the ceiling, attempts are paced to 20 a minute: one every
+	// 3 seconds after the last failure.
 	ok, rf := allowed(l, nat, "made-up-more")
-	if ok || rf.Reason != ReasonBusy || rf.Wait > time.Minute || rf.Wait < 30*time.Second {
+	if ok || rf.Reason != ReasonBusy || rf.Wait > 3*time.Second {
 		t.Fatalf("past the ceiling: %v %+v", ok, rf)
+	}
+	c.t = c.t.Add(2 * time.Second)
+	fail(t, l, nat, "made-up-paced")
+	if ok, _ := allowed(l, nat, "made-up-more"); ok {
+		t.Fatal("a paced failure did not start the pace again")
 	}
 	if ok, _ := allowed(l, addr("198.51.100.1"), "made-up-more"); !ok {
 		t.Error("another address was held back")
@@ -384,6 +391,47 @@ func TestLimiterSharedCeiling(t *testing.T) {
 	c.t = c.t.Add(time.Minute)
 	if ok, _ := allowed(l, nat, "made-up-more"); !ok {
 		t.Error("still refused a minute later")
+	}
+}
+
+// RT-01/AUTHRT-02: junk-name failures through a shared address must not
+// keep out the people behind it who signed in before: a known browser and
+// an account signed in to from that address are not held to its ceiling.
+// Such an account is still slowed for strangers.
+func TestLimiterSharedCeilingSparesKnownUsers(t *testing.T) {
+	c := &clock{time.Now()}
+	l := NewLimiter()
+	l.Now = c.now
+	l.MaxPerShared = 20
+	nat := Client{Address: "203.0.113.5", Shared: true, Version: "v1"}
+	a, err := l.Begin(nat, "dana")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.Succeed()
+	for i := range 20 {
+		fail(t, l, nat, fmt.Sprintf("junk%d", i))
+	}
+	if ok, _ := allowed(l, nat, "someone-new"); ok {
+		t.Fatal("the ceiling did not hold a new account name")
+	}
+	if ok, rf := allowed(l, nat, "dana"); !ok {
+		t.Errorf("an account signed in to from the shared address was held back: %+v", rf)
+	}
+	if ok, rf := allowed(l, Client{Address: nat.Address, Shared: true, Browser: "known-browser"}, "erin"); !ok {
+		t.Errorf("a known browser was held back: %+v", rf)
+	}
+	// A new password makes the pair unknown again.
+	if ok, _ := allowed(l, Client{Address: nat.Address, Shared: true, Version: "v2"}, "dana"); ok {
+		t.Error("the pair stayed known after a password change")
+	}
+	// The pair is not known for anything else: dana's strangers' count
+	// still slows her account down.
+	for range l.MaxPerAccount {
+		fail(t, l, nat, "dana")
+	}
+	if ok, rf := allowed(l, nat, "dana"); ok || rf.Reason != ReasonSlowed {
+		t.Errorf("the shared address's known pair skipped the slow-down: %v %+v", ok, rf)
 	}
 }
 

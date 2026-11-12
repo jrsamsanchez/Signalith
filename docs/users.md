@@ -355,8 +355,11 @@ that, list the address on the **Settings** page:
   and one person's wrong passwords never affect another account.
 
 Such an address has one limit of its own: after 300 wrong passwords in a minute,
-further sign-ins through it wait (`429` with `Retry-After`) until the oldest is a
-minute old. Nothing is locked. Trusted reverse proxies without **Client address
+further sign-ins through it are paced to 300 a minute, one at a time (`429` with
+`Retry-After`). Nothing is locked. The limit never applies to a browser that signed in
+to the account before, nor to an account that was signed in to through that address
+before with its current password, so wrong passwords (or made-up names) from one person
+behind it cannot keep the others out. Trusted reverse proxies without **Client address
 header** make every visitor one such client, so `signalith validate`, the server log
 at start and the **Health** page warn about it.
 
