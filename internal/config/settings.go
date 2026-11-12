@@ -597,6 +597,10 @@ var Registry = []Setting{
 	{Key: "auth.oidc.button_label", Scope: ScopeCluster, Section: "sso", Label: "Button label", Type: TypeText,
 		Help:        "The sign-in page's button.",
 		Placeholder: "Sign in with Okta", EmptyMeans: "Sign in with and the provider's name"},
+	{Key: "auth.oidc.require_mfa", Scope: ScopeCluster, Section: "sso", Label: "Check two-step sign-in", Type: TypeBool,
+		Help: "When Require two-step sign-in is Everyone, lets in only people whose ID token shows a second factor: its amr claim names mfa, or two or more ways of signing in. " +
+			"Turn it on once the provider asks Signalith's users for a second factor and sends amr (Microsoft Entra ID and Okta do; Keycloak with its AMR mapper; Google does not). " +
+			"Off, the provider alone decides. Upgrade every server first."},
 	{Key: "auth.saml.enabled", Scope: ScopeCluster, Section: "sso", Label: "SAML single sign-on", Type: TypeBool,
 		Help: "Shows a sign-in button for the SAML identity provider on the sign-in page. Works alongside OpenID Connect, local users, directory sign-in and the built-in admin."},
 	{Key: "auth.saml.provider", Scope: ScopeCluster, Section: "sso", Label: "Identity provider", Type: TypeChoice,
@@ -628,6 +632,11 @@ var Registry = []Setting{
 	{Key: "auth.saml.button_label", Scope: ScopeCluster, Section: "sso", Label: "Button label", Type: TypeText,
 		Help:        "The sign-in page's button.",
 		Placeholder: "Sign in with AD FS", EmptyMeans: "Sign in with and the provider's name"},
+	{Key: "auth.saml.mfa_context", Scope: ScopeCluster, Section: "sso", Label: "Two-step sign-in context", Type: TypeText,
+		Help: "When Require two-step sign-in is Everyone, asks the provider for this authentication context and lets in only people whose assertion names it " +
+			"(its AuthnContextClassRef, or Microsoft's authnmethodsreferences attribute). AD FS: http://schemas.microsoft.com/claims/multipleauthn. " +
+			"Empty, the provider alone decides. Upgrade every server first.",
+		Placeholder: "http://schemas.microsoft.com/claims/multipleauthn", EmptyMeans: "none asked for"},
 	{Key: "auth.scim.enabled", Scope: ScopeCluster, Section: "sso", Label: "Provisioning (SCIM)", Type: TypeBool,
 		Help: "Lets the identity provider add, update, disable and remove single sign-on users before they sign in, over SCIM 2.0. Roles still come from groups at each sign-in."},
 	{Key: "auth.scim.token_sha256", Scope: ScopeCluster, Section: "sso", Label: "SCIM token", Type: TypeText,
