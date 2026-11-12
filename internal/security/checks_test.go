@@ -1469,6 +1469,38 @@ func TestOpenSearchRole(t *testing.T) {
 		}, state: Attention,
 			line: "Signalith signs in to OpenSearch as admin, which can do anything there. If its password or key leaked, so would all of OpenSearch."},
 		{name: "admin backend role", set: func(f *Facts) { f.OpenSearch.AuthBackend = []string{"admin"} }, state: Attention},
+		// An install from before 0.4.0 keeps the snapshot role (DEP-209).
+		{name: "snapshot role, snapshots off", set: func(f *Facts) {
+			f.OpenSearch.AuthRoles = []string{"signalith_server", "signalith_snapshots"}
+		}, state: Attention,
+			line: "Signalith signs in to OpenSearch as signalith, which has the signalith_snapshots role and so may delete snapshots, although scheduled snapshots are off. If its password or key leaked, so could your snapshots.",
+			fix: func(t *testing.T, c *Check) {
+				if !strings.Contains(c.Fix.Steps[0], "signalith opensearch snapshot-role off") || c.Fix.Docs.Anchor != "what-opensearch-needs" {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "snapshot role, Docker", set: func(f *Facts) {
+			f.InContainer, f.Docker = true, true
+			f.OpenSearch.AuthRoles = []string{"signalith_server", "signalith_snapshots"}
+		}, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				if !strings.Contains(c.Fix.Steps[0], "snapshot.sh unregister") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "snapshot role, Kubernetes", set: func(f *Facts) {
+			f.InContainer, f.Kubernetes = true, true
+			f.OpenSearch.AuthRoles = []string{"signalith_snapshots"}
+		}, state: Attention,
+			fix: func(t *testing.T, c *Check) {
+				if !strings.Contains(c.Fix.Steps[0], "opensearch.snapshotRole: false") {
+					t.Errorf("%+v", c.Fix)
+				}
+			}},
+		{name: "snapshot role, snapshots on", set: func(f *Facts) {
+			f.Config.Backup.Snapshots = true
+			f.OpenSearch.AuthRoles = []string{"signalith_server", "signalith_snapshots"}
+		}, state: Good},
 		{name: "failed", set: func(f *Facts) { f.OpenSearch.AuthErr = "no answer in time" }, state: Unknown,
 			line: "Signalith couldn't ask OpenSearch what its account may do."},
 		{name: "unreachable", set: func(f *Facts) { f.OpenSearch.AuthErr = "connection refused" }, state: Unknown,
