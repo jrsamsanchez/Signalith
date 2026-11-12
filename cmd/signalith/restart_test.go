@@ -552,6 +552,15 @@ func TestFrontHoldsRequestsDuringASwap(t *testing.T) {
 	if rec.Code != 503 || rec.Header().Get("Retry-After") == "" || !strings.Contains(rec.Body.String(), `"code":"restarting"`) {
 		t.Errorf("held too long: %d %s", rec.Code, rec.Body.String())
 	}
+	// WEB-08: with the browser protections every answer has.
+	if h := rec.Header(); h.Get("X-Frame-Options") != "DENY" || h.Get("Content-Security-Policy") == "" || h.Get("Permissions-Policy") == "" {
+		t.Errorf("restarting answer headers %v", h)
+	}
+	rec = httptest.NewRecorder()
+	downHandler.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
+	if h := rec.Header(); rec.Code != 503 || h.Get("X-Frame-Options") != "DENY" || h.Get("Content-Security-Policy") == "" {
+		t.Errorf("down page: %d %v", rec.Code, h)
+	}
 }
 
 // capture returns what fn prints.

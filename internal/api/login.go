@@ -132,23 +132,6 @@ func (s *Server) unauthorized(w http.ResponseWriter, r *http.Request) {
 	writeError(w, http.StatusUnauthorized, errors.New("sign in required"))
 }
 
-// sameOrigin rejects state-changing requests a browser sent from another
-// site. Requests without browser headers (API clients) pass.
-func sameOrigin(r *http.Request) bool {
-	switch r.Method {
-	case http.MethodGet, http.MethodHead, http.MethodOptions:
-		return true
-	}
-	if site := r.Header.Get("Sec-Fetch-Site"); site != "" {
-		return site == "same-origin" || site == "none"
-	}
-	if origin := r.Header.Get("Origin"); origin != "" {
-		u, err := url.Parse(origin)
-		return err == nil && strings.EqualFold(u.Host, r.Host)
-	}
-	return true
-}
-
 // secureCookie reports whether the session cookie is sent over HTTPS
 // only: when this very request reached Signalith over HTTPS, itself or
 // through a trusted reverse proxy that says so with X-Forwarded-Proto.
