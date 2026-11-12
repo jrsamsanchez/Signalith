@@ -5,6 +5,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -13,8 +14,10 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
+	"github.com/jrsamsanchez/signalith/internal/tenants"
 	"github.com/jrsamsanchez/signalith/internal/users"
 )
 
@@ -95,6 +98,10 @@ func TestDemoVisitorSignsInAsAnAnalyst(t *testing.T) {
 // included.
 func TestDemoVisitorOnlyReads(t *testing.T) {
 	ts, s := newDemoServer(t)
+	// What the visitor may use must not write audit records either
+	// (AUTHZ-02): a GET can have that side effect.
+	var tap auditTap
+	s.Log = tap.logger(t)
 	c := demoVisit(t, ts)
 	wildcard := regexp.MustCompile(`\{[^}]+\}`)
 	allowed := 0
@@ -140,6 +147,18 @@ func TestDemoVisitorOnlyReads(t *testing.T) {
 	// Searching works.
 	if code, body, _ := call(t, ts, "POST", "/api/search", `{"query":"*"}`, "", "", c); code == http.StatusForbidden || code == http.StatusUnauthorized {
 		t.Errorf("visitor search = %d %v", code, body)
+	}
+	// An evidence report, which is audited for users, is not for the
+	// visitor.
+	for range 5 {
+		if code, _, raw := call(t, ts, "GET", "/api/compliance/export?framework=pci-dss&format=csv", "", "", "", c); code != http.StatusOK {
+			t.Errorf("visitor compliance export = %d %s", code, raw)
+		}
+	}
+	tap.mu.Lock()
+	defer tap.mu.Unlock()
+	for _, ev := range tap.list {
+		t.Errorf("the visitor wrote an audit record: %s %v", ev.Message, ev.Fields)
 	}
 }
 
@@ -320,24 +339,121 @@ func TestDemoSignInsAreLimited(t *testing.T) {
 	}
 }
 
+// AUTHZ-03: a real account called demo is not the visitor: the visitor
+// does not see its sessions.
+func TestDemoVisitorIsNoAccount(t *testing.T) {
+	ts, s := newDemoServer(t, "127.0.0.0/8", "::1/128")
+	if _, err := s.Users.Create(context.Background(), users.NewUser{Username: "demo", Role: users.Analyst, Password: "role-password"}); err != nil {
+		t.Fatal(err)
+	}
+	if code, out, c := login(t, ts, "demo", "role-password"); code != http.StatusOK || c == nil {
+		t.Fatalf("the demo account's sign-in = %d %v", code, out)
+	}
+	if _, err := users.NewMemory().Create(context.Background(), users.NewUser{Username: demoUser, Role: users.Analyst, Password: "role-password"}); err == nil {
+		t.Errorf("an account can be named %q", demoUser)
+	}
+	c := demoVisit(t, ts)
+	code, _, raw := call(t, ts, "GET", "/api/me/sessions", "", "", "", c)
+	if code == http.StatusOK && strings.Contains(raw, "127.0.0.1") {
+		t.Errorf("the visitor sees the demo account's sessions: %s", raw)
+	}
+}
+
+// AUTHZ-05: the visitor is told of the default tenant only.
+func TestDemoVisitorListsNoTenants(t *testing.T) {
+	ts, s := newDemoServer(t)
+	reg, err := tenants.Open(tenants.File(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg.Add("acme", "Acme", "pat", time.Now())
+	s.Tenants = reg
+	c := demoVisit(t, ts)
+	code, out, raw := call(t, ts, "GET", "/api/tenants", "", "", "", c)
+	if code != http.StatusOK || len(out["tenants"].([]any)) != 1 || strings.Contains(raw, "acme") || strings.Contains(raw, "pat") {
+		t.Errorf("the visitor's tenants = %d %s", code, raw)
+	}
+}
+
+// AUTHRT-05: a few addresses signing in to the demo again and again
+// cannot use up the total and keep new visitors out.
+func TestDemoSignInsKeepRoomForNewVisitors(t *testing.T) {
+	r := tokenRate{Each: 10, Per: time.Minute, All: 3000, AllPer: time.Hour, Fresh: 1000}
+	now := time.Now()
+	// Six addresses, ten a minute each, for an hour.
+	for m := range 60 {
+		for a := range 6 {
+			for range 10 {
+				r.take(fmt.Sprintf("198.51.100.%d", a), now.Add(time.Duration(m)*time.Minute))
+			}
+		}
+	}
+	at := now.Add(60 * time.Minute)
+	for i := range 500 {
+		if wait := r.take(fmt.Sprintf("2001:db8:%x::/64", i), at); wait != 0 {
+			t.Fatalf("new visitor %d refused for %s", i, wait)
+		}
+	}
+	if wait := r.take("198.51.100.1", at.Add(time.Second)); wait == 0 {
+		t.Error("an address that took its share was let into what is kept for new ones")
+	}
+	// Shared clients (no key) count as seen.
+	if wait := r.take("", at); wait == 0 {
+		t.Error("the empty key took from what is kept for new ones")
+	}
+}
+
+// AUTHRT-05: for what is kept for new visitors, an IPv6 /48 is one
+// visitor, so one site's many /64s cannot each pass as new.
+func TestDemoNewVisitorsAreKeyedByIPv6Slash48(t *testing.T) {
+	if got := freshDemoKey("2001:db8:1:2::"); got != "2001:db8:1::/48" {
+		t.Errorf("freshDemoKey of a /64 = %q", got)
+	}
+	if got := freshDemoKey("198.51.100.7"); got != "198.51.100.7" {
+		t.Errorf("freshDemoKey of an IPv4 address = %q", got)
+	}
+	r := tokenRate{Each: 10, Per: time.Minute, All: 3, AllPer: time.Hour, Fresh: 1, FreshKey: freshDemoKey}
+	now := time.Now()
+	for _, k := range []string{"2001:db8:1:1::", "198.51.100.1"} {
+		if wait := r.take(k, now); wait != 0 {
+			t.Fatalf("%s refused: %s", k, wait)
+		}
+	}
+	// Two of three taken: the last is kept for a new visitor.
+	if wait := r.take("2001:db8:1:2::", now); wait == 0 {
+		t.Error("another /64 of a /48 that took already passed as a new visitor")
+	}
+	if wait := r.take("2001:db8:2:1::", now); wait != 0 {
+		t.Errorf("a /64 of another /48 was refused: %s", wait)
+	}
+}
+
 // Each demo visitor's searches count against a share of the search slots
-// of their own; everyone else's against their user's.
-func TestSearchUserPerDemoSession(t *testing.T) {
+// for the address they come from, however many sessions they start, and
+// everyone else's against their user's (SRCH-03).
+func TestSearchUserPerDemoAddress(t *testing.T) {
+	_, srv := newDemoServer(t)
+	from := func(addr string) *http.Request {
+		r := httptest.NewRequest("POST", "/api/search", nil)
+		r.RemoteAddr = addr
+		return r
+	}
 	a, b := demoPrincipal(), demoPrincipal()
 	a.token, b.token = "token-a", "token-b"
-	if searchUser(a) == searchUser(b) {
-		t.Errorf("two visitors share %q", searchUser(a))
+	if got, other := srv.searchUser(from("198.51.100.7:1000"), a), srv.searchUser(from("198.51.100.7:2000"), b); got != other {
+		t.Errorf("two sessions from one address: %q and %q", got, other)
 	}
-	if !strings.HasPrefix(searchUser(a), demoUser+":") {
-		t.Errorf("visitor's search user = %q", searchUser(a))
+	if got := srv.searchUser(from("198.51.100.7:1000"), a); !strings.HasPrefix(got, demoUser+"@") {
+		t.Errorf("visitor's search user = %q", got)
 	}
-	a2 := demoPrincipal()
-	a2.token = "token-a"
-	if searchUser(a) != searchUser(a2) {
-		t.Error("one session's search user changes")
+	if srv.searchUser(from("198.51.100.7:1000"), a) == srv.searchUser(from("198.51.100.8:1000"), a) {
+		t.Error("visitors from two addresses share a search user")
+	}
+	if srv.searchUser(from("[2001:db8:1:2::1]:1000"), a) != srv.searchUser(from("[2001:db8:1:2::99]:1000"), b) {
+		t.Error("one IPv6 /64 has more than one search user")
 	}
 	u := &principal{Username: "alice", Source: "local", token: "token-a"}
-	if got := searchUser(u); got != "alice" {
+	if got := srv.searchUser(from("198.51.100.7:1000"), u); got != "alice" {
 		t.Errorf("user's search user = %q, want alice", got)
 	}
 }

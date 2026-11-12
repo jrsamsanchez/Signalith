@@ -394,10 +394,13 @@ func azureListValue(name string, v any, out map[string]any) {
 }
 
 // AzureRecords decodes the records of an Event Hub message from Azure
-// ({"records": [...]}), or returns nil when the text is not one.
+// ({"records": [...]}), or returns nil when the text is not one. The text
+// may have sat inside a string, past a body's own depth check, so its
+// depth is checked here; the message and its list add two levels to a
+// record's (ING-09).
 func AzureRecords(b []byte) []map[string]any {
 	b = bytes.TrimLeft(b, " \t\r\n")
-	if len(b) == 0 || b[0] != '{' || !bytes.Contains(b[:min(len(b), 64)], []byte(`"records"`)) {
+	if len(b) == 0 || b[0] != '{' || !bytes.Contains(b[:min(len(b), 64)], []byte(`"records"`)) || depth(b) > MaxDepth+2 {
 		return nil
 	}
 	d := json.NewDecoder(bytes.NewReader(b))

@@ -145,22 +145,36 @@ func putAttribute(m map[string]any, k string, v any) {
 // own (Result.Rejected, which the handler reports as OTLP partialSuccess),
 // so it doesn't make the sender drop the rest of its batch.
 //
-// One refusal can come after part of the request is written: how many
-// events a record is split into (an Event Hub message's records) is only
-// known once it is read, so their copies of the host name are counted
-// towards maxOTLPExpandedBytes as they are made.
+// The check reads each record as it will be written, so the events a
+// record is split into (an Event Hub message's records, or the Okta,
+// Kubernetes or GitHub events of a body that holds them) count against
+// MaxRecords one by one, and their copies of the host name towards
+// maxOTLPExpandedBytes, before anything is written (ING-02). When
+// OpenSearch fails part way, what was stored is returned with the error,
+// so the token that sent it is credited with it.
 func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*Result, error) {
 	walk := walkOTLPProto
 	if isJSON {
 		walk = walkOTLPJSON
 	}
 	n, expanded := 0, 0
-	if err := walk(body, false, func(_ *otlpLog, size int, _ *BodyError) error {
-		n++
-		if n > MaxRecords {
-			return tooLarge("the request has more than %d log records; send smaller batches (send_batch_max_size in the Collector's batch processor)", MaxRecords)
+	if err := walk(body, true, func(l *otlpLog, size int, _ *BodyError) error {
+		count, extra := 1, 0
+		if l != nil {
+			// A record that panics here counts as one; the second pass
+			// rejects it (ING-215).
+			if _, recs, split := safeOTLPRecords(l); split {
+				count = len(recs)
+				extra = max(count-1, 0) * len(otlpHost(l.resource))
+			}
 		}
-		if expanded += size; expanded > maxOTLPExpandedBytes {
+		n += count
+		if n > MaxRecords {
+			return tooLarge("the request has more than %d log records, counting each event of a record that holds several; send smaller batches (send_batch_max_size in the Collector's batch processor)", MaxRecords)
+		}
+		// Each further event of a split record carries the host name
+		// again.
+		if expanded += size + extra; expanded > maxOTLPExpandedBytes {
 			return otlpTooExpanded()
 		}
 		return nil
@@ -212,17 +226,6 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 			total.add(&Result{Rejected: 1, Errors: []store.BulkItemError{{Reason: fmt.Sprintf("log record %d could not be read", pos)}}})
 			return nil
 		}
-		if extra := len(evs) - 1; extra > 0 {
-			// An Event Hub message's records count as received one by one.
-			n += extra
-			total.Received += extra
-			p.stats.Received.Add(int64(extra))
-			// The first pass counted the resource once for the record;
-			// each further event carries the host name again.
-			if expanded += extra * len(otlpHost(l.resource)); expanded > maxOTLPExpandedBytes {
-				return otlpTooExpanded()
-			}
-		}
 		// Each event counts as what was built for it, or its share of the
 		// record's size when that is more, and the batch is written as
 		// soon as it is full, so neither a message split into many records
@@ -247,11 +250,11 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 			// The first pass read the same body without error.
 			p.stats.Failed.Add(int64(n - done))
 		}
-		return nil, err
+		return total, err
 	}
 	if len(batch) > 0 {
 		if err := flush(); err != nil {
-			return nil, err
+			return total, err
 		}
 	}
 	return total, nil
@@ -273,6 +276,20 @@ func safeOTLPEvents(l *otlpLog, now time.Time) (evs []Event, ok bool) {
 	return otlpEventsOf(l, now), true
 }
 
+// safeOTLPRecords is otlpRecords, with split false when reading the
+// record panicked.
+func safeOTLPRecords(l *otlpLog) (parse func(map[string]any) Event, recs []map[string]any, split bool) {
+	defer func() {
+		if recover() != nil {
+			parse, recs, split = nil, nil, false
+		}
+	}()
+	return otlpRecordsOf(l)
+}
+
+// otlpRecordsOf is otlpRecords, which a test replaces with one that panics.
+var otlpRecordsOf = otlpRecords
+
 // otlpEventsOf is otlpEvents, which a test replaces with one that panics.
 var otlpEventsOf = otlpEvents
 
@@ -281,34 +298,35 @@ func otlpTooExpanded() *BodyError {
 	return tooLarge("the request is too large once written: its log records, with the resource attributes, scope name and host name that each event carries, come to more than %d MB; send smaller batches or fewer resource attributes", maxOTLPExpandedBytes>>20)
 }
 
-// otlpEvents maps one OTLP log record to its events: one, each record of
-// an Azure Event Hub message, the Google Cloud log entry of a Pub/Sub
-// message, or each Okta System Log, Kubernetes audit or GitHub audit log event of a body
-// that holds them.
+// otlpRecords returns the records one OTLP log record holds, and how to
+// parse each, with split true: each record of an Azure Event Hub message,
+// the Google Cloud log entry of a Pub/Sub message, or each Okta System
+// Log, Kubernetes audit or GitHub audit log event of a body that holds
+// them. split is false for any other record, which is one event.
+func otlpRecords(l *otlpLog) (parse func(map[string]any) Event, recs []map[string]any, split bool) {
+	if recs := azureFromOTLP(l.body); recs != nil {
+		return ParseAzure, recs, true
+	}
+	if r := gcpFromOTLP(l.body); r != nil {
+		return ParseGCP, []map[string]any{r}, true
+	}
+	if rs := oktaFromOTLP(l.body); rs != nil {
+		return ParseOkta, rs, true
+	}
+	if rs := kubernetesFromOTLP(l.body); rs != nil {
+		return ParseKubernetes, rs, true
+	}
+	if rs := githubFromOTLP(l.body); rs != nil {
+		return ParseGitHub, rs, true
+	}
+	return nil, nil, false
+}
+
+// otlpEvents maps one OTLP log record to its events: one, or one for each
+// record it holds (see otlpRecords).
 func otlpEvents(l *otlpLog, now time.Time) []Event {
-	parse := ParseAzure
-	recs := azureFromOTLP(l.body)
-	if recs == nil {
-		if r := gcpFromOTLP(l.body); r != nil {
-			parse, recs = ParseGCP, []map[string]any{r}
-		}
-	}
-	if recs == nil {
-		if rs := oktaFromOTLP(l.body); rs != nil {
-			parse, recs = ParseOkta, rs
-		}
-	}
-	if recs == nil {
-		if rs := kubernetesFromOTLP(l.body); rs != nil {
-			parse, recs = ParseKubernetes, rs
-		}
-	}
-	if recs == nil {
-		if rs := githubFromOTLP(l.body); rs != nil {
-			parse, recs = ParseGitHub, rs
-		}
-	}
-	if recs == nil {
+	parse, recs, split := otlpRecords(l)
+	if !split {
 		return []Event{otlpEvent(l, now)}
 	}
 	host := otlpHost(l.resource)

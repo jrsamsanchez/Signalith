@@ -281,9 +281,6 @@ turned off.
 
 ## Audit alerts
 
-!!! note "Arriving with the next release"
-    Audit alerts are on `main` and come with the release after 0.4.0.
-
 Audit alerts tell admins about Signalith itself: who signs in to admin accounts, failed
 sign-ins and lockouts, changes to users, tenants, tokens and settings, deletions, and audit
 records that were lost. They come from Signalith's [audit records](audit.md), not from
@@ -294,12 +291,12 @@ the **Audit alerts** card on the Notifications page.
 | --- | --- | --- |
 | Audit records lost or settings tampered with | Critical | Audit records could not be kept (an `audit.lost` record), a response action's audit record could not be written, shared settings, the cluster document or a sign-in session were changed in OpenSearch outside Signalith, a forged or replayed cluster request was refused, the cluster key was exported or imported, or a passkey that may have been copied was used |
 | Built-in admin signs in | High | Someone signs in as the built-in admin |
-| Sign-ins locked out | High | Wrong passwords or codes lock an account, or pause sign-ins from one address |
+| Sign-ins locked out | High | Wrong passwords or codes lock an account, or pause sign-ins from one address; or so many sign-ins fail in a minute that some are left out of the audit log |
 | Users, roles and two-step sign-in change | High | A user is added, changed, turned off or on, or deleted; a role changes; a password is reset or changed; a passkey is added or removed; recovery codes are made or used; a chat account is linked; two-step sign-in or passkeys are turned off or reset; the built-in admin is turned on again, renamed or gets a new password; the directory settings change |
 | Detections, exceptions and responses change | High | Detections are saved or turned off; a content update is uploaded or a lookup table saved; an exception is added or approved; sensor rule tuning or behavior baselines change; response actions or playbooks change; an endpoint is unblocked |
 | Tenants change | High | A tenant is added, renamed, turned off or on |
 | Tokens made or revoked | Medium | An API, agent, SCIM, metrics scrape or cluster join token is made or revoked; a server is approved to join the cluster, joins it, or is refused because it is not the one expected |
-| Settings change | Medium | Settings, notifications, retention, ticketing, agent collection, endpoint or vulnerability scan settings are saved, the cluster's key, certificate authority or web address is changed, shared settings are reset, restored or exported to files, or retention policies are confirmed |
+| Settings change | Medium | Settings, notifications, retention, ticketing, agent collection, endpoint or vulnerability scan settings are saved, the cluster's key, certificate authority, OpenSearch's certificate authority or web address is changed, shared settings are reset, restored or exported to files, or retention policies are confirmed |
 | Deletions | Medium | A detection, lookup table, threat intel feed or indicator, custom parser, content update, endpoint, server, notebook or case file is deleted, sample data is removed, or a retention run is started by hand |
 | Live queries run on endpoints | Medium | Someone sends a live query to endpoints, which can read their files and registry |
 | An admin signs in | Medium | Someone with the admin role signs in (other than the built-in admin) |
@@ -323,8 +320,12 @@ What gets sent:
   says "(not a known account)" and gives the address it came from.
 - A failed single sign-on that names no user says only the sign-in page's code for it
   (`denied`, `expired`, ...): the rest may be text the sender chose, and stays in the audit
-  log. Such failures are written to the audit log at most once a minute for each address
-  (the record counts those since, as `failures`), and not at all while single sign-on is off.
+  log. Such failures are written to the audit log at most once a minute for each address,
+  an IPv6 /64 counting as one (the record counts those since, as `failures`), and 60 times a
+  minute in all, and not at all while single sign-on is off. When the total leaves records
+  out, one record (*"audit records left out"*) says how many. Failed password sign-ins and
+  refused SCIM tokens and scrapes are limited the same way (see
+  [Failed sign-in limits](users.md#signing-in)).
 - The flood guard, retries and **Recent deliveries** work as for findings, except that the
   first message of each alert is sent on its own before a second of any, and a summary names
   the alerts it stands for: "And 12 more audit alerts: Sign-ins locked out (10), Tokens made

@@ -141,10 +141,31 @@ func (x *clusterCLI) osCAImport(ctx context.Context, keyFile, certFile string) e
 	if _, err := x.osCARuntime(false); err != nil {
 		return err
 	}
-	if err := x.osca.Import(ctx, x.by, x.self.Name, certPEM, keyPEM); err != nil {
+	replaced := false
+	err = x.osca.Import(ctx, x.by, x.self.Name, certPEM, keyPEM)
+	if errors.Is(err, clusterpki.ErrOtherCA) {
+		// A new CA in place of the one the cluster keeps, as after a
+		// server that could open the old one's key was compromised: only
+		// once OpenSearch's certificates were made again under the new
+		// one, so this server's connection no longer trusts the old.
+		if cur, ok := x.osca.Get(); ok {
+			if old, cerr := cur.Cert(); cerr == nil && clusterpki.Trusted(caFile, old) != nil {
+				err, replaced = x.osca.Replace(ctx, x.by, x.self.Name, certPEM, keyPEM), true
+			} else {
+				err = fmt.Errorf("%w; to replace it, make OpenSearch's certificates again under the new one and set opensearch.ca_file to the new one alone, then import it again", err)
+			}
+		}
+	}
+	if err != nil {
 		return err
 	}
 	b, _ := x.osca.Get()
+	if replaced {
+		x.audit("cluster.opensearch-ca: replaced OpenSearch's certificate authority", "ca_sha256", b.CASHA256)
+		fmt.Fprintf(x.out, "The cluster keeps OpenSearch's new certificate authority now (%s), in place of the old one; every server gets a new certificate from it within a minute.\n", b.CASHA256)
+		fmt.Fprintf(x.out, "Keep %s safe and offline: anyone who holds it can sign in to OpenSearch as anything.\n", keyFile)
+		return nil
+	}
 	fmt.Fprintf(x.out, "The cluster keeps OpenSearch's certificate authority now (%s).\n", b.CASHA256)
 	fmt.Fprintln(x.out, "Each server that signs in to OpenSearch with a certificate from it gets one of its own, CN=signalith-server-<name>, within a minute.")
 	fmt.Fprintf(x.out, "Keep %s safe and offline: anyone who holds it can sign in to OpenSearch as anything.\n", keyFile)

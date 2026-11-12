@@ -131,7 +131,7 @@ func TestLimiterBounds(t *testing.T) {
 	succeed(t, l, addr("10.0.0.10"), "admin")
 	l.mu.Lock()
 	n = len(l.known)
-	_, kept := l.known[knownKey("10.0.0.10", "admin", "")]
+	_, kept := l.known[knownKey("10.0.0.10", AccountKey("admin"), "")]
 	l.mu.Unlock()
 	if n > 45001 || !kept {
 		t.Errorf("known after pruning = %d, newest kept %v", n, kept)
@@ -165,4 +165,43 @@ func TestBrowserKeyOddInputs(t *testing.T) {
 	if _, _, err := LoadBrowserKey(filepath.Join(blocker, "signin.key")); err == nil {
 		t.Error("made a key under a file")
 	}
+}
+
+// RT-01: a bucket keeps a digest of the account, never the name sent, and
+// buckets with nothing left in them go after a while however few there
+// are.
+func TestLimiterKeepsNoLongNames(t *testing.T) {
+	c := &clock{time.Now()}
+	l := NewLimiter()
+	l.Now = c.now
+	long := strings.Repeat("x", 1<<20)
+	fail(t, l, addr("10.0.0.1"), long)
+	l.mu.Lock()
+	for k := range l.buckets {
+		if len(k) > 128 {
+			t.Errorf("bucket key of %d bytes", len(k))
+		}
+	}
+	n := len(l.buckets)
+	l.mu.Unlock()
+	if n == 0 {
+		t.Fatal("no buckets")
+	}
+	// The same name, cased and spaced otherwise, counts in the same
+	// buckets.
+	if AccountKey(" Admin ") != AccountKey("admin") || AccountKey("admin") == AccountKey("admin2") {
+		t.Error("AccountKey does not ignore case and spacing, or mixes names")
+	}
+
+	c.t = c.t.Add(2 * time.Hour)
+	if ok, _ := allowed(l, addr("10.0.0.2"), "bob"); !ok {
+		t.Fatal("refused")
+	}
+	l.mu.Lock()
+	for k := range l.buckets {
+		if strings.Contains(k, "10.0.0.1") || strings.Contains(k, AccountKey(long)) {
+			t.Errorf("bucket %q kept after its failures aged out", k)
+		}
+	}
+	l.mu.Unlock()
 }

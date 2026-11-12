@@ -72,6 +72,27 @@ configuration. When you choose **Done**, it is gone from the page.
 Names are 1 to 64 letters, digits, spaces or `. _ - ( ) / : # @`, and no two active tokens
 can have the same name (capitals don't count). There can be up to 1,000 active tokens.
 
+### Token purposes
+
+A token made on **Add data** is made for the agent on screen, its purpose: `linux`,
+`windows`, `sensor` (a [network sensor](network-sensor.md)) and `agent` (the
+[Signalith Agent](signalith-agent.md)) for Fluent Bit, `otel` for an OpenTelemetry
+Collector, `osquery` for osquery. A token is taken only where its agent sends, so a token
+copied from one kind of agent can't send as another:
+
+| Route | Takes |
+|---|---|
+| `POST /api/ingest` (Fluent Bit) | `linux`, `windows`, `sensor`, `agent` |
+| `POST /api/otlp/v1/logs` (OpenTelemetry) | `otel` |
+| [Splunk HEC](hec.md) | any |
+
+A token made with no purpose (**New token** under **Agent tokens**, or
+`signalith tokens create` without `-purpose`) and a shared token are taken on every
+route. Anything else is refused with `403` and `purpose_mismatch`, logged, and named on
+the **Health** page; senders drop what is refused this way. If an agent was set up with a
+token made for another kind of agent, get its configuration again from **Add data**, or
+give it a token with no purpose.
+
 ## Revoke a token
 
 On **Add data**, under **Agent tokens**, open the token's **⋯** menu and choose
@@ -96,7 +117,7 @@ Signalith adds four fields to every event agents send:
 | Field | Holds |
 |---|---|
 | `signalith_intake` | How it came in: `agent` (Fluent Bit, `POST /api/ingest`), `otlp` (OpenTelemetry), `osquery`, `syslog`, `scanner` (Signalith's own vulnerability scans) or `signalith` (what Signalith notices itself, such as a [network sensor gone silent](network-sensor.md#settings-network-sensors)) |
-| `signalith_token` | The token's name when the event arrived, such as `Linux web servers` (never the token itself). A shared token shows as `Shared token 3f9c0a` |
+| `signalith_token` | The token's name when the event arrived, such as `Linux web servers` (never the token itself). A shared token shows as `Shared token 3f9c0a`. An event sent with a [computer's own key](#computer-keys) names that computer too: `Linux web servers @ web-01`. See [Host names a sender can't prove](#host-names-a-sender-cant-prove) |
 | `signalith_token_id` | The token's 12-character ID, which stays the same when the token is renamed |
 | `signalith_sender` | The address that sent it, without the port. Behind a [trusted proxy](https.md), the real client's address |
 
@@ -108,6 +129,28 @@ For example, to see which agents sent with a token in the last day:
 ```
 signalith_token="Linux web servers" | stats count by signalith_sender, host
 ```
+
+### Host names a sender can't prove
+
+An event's `host` is what the sender wrote, on every route: a token taken from one
+computer could send events in another's name. Where Signalith can tell, it marks such
+events by ending `signalith_token` with ` (host mismatch)`:
+
+- an event sent with a computer's own key whose `host` is another computer
+  (`Linux web servers @ web-01 (host mismatch)`); `web-01` and `web-01.corp.example`
+  count as the same computer;
+- an event sent with a token, not a key, whose `host` is a computer that has a key of its
+  own (`Linux web servers (host mismatch)`).
+
+The events are stored as sent. A forwarder that sends other computers' events (a Windows
+Event Collector, say) marks them too, so to find events in a computer's name that it didn't
+send itself:
+
+```
+signalith_token="*(host mismatch)" | stats count by signalith_token, host, signalith_sender
+```
+
+Search by `signalith_token_id` to find all of a line's events, its computers' included.
 
 **Names a sender can't set.** These fields are Signalith's own. Whatever a sender puts
 in an event, Signalith drops (and counts in `dropped_fields`, with a warning in the
@@ -228,7 +271,8 @@ osquery send with the key.
   holds however the events name the computer: the `X-Signalith-Agent` header, an
   OpenTelemetry resource's `host.name` or an HEC event's `host`. So a
   computer that holds the line's token can't report as another computer of the line.
-  The host name written inside the events themselves is still the sender's word.
+  The host name written inside the events themselves is still the sender's word, but such
+  events are marked (see [Host names a sender can't prove](#host-names-a-sender-cant-prove)).
 - **Cut off one computer.** `signalith tokens hosts revoke <name>` (or
   `POST /api/agent-hosts/{host}/revoke`) refuses that computer's key within a few seconds
   on every server and removes its osquery host. Its name stays taken, so nothing can enroll
@@ -256,6 +300,10 @@ osquery send with the key.
 - **What it does not stop.** The line's token stays on each computer, so a computer that
   was taken over can still send events with it, and can enroll names that have no key yet.
   Revoke the line's token to stop that.
+- **Volume.** There is no daily limit per token or computer: a token holder can store as
+  much as the [ingest limits](sending-data.md#ingest-limits) let each request carry. Watch
+  for a token whose volume jumps (`signalith_token_id=<id> | timechart count`) and revoke
+  it.
 
 ## osquery hosts
 

@@ -70,11 +70,11 @@ The Linux line looks like this (the page fills in the real values):
 ```sh
  f=$(mktemp) && curl -fsSk --proto '=https' https://siem.example.com:7779/api/agent/install.sh -o "$f" \
   && echo "<sha-256>  $f" | sha256sum -c --quiet \
-  && echo 'sgl_…' | sudo sh "$f" --from https://siem.example.com:7779 --ca-sha256 <hex> --version 0.4.0 --token - --osquery
+  && echo 'sgl_…' | sudo sh "$f" --from https://siem.example.com:7779 --ca-sha256 <hex> --version 0.4.1 --token - --osquery
 ```
 
 The Windows line does the same in PowerShell, ending with
-`'sgl_…' | & $f -From https://siem.example.com:7779 -CaSha256 <hex> -Version 0.4.0 -Token - -Osquery`.
+`'sgl_…' | & $f -From https://siem.example.com:7779 -CaSha256 <hex> -Version 0.4.1 -Token - -Osquery`.
 The macOS line fetches `install-macos.sh` instead, checks it with `shasum -a 256`, and
 always installs osquery.
 

@@ -24,11 +24,12 @@ type tokenBody struct {
 	shared.Extra `json:"-"`
 }
 
-// U27: every answer carries X-Signalith-Version and X-Signalith-Config;
-// a change reports its own write; a server one write behind a page's
-// X-Signalith-Config-Min reads once and answers; one behind a token no
-// server has answers X-Signalith-Stale; the web UI's files are served
-// under /v/<version>/.
+// U27: every answer carries X-Signalith-Build, and every signed-in one
+// X-Signalith-Version and X-Signalith-Config; a change reports its own
+// write; a server one write behind a page's X-Signalith-Config-Min reads
+// once and answers; one behind a token no server has answers
+// X-Signalith-Stale; the web UI's files are served under /v/<build>/.
+// WEB-01: nothing a visitor who is not signed in gets names the version.
 func TestConfigHeadersAndVersionedFiles(t *testing.T) {
 	fake := ostest.New(t)
 	cl := store.New(store.Config{URL: fake.URL})
@@ -89,19 +90,26 @@ func TestConfigHeadersAndVersionedFiles(t *testing.T) {
 		return resp
 	}
 
+	build := makeBuildToken("1.5.0", ui)
+	if build == "" || strings.Contains(build, "1.5") || versionSegment(build) != build {
+		t.Fatalf("build token %q", build)
+	}
 	resp := get("/api/health", "", true)
 	if v := resp.Header.Get(headerVersion); v != "1.5.0" {
 		t.Errorf("version %q", v)
 	}
+	if b := resp.Header.Get(headerBuild); b != build {
+		t.Errorf("build %q, want %q", b, build)
+	}
 	if c := resp.Header.Get(headerConfig); c == "" || c != hb.Token() {
 		t.Errorf("config %q, want %q", c, hb.Token())
 	}
-	// Someone not signed in gets the version (the sign-in page names it
-	// anyway), but nothing about the config index.
-	if resp := get("/api/health", "", false); resp.Header.Get(headerVersion) != "1.5.0" || resp.Header.Get(headerConfig) != "" {
+	// Someone not signed in gets the build token, but neither the version
+	// nor anything about the config index.
+	if resp := get("/api/health", "", false); resp.Header.Get(headerBuild) != build || resp.Header.Get(headerVersion) != "" || resp.Header.Get(headerConfig) != "" {
 		t.Errorf("signed out: %v", resp.Header)
 	}
-	if resp := get("/login", "", false); resp.Header.Get(headerConfig) != "" {
+	if resp := get("/login", "", false); resp.Header.Get(headerConfig) != "" || resp.Header.Get(headerVersion) != "" {
 		t.Errorf("sign-in page: %v", resp.Header)
 	}
 	// A failed sign-in tells nothing either; a successful one does.
@@ -120,6 +128,9 @@ func TestConfigHeadersAndVersionedFiles(t *testing.T) {
 		resp.Body.Close()
 		if got := resp.Header.Get(headerConfig) != ""; got != c.ok || (resp.StatusCode < 300) != c.ok {
 			t.Errorf("sign-in (%v): %d, config %q", c.ok, resp.StatusCode, resp.Header.Get(headerConfig))
+		}
+		if got := resp.Header.Get(headerVersion) == "1.5.0"; got != c.ok {
+			t.Errorf("sign-in (%v): version %q", c.ok, resp.Header.Get(headerVersion))
 		}
 	}
 
@@ -181,13 +192,13 @@ func TestConfigHeadersAndVersionedFiles(t *testing.T) {
 		return string(b)
 	}
 	page := body(get("/", "", true))
-	for _, want := range []string{`content="1.5.0"`, `src="assets/loader.js" data-unversioned`, `href="v/1.5.0/assets/css/app.css"`,
-		`src="v/1.5.0/app.js"`, `href="api/security?format=text"`} {
+	for _, want := range []string{`content="` + build + `"`, `src="assets/loader.js" data-unversioned`, `href="v/` + build + `/assets/css/app.css"`,
+		`src="v/` + build + `/app.js"`, `href="api/security?format=text"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("index.html lacks %s: %s", want, page)
 		}
 	}
-	if p := body(get("/login", "", false)); !strings.Contains(p, `href="v/1.5.0/assets/css/app.css"`) || !strings.Contains(p, `content="1.5.0"`) {
+	if p := body(get("/login", "", false)); !strings.Contains(p, `href="v/`+build+`/assets/css/app.css"`) || !strings.Contains(p, `content="`+build+`"`) || strings.Contains(p, "1.5.0") {
 		t.Errorf("login.html %s", p)
 	}
 	for _, c := range []struct {
@@ -196,16 +207,18 @@ func TestConfigHeadersAndVersionedFiles(t *testing.T) {
 		code     int
 		cache    string
 	}{
-		{"/v/1.5.0/app.js", true, 200, "private, max-age=31536000, immutable"},
-		{"/v/1.5.0/assets/css/app.css", false, 200, "public, max-age=31536000, immutable"},
-		{"/v/1.5.0/assets/fonts/x.woff", false, 200, "public, max-age=31536000, immutable"},
+		{"/v/" + build + "/app.js", true, 200, "private, max-age=31536000, immutable"},
+		{"/v/" + build + "/assets/css/app.css", false, 200, "public, max-age=31536000, immutable"},
+		{"/v/" + build + "/assets/fonts/x.woff", false, 200, "public, max-age=31536000, immutable"},
 		{"/app.js", true, 200, "no-cache"},
 		{"/assets/css/app.css", false, 200, ""},
-		{"/v/1.5.0/app.js", false, 401, ""},
+		{"/v/" + build + "/app.js", false, 401, ""},
 		{"/v/1.4.0/app.js", true, 404, ""},
 		{"/v/1.4.0/assets/css/app.css", true, 404, ""},
-		{"/v/1.5.0/index.html", true, 404, ""},
-		{"/v/1.5.0/assets/..%2f..%2fapp.js", false, 404, ""},
+		// A guessed version answers as any other path does.
+		{"/v/1.5.0/assets/css/app.css", false, 401, ""},
+		{"/v/" + build + "/index.html", true, 404, ""},
+		{"/v/" + build + "/assets/..%2f..%2fapp.js", false, 404, ""},
 	} {
 		resp := get(c.path, "", c.signedIn)
 		if resp.StatusCode != c.code {
@@ -213,6 +226,28 @@ func TestConfigHeadersAndVersionedFiles(t *testing.T) {
 		}
 		if c.cache != "" && resp.Header.Get("Cache-Control") != c.cache {
 			t.Errorf("%s Cache-Control %q, want %q", c.path, resp.Header.Get("Cache-Control"), c.cache)
+		}
+	}
+}
+
+// The build token changes with the version and with any file of the web
+// UI (so browsers that keep /v/<build>/ for a year get new files), and is
+// the same for the same build on every server.
+func TestBuildToken(t *testing.T) {
+	ui := fstest.MapFS{"app.js": {Data: []byte("// a")}, "assets/x.css": {Data: []byte("x{}")}}
+	a := makeBuildToken("1.5.0", ui)
+	if a == "" || a != makeBuildToken("1.5.0", fstest.MapFS{"app.js": {Data: []byte("// a")}, "assets/x.css": {Data: []byte("x{}")}}) {
+		t.Fatalf("token %q is not stable", a)
+	}
+	if b := makeBuildToken("1.5.1", ui); b == a {
+		t.Error("same token for another version")
+	}
+	if b := makeBuildToken("1.5.0", fstest.MapFS{"app.js": {Data: []byte("// b")}, "assets/x.css": {Data: []byte("x{}")}}); b == a {
+		t.Error("same token for another app.js")
+	}
+	for _, v := range []string{"", "..", "1.5.0/x"} {
+		if b := makeBuildToken(v, ui); b != "" {
+			t.Errorf("version %q: token %q, want none", v, b)
 		}
 	}
 }

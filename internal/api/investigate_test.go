@@ -17,6 +17,7 @@ import (
 
 	"github.com/jrsamsanchez/signalith/internal/assistant"
 	"github.com/jrsamsanchez/signalith/internal/findings"
+	"github.com/jrsamsanchez/signalith/internal/investigate"
 )
 
 func TestInvestigateIsOffUntilTurnedOn(t *testing.T) {
@@ -103,6 +104,46 @@ func TestInvestigateStreamsAResult(t *testing.T) {
 	}
 	if code, _ := do(t, ts, "POST", "/api/findings/nope/investigate", "{}", true); code != 404 {
 		t.Errorf("unknown finding %d", code)
+	}
+}
+
+// A run the masked-value guard stops is noted on the finding: planted text
+// may stop AI investigations on purpose (AI-01).
+func TestInvestigateStoppedIsNotedOnTheFinding(t *testing.T) {
+	model := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		reply := `{"searches":[{"why":"guess","query":"tag=carol"}]}`
+		_ = json.NewEncoder(w).Encode(map[string]any{"choices": []map[string]any{{"message": map[string]string{"role": "assistant", "content": reply}}}})
+	}))
+	defer model.Close()
+	var srv *Server
+	ts, _ := newTestServerWith(t, func(s *Server) {
+		s.Config.Assistant.Investigate = true
+		s.Config.Assistant.MaskFields = []string{"user"}
+		s.Assistant = assistant.New(assistant.OpenAI, model.URL, "m", "")
+		srv = s
+	})
+	f := &findings.Finding{ID: "f1", Title: "Odd logon", DetectionID: "manual", Severity: "low", Status: "new",
+		Entities: map[string]any{"user": "carol"}, Created: time.Now().UTC()}
+	if err := srv.Findings.Create(context.Background(), f); err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest("POST", ts.URL+"/api/findings/f1/investigate", strings.NewReader("{}"))
+	req.SetBasicAuth("admin", "s3cret-pass")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if !strings.Contains(string(b), "stopped") {
+		t.Fatalf("not stopped: %s", b)
+	}
+	got, err := srv.Findings.Get(context.Background(), "f1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Comments) != 1 || got.Comments[0].Text != investigate.StoppedNote || got.Status != "new" || got.RespondedAt != nil {
+		t.Errorf("finding after a stopped run: %+v", got)
 	}
 }
 

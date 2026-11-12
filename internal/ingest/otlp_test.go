@@ -699,13 +699,20 @@ func TestOTLPRejectsBadRecordsAlone(t *testing.T) {
 // A record that makes reading it panic is rejected on its own; the rest
 // of the request is written (ING-215).
 func TestOTLPRejectsPanickingRecordAlone(t *testing.T) {
-	orig := otlpEventsOf
-	t.Cleanup(func() { otlpEventsOf = orig })
+	orig, origRecs := otlpEventsOf, otlpRecordsOf
+	t.Cleanup(func() { otlpEventsOf, otlpRecordsOf = orig, origRecs })
 	otlpEventsOf = func(l *otlpLog, now time.Time) []Event {
 		if s, _ := l.body.(string); s == "boom" {
 			panic("crafted record")
 		}
 		return orig(l, now)
+	}
+	// The first pass, which counts a record's events, reads it too.
+	otlpRecordsOf = func(l *otlpLog) (func(map[string]any) Event, []map[string]any, bool) {
+		if s, _ := l.body.(string); s == "boom" {
+			panic("crafted record")
+		}
+		return origRecs(l)
 	}
 	good := tRec{body: "fine"}
 	for _, isJSON := range []bool{false, true} {

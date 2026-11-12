@@ -17,6 +17,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/cluster"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/ospki"
+	"github.com/jrsamsanchez/signalith/internal/tlsauto"
 )
 
 // foundedCluster is a server whose cluster was founded with signalith
@@ -221,5 +222,29 @@ func TestClusterOpenSearchCA(t *testing.T) {
 	out, err = fc.run("", "opensearch-ca", "revoke", "-yes", "siem-z")
 	if err != nil || !strings.Contains(out, "Revoked 0 OpenSearch certificates of siem-z.") {
 		t.Errorf("revoke: %v\n%s", err, out)
+	}
+
+	// A new CA in place of the old, after a compromise (CRYPTO-02): only
+	// once OpenSearch no longer trusts the old one.
+	caFile := filepath.Join(fc.dir, "opensearch-ca.pem")
+	own := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: fc.fake.Certificate().Raw})
+	writeTestFile(t, caFile, string(own)+string(ca.CertPEM())+string(other.CertPEM()))
+	if _, err := fc.run("", "opensearch-ca", "import", "-cert", filepath.Join(otherDir, ospki.RootCAFile), filepath.Join(otherDir, "key.pem")); err == nil ||
+		!strings.Contains(err.Error(), "make OpenSearch's certificates again") {
+		t.Errorf("replace while the old CA is still trusted: %v", err)
+	}
+	writeTestFile(t, caFile, string(own)+string(other.CertPEM()))
+	out, err = fc.run("", "opensearch-ca", "import", "-cert", filepath.Join(otherDir, ospki.RootCAFile), filepath.Join(otherDir, "key.pem"))
+	if err != nil || !strings.Contains(out, "new certificate authority now") {
+		t.Fatalf("replace: %v\n%s", err, out)
+	}
+	if out, err := fc.run("", "opensearch-ca"); err != nil || !strings.Contains(out, tlsauto.Fingerprint(other.Cert.Raw)) {
+		t.Errorf("status after the replacement: %v\n%s", err, out)
+	}
+	// Removing a server says it may still hold OpenSearch's CA key.
+	out, err = fc.run("", "remove", "-yes", "-no-rotate", "siem-z")
+	if err != nil || !strings.Contains(out, "may still hold OpenSearch's certificate authority key ("+tlsauto.Fingerprint(other.Cert.Raw)) ||
+		!strings.Contains(out, "bootstrap-docker -new-ca") {
+		t.Errorf("remove: %v\n%s", err, out)
 	}
 }

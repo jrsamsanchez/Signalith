@@ -86,6 +86,10 @@ const UnknownName = "(not a known account)"
 // are paused after too many wrong passwords.
 const addressPaused = "sign-ins from this address are paused"
 
+// recordsLeftOut is the record of failed sign-ins too many to log one by
+// one in a minute.
+const recordsLeftOut = "audit records left out"
+
 // AuditAlerts are the built-in audit alerts, in the order the page lists
 // them. A record that more than one matches goes to a channel once, as
 // the first of them.
@@ -112,11 +116,11 @@ var AuditAlerts = []AuditAlert{
 	},
 	{
 		ID: "lockout", Name: "Sign-ins locked out", Urgency: "high",
-		Description: "Too many wrong passwords or codes lock an account, or pause sign-ins from one address.",
-		messages:    failedSignIns,
+		Description: "Too many wrong passwords or codes lock an account or pause sign-ins from one address, or so many sign-ins fail that some are left out of the audit log.",
+		messages:    append(slices.Clone(failedSignIns), recordsLeftOut),
 		prefixes:    []string{addressPaused},
 		check: func(ev audit.Event) bool {
-			return strings.HasPrefix(ev.Message, addressPaused) || field(ev, "locked_out") == "true"
+			return strings.HasPrefix(ev.Message, addressPaused) || ev.Message == recordsLeftOut || field(ev, "locked_out") == "true"
 		},
 	},
 	{
@@ -181,6 +185,7 @@ var AuditAlerts = []AuditAlert{
 			"reset a shared setting to its default for every server of the cluster", "reset one of this server's own settings",
 			"restored the shared settings from this server's copy", "retired the shared settings for a downgrade",
 			"new web address confirmed", "vulnerability scan login saved",
+			"cluster.opensearch-ca: replaced OpenSearch's certificate authority",
 		},
 		actions: []string{"retention.confirm"},
 	},

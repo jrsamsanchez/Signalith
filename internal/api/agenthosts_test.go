@@ -147,21 +147,29 @@ func TestEnrolledRowNotMovedByBatchHostName(t *testing.T) {
 		return `{"resourceLogs":[{"resource":{"attributes":[{"key":"host.name","value":{"stringValue":"` + host + `"}}]},"scopeLogs":[{"logRecords":[{"body":{"stringValue":"forged"}}]}]}]}`
 	}
 	isJSON := map[string]string{"Content-Type": "application/json"}
-	for name, tok := range map[string]string{"another line's token": other, "its line's token": line} {
-		for _, host := range []string{"web-01", "WEB-01"} {
-			// The events are kept; the row stays.
-			if code, _, body := agentDo(t, ts, "POST", "/api/otlp/v1/logs", tok, "", otlp(host), isJSON); code != 200 {
-				t.Fatalf("OTLP with %s: %d %s", name, code, body)
-			}
-			unmoved("an OTLP batch for " + host + " with " + name)
+	// OTLP takes only a token made for OpenTelemetry (ING-03): the line's
+	// token is refused there, and a Collector's names the computer in
+	// vain.
+	_, collector := makeToken(t, ts, "Collectors", "otel")
+	if code, _, body := agentDo(t, ts, "POST", "/api/otlp/v1/logs", line, "", otlp("web-01"), isJSON); code != http.StatusForbidden {
+		t.Fatalf("OTLP with the line's token: %d %s", code, body)
+	}
+	unmoved("a refused OTLP batch")
+	for _, host := range []string{"web-01", "WEB-01"} {
+		// The events are kept; the row stays.
+		if code, _, body := agentDo(t, ts, "POST", "/api/otlp/v1/logs", collector, "", otlp(host), isJSON); code != 200 {
+			t.Fatalf("OTLP with a Collector's token: %d %s", code, body)
 		}
+		unmoved("an OTLP batch for " + host)
+	}
+	for name, tok := range map[string]string{"another line's token": other, "its line's token": line} {
 		if code, _, body := agentDo(t, ts, "POST", "/services/collector/event", tok, "", `{"event":"forged","host":"web-01"}`, nil); code != 200 {
 			t.Fatalf("HEC with %s: %d %s", name, code, body)
 		}
 		unmoved("an HEC event with " + name)
 	}
 	// A computer without a key is still listed by the name in its batch.
-	if code, _, body := agentDo(t, ts, "POST", "/api/otlp/v1/logs", other, "", otlp("db-01"), isJSON); code != 200 {
+	if code, _, body := agentDo(t, ts, "POST", "/api/otlp/v1/logs", collector, "", otlp("db-01"), isJSON); code != 200 {
 		t.Fatalf("OTLP for db-01: %d %s", code, body)
 	}
 	list, _, _ = s.agents().List(t.Context())
@@ -170,15 +178,15 @@ func TestEnrolledRowNotMovedByBatchHostName(t *testing.T) {
 	}
 	// And the computer's own key moves its row, whatever name the batch
 	// carries.
-	if code, _, body := agentDo(t, ts, "POST", "/api/otlp/v1/logs", e.Key, "", otlp("db-01"), isJSON); code != 200 {
-		t.Fatalf("OTLP with the key: %d %s", code, body)
+	if code, _, body := agentDo(t, ts, "POST", "/services/collector/event", e.Key, "", `{"event":"x","host":"db-01"}`, nil); code != 200 {
+		t.Fatalf("HEC with the key: %d %s", code, body)
 	}
 	list, _, _ = s.agents().List(t.Context())
 	if len(list) != 2 {
 		t.Fatalf("agents after the key's batch: %+v", list)
 	}
 	for _, a := range list {
-		if a.Name == "web-01" && a.Intake != ingest.IntakeOTLP {
+		if a.Name == "web-01" && a.Intake != ingest.IntakeHEC {
 			t.Errorf("the key's own batch did not move its row: %+v", a)
 		}
 		if a.Name == "db-01" && a.TokenID == before.TokenID {
