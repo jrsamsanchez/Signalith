@@ -89,6 +89,9 @@ type Response struct {
 	Status                            string
 	Issued, NotBefore, NotOnOrAfter   time.Time
 	Attributes                        map[string][]string
+	// AuthnContext is the authentication statement's context class;
+	// empty is PasswordProtectedTransport.
+	AuthnContext string
 	// SignResponse and SignAssertion choose what is signed; SHA1 signs
 	// with SHA-1.
 	SignResponse, SignAssertion, SHA1 bool
@@ -148,7 +151,11 @@ func (p *IdP) Assertion(t testing.TB, r Response) *etree.Element {
 	as := a.CreateElement("saml:AuthnStatement")
 	as.CreateAttr("AuthnInstant", stamp(r.Issued))
 	as.CreateAttr("SessionIndex", r.AssertionID)
-	as.CreateElement("saml:AuthnContext").CreateElement("saml:AuthnContextClassRef").SetText("urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport")
+	ac := r.AuthnContext
+	if ac == "" {
+		ac = "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"
+	}
+	as.CreateElement("saml:AuthnContext").CreateElement("saml:AuthnContextClassRef").SetText(ac)
 	if len(r.Attributes) > 0 {
 		st := a.CreateElement("saml:AttributeStatement")
 		for name, vals := range r.Attributes {
