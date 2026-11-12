@@ -1201,8 +1201,14 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	// The node outlives ctx: stopping gives the job lease up first, which
 	// needs it.
 	node.Start(context.WithoutCancel(ctx))
-	r.shared.Start(ctx)
-	return r.run(ctx, c)
+	sctx, stopShared := context.WithCancel(ctx)
+	r.shared.Start(sctx)
+	err = r.run(ctx, c)
+	// Wait for the shared settings' loop and the writer of cache.enc, which
+	// saves what changed last, before the process may exit.
+	stopShared()
+	r.shared.Wait()
+	return err
 }
 
 // instance is every component built from one config: what a restart from
