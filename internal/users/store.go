@@ -234,16 +234,21 @@ func HashPassword(pw string) (string, error) {
 	return string(h), err
 }
 
-// hashCost is the bcrypt cost of new password hashes: always
-// bcrypt.DefaultCost, except in a test binary that asks for
-// UseFastHashesInTests.
-var hashCost = bcrypt.DefaultCost
+// HashCost is the bcrypt cost of new password hashes: 12, as OWASP's
+// password storage guidance asks of bcrypt (bcrypt.DefaultCost is 10).
+// A local user's hash of a lower cost is made again at this cost the
+// next time the password is checked and right (Store.CheckPassword).
+const HashCost = 12
+
+// hashCost is the bcrypt cost of new password hashes: always HashCost,
+// except in a test binary that asks for UseFastHashesInTests.
+var hashCost = HashCost
 
 // UseFastHashesInTests makes new password hashes (and the dummy hash
 // WasteTime checks against) use bcrypt.MinCost, so a package whose tests
 // create many users finishes in time under the race detector. Call it
 // from TestMain, before m.Run. It panics outside a test binary, so a
-// production binary always hashes at bcrypt.DefaultCost.
+// production binary always hashes at HashCost.
 func UseFastHashesInTests() {
 	if !testing.Testing() {
 		panic("users: UseFastHashesInTests called outside a test binary")
@@ -829,7 +834,40 @@ func (s *Store) CheckPassword(name, password string) bool {
 		WasteTime(password)
 		return false
 	}
-	return ComparePassword(hash, password)
+	if !ComparePassword(hash, password) {
+		return false
+	}
+	s.rehash(name, hash, password)
+	return true
+}
+
+// rehash makes a local user's password hash again at hashCost when it is
+// of a lower cost (made by an older version), now that the password is
+// known to be right. It is done before the caller goes on, so what it
+// records of the password (a session's, a known browser's) is the new
+// hash's. A failure only leaves the old hash in place.
+func (s *Store) rehash(name, hash, password string) {
+	if cost, err := bcrypt.Cost([]byte(hash)); err != nil || cost >= hashCost {
+		return
+	}
+	h, err := HashPassword(password)
+	if err != nil {
+		return
+	}
+	release, err := s.hold()
+	if err != nil {
+		return
+	}
+	defer release()
+	_, _ = s.b.Change(context.Background(), "signalith", NormalizeUsername(name), "", func(r *Record) error {
+		// Only the hash that was checked is replaced: one changed
+		// meanwhile stays.
+		if r.Source != SourceLocal || r.Hash != hash {
+			return ErrNoChange
+		}
+		r.Hash = h
+		return nil
+	})
 }
 
 // PasswordVersion changes whenever the user's password does, so a cache

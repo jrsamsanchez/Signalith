@@ -4,6 +4,7 @@
 package users
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -59,17 +60,54 @@ func TestLongPasswords(t *testing.T) {
 	}
 }
 
-// Password hashes are made at bcrypt's default cost. This package's tests
+// Password hashes are made at HashCost (AUTHRT-12). This package's tests
 // never call UseFastHashesInTests, so this checks the production cost.
 func TestHashPasswordCost(t *testing.T) {
 	h, err := HashPassword("correct horse battery")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c, err := bcrypt.Cost([]byte(h)); err != nil || c != bcrypt.DefaultCost {
-		t.Fatalf("cost %d (%v), want %d", c, err, bcrypt.DefaultCost)
+	if c, err := bcrypt.Cost([]byte(h)); err != nil || c != HashCost || HashCost < 12 {
+		t.Fatalf("cost %d (%v), want %d", c, err, HashCost)
 	}
-	if c, err := bcrypt.Cost(dummyHash()); err != nil || c != bcrypt.DefaultCost {
-		t.Fatalf("dummy hash cost %d (%v), want %d", c, err, bcrypt.DefaultCost)
+	if c, err := bcrypt.Cost(dummyHash()); err != nil || c != HashCost {
+		t.Fatalf("dummy hash cost %d (%v), want %d", c, err, HashCost)
+	}
+}
+
+// AUTHRT-12: a local user's hash from an older version, of a lower cost,
+// is made again at HashCost once the right password is checked; a wrong
+// one changes nothing.
+func TestCheckPasswordRehashes(t *testing.T) {
+	ctx := context.Background()
+	st := NewMemory()
+	if _, err := st.Create(ctx, NewUser{Username: "olga", Role: Viewer, Password: "correct horse battery"}); err != nil {
+		t.Fatal(err)
+	}
+	old, err := bcrypt.GenerateFromPassword([]byte("correct horse battery"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.b.Change(ctx, "test", "olga", "", func(r *Record) error { r.Hash = string(old); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if v := st.PasswordVersion("olga"); v != string(old) {
+		t.Fatalf("the old hash is not in use: %q", v)
+	}
+	if st.CheckPassword("olga", "wrong horse battery") || st.PasswordVersion("olga") != string(old) {
+		t.Fatal("a wrong password was accepted, or changed the hash")
+	}
+	if !st.CheckPassword("olga", "correct horse battery") {
+		t.Fatal("the right password was refused")
+	}
+	now := st.PasswordVersion("olga")
+	if c, err := bcrypt.Cost([]byte(now)); err != nil || c != HashCost {
+		t.Fatalf("hash after the sign-in has cost %d (%v), want %d", c, err, HashCost)
+	}
+	if !st.CheckPassword("olga", "correct horse battery") || st.PasswordVersion("olga") != now {
+		t.Error("the new hash does not check, or was made again")
+	}
+	if u, _ := st.Get("olga"); u.SessionEpoch != 0 && u.SessionEpoch != 1 {
+		t.Errorf("session epoch %d moved on", u.SessionEpoch)
 	}
 }

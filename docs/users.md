@@ -204,7 +204,12 @@ To stop anyone locking everyone out:
 - Signalith always keeps at least one enabled admin, and the built-in admin counts
   as one.
 
-Passwords are stored as bcrypt hashes and never shown again.
+Passwords are stored as bcrypt hashes, at cost 12, and never shown again. A local
+user's hash made by an older version at a lower cost is made again at cost 12 the next
+time they sign in with it. Since that changes the hash, that user's sessions on other
+devices end once (on a server that keeps sessions in its own memory), and their other
+browsers sign in once more before they are recognized again. The built-in admin's hash
+changes cost only when its password is next set.
 
 ## Changing your password
 
@@ -223,7 +228,7 @@ Users page.
 ### Password rules
 
 A new password, chosen on the Users page, at **Change password**, with
-`signalith passwd` or `signalith init -admin-password`, must be:
+`signalith passwd` or `SIGNALITH_NEW_PASSWORD` for `signalith init`, must be:
 
 - at least 8 and at most 256 characters, in any script (a password longer than the 72
   bytes bcrypt reads is reduced to a keyed SHA-256 of all of it first, so nothing is
