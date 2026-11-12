@@ -694,6 +694,63 @@ func TestDegradedBuiltinSignIn(t *testing.T) {
 	}
 }
 
+// AUTHRT-06: while the built-in admin's authenticator app can still be
+// read, the break-glass password asks for its code too, and a code is
+// taken once.
+func TestBreakGlassAsksForTheCode(t *testing.T) {
+	c := newMemberCluster(t, nil)
+	ctx := context.Background()
+	h, err := config.HashPassword("local-break-glass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c.a.localHash.Store(&h)
+	st := c.a.srv.Users
+	secret, err := st.BeginMFA(ctx, "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Confirm with the step before now, so a code of now is still free.
+	early, _ := users.TOTP(secret, time.Now().Add(-30*time.Second))
+	if _, err := st.ConfirmMFA(ctx, "admin", early); err != nil {
+		t.Fatal(err)
+	}
+	c.a.shared.paused.Store(true)
+	c.a.degraded.Store(true)
+	r := signInWith(t, c.a.client, c.a.url, attempt{user: "admin", pass: "local-break-glass"})
+	if r.code != http.StatusUnauthorized || r.body["code"] != "mfa_required" {
+		t.Fatalf("the -local password without a code: %d %v", r.code, r.body)
+	}
+	if got := c.a.basic("admin", "local-break-glass"); got != http.StatusForbidden {
+		t.Errorf("Basic with the -local password and an app: %d, want 403", got)
+	}
+	withCode := func(code string) int {
+		b, _ := json.Marshal(map[string]string{"username": "admin", "password": "local-break-glass", "code": code})
+		resp, err := c.a.client.Post(c.a.url+"/api/login", "application/json", strings.NewReader(string(b)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	if got := withCode("000000"); got != http.StatusUnauthorized {
+		t.Errorf("a wrong code: %d", got)
+	}
+	code, _ := users.TOTP(secret, time.Now())
+	if code == early {
+		t.Skip("the two steps' codes are the same")
+	}
+	if got := withCode(code); got != http.StatusOK {
+		t.Fatalf("the right code: %d", got)
+	}
+	if got := withCode(code); got != http.StatusUnauthorized {
+		t.Errorf("the same code again: %d", got)
+	}
+	if !strings.Contains(c.a.logs.String(), "break_glass=true") {
+		t.Error("the sign-in's record does not say it was the break-glass password")
+	}
+}
+
 // While OpenSearch refuses writes (a full disk), the server stays a
 // member, and the -local password still works there, for a session kept
 // in memory; on a server whose writes are taken it does not.

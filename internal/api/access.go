@@ -784,6 +784,10 @@ func (s *Server) signIn(r *http.Request, name, password string, step secondFacto
 	if method == "session" {
 		attrs = append(attrs, s.noticeLog()...)
 	}
+	if p.breakGlass {
+		// The audit alert for the built-in admin's sign-ins says so.
+		attrs = append(attrs, "break_glass", true)
+	}
 	if p.codeUsed != nil {
 		attrs = append(attrs, "mfa", string(p.codeUsed.Kind))
 		if p.codeUsed.Kind == users.CodeRecovery {

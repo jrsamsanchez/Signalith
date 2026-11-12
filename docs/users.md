@@ -956,8 +956,12 @@ The built-in admin has one password for every server.
   to fix that. It is the only break-glass password: an `admin-password-hash` an earlier
   `signalith passwd` wrote (as on Docker and service installs) is not used once the
   users are shared, so a password that leaked before does not come back while
-  OpenSearch is down. Change or delete `admin-password-local` when the person who knew
-  it should no longer have it. On a server that was never a member, `-local` writes
+  OpenSearch is down. When the built-in admin has an authenticator app and this server
+  can still read it, the sign-in asks for its code too (each code works once on this
+  server); when it cannot, the password is enough. The sign-in's audit record has
+  `break_glass=true`, and raises the **Built-in admin signs in** audit alert. Change or
+  delete `admin-password-local` when the person who knew it should no longer have it.
+  On a server that was never a member, `-local` writes
   `admin-password-hash`, which replaces the configured password at the next restart, as
   `signalith passwd` does there.
 - **`auth.admin_password_hash`, `SIGNALITH_ADMIN_PASSWORD` and

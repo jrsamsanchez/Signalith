@@ -490,6 +490,28 @@ func (s *Store) UseMFACode(ctx context.Context, name, code string) (CodeResult, 
 	return res, err
 }
 
+// CheckAppCode checks an authenticator app code of name's two-step
+// sign-in, or the built-in admin's, without writing anything: for a
+// sign-in while the users cannot be written (the break-glass password).
+// after is the last step the caller accepted, so it never takes a code
+// twice. It returns the step the code was for; ErrMFAOff when name has no
+// app whose key can be read here.
+func (s *Store) CheckAppCode(name, code string, after int64) (int64, error) {
+	m, ok := s.MFA(name)
+	if !ok || !m.AppOn() || m.Secret == "" {
+		return 0, ErrMFAOff
+	}
+	code = normalizeCode(code)
+	if !isAppCode(code) {
+		return 0, ErrWrongCode
+	}
+	step, ok := checkTOTP(m.Secret, code, s.now(), max(after, m.LastStep))
+	if !ok {
+		return 0, ErrWrongCode
+	}
+	return step, nil
+}
+
 // NewRecoveryCodes replaces name's recovery codes with new ones, which
 // are shown once.
 func (s *Store) NewRecoveryCodes(ctx context.Context, name string) ([]string, error) {
