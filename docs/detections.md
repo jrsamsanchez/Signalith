@@ -1727,6 +1727,9 @@ a backtest stops after 3 minutes with what it has so far.
 
 ## Sharing detections
 
+!!! note "Arriving with the next release"
+    Sharing detections is on `main` and comes with the release after 0.4.1.
+
 To share the detections you wrote, choose **Export** on the Detections page. It downloads
 one YAML file with every detection made on this Signalith (not the built-in or content
 pack ones, which every Signalith already has). Each rule in the file is turned off.

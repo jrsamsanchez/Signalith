@@ -16,6 +16,9 @@ Signalith takes events from these kinds of senders:
 
 ## Checking that sources still send
 
+!!! note "Arriving with the next release"
+    Checking that sources still send is on `main` and comes with the release after 0.4.1.
+
 A detection can't fire on data that never arrives. The **Data sources** page (under
 **Data** in the menu) lists every host and source type that sent events in the last 7
 days, for every role:

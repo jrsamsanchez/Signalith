@@ -398,6 +398,9 @@ rename someone, remove them from the app and assign them again.
 
 ## Two-step sign-in at the provider
 
+!!! note "Arriving with the next release"
+    Checking two-step sign-in at the provider is on `main` and comes with the release after 0.4.1.
+
 Single sign-on users get their second step from the identity provider, so require it
 there, in the provider's own policy for Signalith's app (conditional access in Entra ID,
 an authentication policy in Okta, a flow with OTP in Keycloak). **Require two-step

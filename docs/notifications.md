@@ -281,6 +281,9 @@ turned off.
 
 ### From a detection
 
+!!! note "Arriving with the next release"
+    Notifying from a detection is on `main` and comes with the release after 0.4.1.
+
 Each detection on the **Detections** page has a **Notifications** section (admins see it).
 It lists the rules that send that detection's findings, and where to, or says that nobody
 is told. **Notify me when it fires** opens a new rule for just that detection, set to send
