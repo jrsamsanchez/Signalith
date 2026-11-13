@@ -150,6 +150,9 @@ Signalith helps with that:
 
 ## AI first pass on new findings
 
+!!! note "Arriving with the next release"
+    The AI first pass on new findings is on `main` and comes with the release after 0.4.1.
+
 The **AI first pass** looks at new findings without anyone clicking, so an analyst opening
 the queue already sees what the model made of each one. It is **off by default**, and it is
 a suggestion only: it never closes, assigns or changes a finding, and its note is not part

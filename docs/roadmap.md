@@ -21,6 +21,11 @@ Ideas and requests are welcome as
 
 ## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
 
+**The next release**
+:   Finished and waiting for the next release: sharing detections, an AI first pass on new
+    findings, notifications set up straight from a detection, checking that
+    sources still send, and checks for two-step sign-in at the single sign-on provider.
+
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
     Splunk's answers where the two should agree.
