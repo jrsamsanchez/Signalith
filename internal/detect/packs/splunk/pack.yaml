@@ -3142,10 +3142,6 @@ rules:
     rule_id: d0e6ec70-6e40-41a2-8b93-8d9ff077a746
     file: windows_bitlocker_suspicious_command_usage.yml
     path: detections/endpoint/windows_bitlocker_suspicious_command_usage.yml
-  - id: splunk-windows-bits-upload-activity
-    rule_id: dd9f870b-a5c7-462e-bf0c-7022e818e9b5
-    file: windows_bits_upload_activity.yml
-    path: detections/endpoint/windows_bits_upload_activity.yml
   - id: splunk-windows-bluetooth-service-installed-from-uncommon-locatio
     rule_id: f12b81e6-2fa2-48e0-95cd-f5f7e4d9ac89
     file: windows_bluetooth_service_installed_from_uncommon_location.yml
