@@ -10,10 +10,10 @@ require (
 	github.com/jonboulle/clockwork v0.5.0
 	github.com/oschwald/maxminddb-golang/v2 v2.9.0
 	github.com/russellhaering/goxmldsig v1.6.1
-	golang.org/x/crypto v0.58.0
+	golang.org/x/crypto v0.59.0
 	golang.org/x/sys v0.50.0
-	golang.org/x/term v0.47.0
-	golang.org/x/text v0.43.0
+	golang.org/x/term v0.48.0
+	golang.org/x/text v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
 	rsc.io/qr v0.2.0
 )
