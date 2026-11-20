@@ -744,6 +744,9 @@ func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) error {
 		if err := splunkJoins(pq, rule); err != nil {
 			return err
 		}
+		if err := laterRegexes(pq); err != nil {
+			return err
+		}
 		d.Query = pq.String()
 	} else if len(rule.Joins) > 0 {
 		return err
@@ -761,6 +764,59 @@ func splunkPost(d *Detection, q *query.Query, rule *splcheck.Rule) error {
 		d.Lookback = formatDuration(span + every)
 	}
 	return nil
+}
+
+// laterRegexes checks that the regular expressions a rule's later stages
+// run (match, replace, mvfind) compile: a search whose pattern does not
+// fails every run. Splunk's PCRE allows lookarounds Go's RE2 does not.
+func laterRegexes(q *query.Query) error {
+	var err error
+	check := func(e query.EvalExpr) {
+		query.WalkEval(e, func(x query.EvalExpr) {
+			c, ok := x.(*query.Call)
+			if !ok || err != nil || len(c.Args) < 2 {
+				return
+			}
+			switch c.Func {
+			case "match", "replace", "mvfind":
+			default:
+				return
+			}
+			if s, ok := c.Args[1].(*query.Str); ok {
+				if _, cerr := regexp.Compile(s.Value); cerr != nil {
+					err = fmt.Errorf("regular expression %q: %w", s.Value, cerr)
+				}
+			}
+		})
+	}
+	var walk func(e query.Expr)
+	walk = func(e query.Expr) {
+		switch x := e.(type) {
+		case *query.And:
+			for _, c := range x.Children {
+				walk(c)
+			}
+		case *query.Or:
+			for _, c := range x.Children {
+				walk(c)
+			}
+		case *query.Not:
+			walk(x.Child)
+		case *query.Cond:
+			check(x.X)
+		}
+	}
+	for _, c := range q.Commands {
+		switch x := c.(type) {
+		case *query.Where:
+			walk(x.Expr)
+		case *query.Eval:
+			for _, a := range x.Assigns {
+				check(a.Expr)
+			}
+		}
+	}
+	return err
 }
 
 // splunkJoins gives each join of a rule's later stages its subsearch's
