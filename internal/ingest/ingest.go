@@ -993,6 +993,11 @@ func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
 	switch {
 	case tag == SensorStatusTag:
 		ev = parseSensorStatus(r)
+	case isGitHubTag(tag) && isGitHubEvent(r):
+		// Sent as GitHub's and shaped like a GitHub event: GitHub's, even
+		// when its keys also look like another source's (ts and uid, as
+		// Zeek's lines have).
+		ev = ParseGitHub(r)
 	case isWazuhTag(tag) || IsWazuhAlert(r):
 		ev = parseWazuhRecord(r)
 	case isZeekTag(tag) || (!isSuricataTag(tag) && IsZeekRecord(r)):
@@ -1011,7 +1016,7 @@ func parseRecord(tag string, r map[string]any, now time.Time) (ev Event) {
 		ev = ParseOkta(r)
 	case isKubernetesTag(tag) || IsKubernetesRecord(r):
 		ev = ParseKubernetes(kubeLine(r))
-	case tag == GitHubTag || strings.HasPrefix(tag, GitHubTag+".") || githubSniffTag(tag) && IsGitHubRecord(r):
+	case isGitHubTag(tag) || githubSniffTag(tag) && IsGitHubRecord(r):
 		ev = ParseGitHub(r)
 	case isWindowsRecord(tag, r):
 		ev = parseWindows(r)

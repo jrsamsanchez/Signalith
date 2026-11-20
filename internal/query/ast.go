@@ -182,13 +182,21 @@ func sortKeysString(ks []SortKey) string {
 		}
 		if k.Desc {
 			keys[i] = "-" + name
-		} else if k.As == "" && (strings.HasPrefix(k.Field, "-") || strings.HasPrefix(k.Field, "+")) {
-			keys[i] = "+" + name // the sign is part of the name
+		} else if k.As == "" && k.Field != "" && !isNameStart(k.Field[0]) {
+			// The sign is part of the name (+-x), or the name alone would
+			// not read as one ([] reads as a subsearch).
+			keys[i] = "+" + name
 		} else {
 			keys[i] = name
 		}
 	}
 	return strings.Join(keys, ", ")
+}
+
+// isNameStart reports whether a field name starting with c reads as a
+// name with no sign before it in a sort.
+func isNameStart(c byte) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c >= 0x80
 }
 
 func formatName(n string) string {
