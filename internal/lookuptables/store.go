@@ -396,6 +396,12 @@ func Parse(name string, data []byte) (*Table, error) {
 		for strings.Contains(h, "\ufeff") {
 			h = strings.ReplaceAll(h, "\ufeff", "")
 		}
+		// A line break in a name is \n, as CSV reads it back: a \r\n left
+		// in it (from \r\r\n) would read back as \n and could then be the
+		// same name as another column's.
+		for strings.Contains(h, "\r\n") {
+			h = strings.ReplaceAll(h, "\r\n", "\n")
+		}
 		h = strings.TrimSpace(h)
 		if h == "" {
 			return nil, parseErr("column %d has no name; the first line names the columns", i+1)
