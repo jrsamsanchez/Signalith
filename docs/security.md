@@ -587,7 +587,7 @@ sign-in**), so you are not asked to in the middle of something.
 Shown when there are agent tokens: tokens made on **Add data** or with
 `signalith tokens`, or shared tokens from signalith.yaml (`ingest.tokens`),
 `SIGNALITH_INGEST_TOKEN` or `SIGNALITH_INGEST_TOKEN_FILE`. See
-[agent-tokens.md](agent-tokens.md).
+[Agent tokens](agent-tokens.md).
 
 **Looks at:** whether a shared token (one every agent uses) is still accepted, when an
 agent last sent with it, how long it is, and whether it is the public example token. A

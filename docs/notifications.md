@@ -437,7 +437,7 @@ and the password are replaced with `***`.
 
 When several servers share one OpenSearch, only the server that holds the **background
 jobs** sends notifications. This is the same server that runs detections (see
-[servers.md](servers.md)). It runs the `notifications` job every 15 seconds.
+[Servers](servers.md)). It runs the `notifications` job every 15 seconds.
 
 - Channels and rules live in that server's notifications file. On other servers the page
   shows them but cannot change them, and it names the server to use. If the jobs move to a

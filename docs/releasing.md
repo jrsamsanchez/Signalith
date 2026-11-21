@@ -107,7 +107,7 @@ one of these secrets outside these environments.
 `SIGNALITH_GPG_PRIVATE_KEY` secret, the `.rpm` and `.deb` packages and `SHA256SUMS` are
 signed with it, and the public key is published with each release as
 `signalith-release-key.asc`. It also signs the apt and dnf repositories at
-https://signalith.io/apt and https://signalith.io/rpm, which the **Website** workflow
+`https://signalith.io/apt` and `https://signalith.io/rpm`, which the **Website** workflow
 rebuilds from the five newest releases after every **Release** run
 (`deploy/repos/build.sh`; packages from before the key existed are signed there). Until
 the secret is set, the website has no repositories. The **Package repositories** workflow then

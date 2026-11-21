@@ -20,6 +20,7 @@ cases. It is one Go program with the web UI built in, running as a Windows servi
 systemd unit or a container, on one server or several.</p>
 
 [Get started](getting-started.md){ .md-button .md-button--primary }
+[Try the live demo](https://demo.signalith.io){ .md-button }
 [See the roadmap](roadmap.md){ .md-button }
 [GitHub](https://github.com/jrsamsanchez/Signalith){ .md-button }
 

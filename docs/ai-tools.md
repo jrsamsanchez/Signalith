@@ -319,7 +319,7 @@ To make a token through the API, as an admin, `POST /api/api-tokens` with its `n
 | `Signalith did not accept the API token` | The token expired, was revoked or is mistyped. **Settings > API tokens** shows which; make a new one there |
 | `SIGNALITH_TOKEN is not an API token` | Use a token from **Settings > API tokens**; they start with `sgl_api_`. Agent tokens (`sgl_` without `api_`) only send events |
 | `API tokens can only read` | Not expected from the MCP server; a script sent something other than a read |
-| `Signalith did not accept the username and password` | Check `SIGNALITH_USER` and `SIGNALITH_PASSWORD`. Too many wrong passwords lock the account for a while; see [users.md](users.md#signing-in) |
+| `Signalith did not accept the username and password` | Check `SIGNALITH_USER` and `SIGNALITH_PASSWORD`. Too many wrong passwords lock the account for a while; see [Users and sign-in](users.md#signing-in) |
 | `This Signalith user must choose a new password first` | Sign in to Signalith once as this user in a browser and choose a password, or use an API token |
 | `certificate signed by unknown authority` | Trust Signalith's CA, or set `SIGNALITH_CA_FILE` (step 3) |
 | `could not reach Signalith` | Check the address and port, and that this computer can reach the server (try the address in a browser) |

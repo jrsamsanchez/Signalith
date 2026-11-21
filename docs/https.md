@@ -458,7 +458,7 @@ The Fluent Bit setup on the **Add data** page checks the server's certificate:
 - The steps also make the configuration readable only by root (Linux) or SYSTEM and
   Administrators (Windows), since it holds the agent token.
 - The configuration carries a token of its own, made when you copy or download it (see
-  [agent-tokens.md](agent-tokens.md#create-a-token)), so one group of agents can be
+  [Agent tokens](agent-tokens.md#create-a-token)), so one group of agents can be
   turned away without touching the others. On Windows they do the same
   for the agent's buffer in `C:\ProgramData\fluent-bit`, which holds Security log events
   until they are sent.
@@ -733,7 +733,7 @@ while `plaintext_ingest` is `deny`, or with the old example token from an earlie
 quick start. It keeps its events and retries; give it a new configuration from Add data.
 
 **An agent gets 401.** Its agent token is wrong, was revoked, or is a shared token you
-stopped accepting (see [agent-tokens.md](agent-tokens.md)); on a Docker quick start that
+stopped accepting (see [Agent tokens](agent-tokens.md)); on a Docker quick start that
 started new, that includes the old example token `change-this-ingest-token` (see
 [The Docker quick start's old example token](#the-docker-quick-starts-old-example-token)).
 Fluent Bit drops what is refused this way. Give it a new configuration from Add data.

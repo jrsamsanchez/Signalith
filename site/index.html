@@ -41,7 +41,7 @@
       "license": "https://www.apache.org/licenses/LICENSE-2.0",
       "isAccessibleForFree": true,
       "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
-      "codeRepository": "https://github.com/jrsamsanchez/signalith",
+      "codeRepository": "https://github.com/jrsamsanchez/Signalith",
       "programmingLanguage": "Go",
       "keywords": "SIEM, open source SIEM, security monitoring, log management, threat detection, Sigma rules, MITRE ATT&CK, OpenSearch, Fluent Bit, risk-based alerting, AI",
       "featureList": ["Pipe-style search language and plain-English questions", "More than 3,900 tested SigmaHQ and Splunk Security Content detection rules", "Findings queue, risk-based alerting and investigation cases", "Threat intel feeds and vulnerability scanning", "Investigate with AI and a read-only MCP server for AI tools", "HTTPS, encryption, roles, single sign-on and audit logging by default"],
@@ -126,7 +126,7 @@
     <div class="nav__end">
       <button class="icon-btn" type="button" data-theme-toggle aria-label="Switch between light and dark theme" title="Switch theme"><svg class="icon when-light" aria-hidden="true"><use href="#i-moon"/></svg><svg class="icon when-dark" aria-hidden="true"><use href="#i-sun"/></svg></button>
       <a class="btn btn--ghost btn--sm nav__gh nav__sponsor" href="https://github.com/sponsors/jrsamsanchez"><svg class="icon" aria-hidden="true"><use href="#i-heart"/></svg>Sponsor</a>
-      <a class="btn btn--ghost btn--sm nav__gh" href="https://github.com/jrsamsanchez/signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
+      <a class="btn btn--ghost btn--sm nav__gh" href="https://github.com/jrsamsanchez/Signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>GitHub</a>
       <button class="icon-btn nav__menu" type="button" data-menu aria-expanded="false" aria-controls="mobile-nav" aria-label="Menu"><svg class="icon" aria-hidden="true"><use href="#i-menu"/></svg></button>
     </div>
   </div>
@@ -138,7 +138,7 @@
     <a href="#soon">Coming soon</a>
     <a href="#start">Get started</a>
     <a href="docs/">Docs</a>
-    <a href="https://github.com/jrsamsanchez/signalith">GitHub</a>
+    <a href="https://github.com/jrsamsanchez/Signalith">GitHub</a>
     <a href="https://github.com/sponsors/jrsamsanchez">Sponsor</a>
   </nav>
 </header>
@@ -155,7 +155,7 @@
       <div class="hero__cta">
         <a class="btn btn--primary btn--lg" href="#start">Get started<svg class="icon" aria-hidden="true"><use href="#i-arrow-right"/></svg></a>
         <a class="btn btn--glass btn--lg" href="https://demo.signalith.io"><svg class="icon" aria-hidden="true"><use href="#i-play"/></svg>Try the live demo</a>
-        <a class="btn btn--glass btn--lg" href="https://github.com/jrsamsanchez/signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
+        <a class="btn btn--glass btn--lg" href="https://github.com/jrsamsanchez/Signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>View on GitHub</a>
       </div>
       <ul class="hero__facts">
         <li>Windows, Linux, Docker and Kubernetes</li>
@@ -432,32 +432,34 @@
 
 <!-- Security -->
 <section class="section section--alt" id="security">
-  <div class="wrap split split--rev">
+  <div class="wrap">
+  <div class="split split--rev">
     <div class="split__copy">
       <p class="kicker">Secure by default</p>
       <h2>Locked down before you change a setting.</h2>
       <p class="section__lede">A security tool should not be the weak spot. Signalith ships safe and tells you, in plain words, anything left to tighten.</p>
-      <ul class="ticks">
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>HTTPS everywhere</b> with a certificate it makes and renews itself; agents check it.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Secrets encrypted at rest</b> with a master key, DPAPI on Windows.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>No default passwords.</b> The Docker setup makes its own, and OpenSearch runs with security on.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Two-step sign-in</b> with passkeys or an authenticator app, and the password asked again before sensitive changes.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Roles and single sign-on:</b> viewer, analyst and admin, from AD, LDAP, OpenID Connect or SAML groups.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Passwords checked against NIST 800-63B:</b> about 2,000 commonly used passwords are refused, and sessions have a time limit.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>A token per agent</b> on a port of its own, apart from the web page, so one lost machine is revoked without touching the rest.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Tamper-evident audit log:</b> every change is chained and signed, and API tokens expire.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>AI that reads logs as data:</b> text in an event can&rsquo;t give the AI instructions, and its searches are read-only.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Hardened service:</b> its own account on Windows, systemd sandboxing on Linux.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>One certificate authority for every server,</b> each server with its own OpenSearch certificate, revoked at once when a server is removed.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Encrypted archives</b> of old data that you can check and restore when an investigation needs them.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Fuzz-tested parsers:</b> every parser that reads data from the network is fuzzed in CI and every night.</span></li>
-        <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Verifiable releases</b> with an SBOM and build attestations for every package and image.</span></li>
-      </ul>
     </div>
     <figure class="frame frame--tilt">
       <div class="frame__bar" aria-hidden="true"><i></i><i></i><i></i><span>Settings / Security</span></div>
       <img class="frame__img" src="assets/shots/security-720.webp" srcset="assets/shots/security-720.webp 720w, assets/shots/security.webp 1440w" sizes="(max-width: 900px) 100vw, 600px" width="1440" height="900" loading="lazy" alt="The Signalith Security page listing what to fix first and whether data is encrypted in transit.">
     </figure>
+  </div>
+  <ul class="ticks ticks--cols">
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>HTTPS everywhere</b> with a certificate it makes and renews itself; agents check it.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Secrets encrypted at rest</b> with a master key, DPAPI on Windows.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>No default passwords.</b> The Docker setup makes its own, and OpenSearch runs with security on.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Two-step sign-in</b> with passkeys or an authenticator app, and the password asked again before sensitive changes.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Roles and single sign-on:</b> viewer, analyst and admin, from AD, LDAP, OpenID Connect or SAML groups.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Passwords checked against NIST 800-63B:</b> about 2,000 commonly used passwords are refused, and sessions have a time limit.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>A token per agent</b> on a port of its own, apart from the web page, so one lost machine is revoked without touching the rest.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Tamper-evident audit log:</b> every change is chained and signed, and API tokens expire.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>AI that reads logs as data:</b> text in an event can&rsquo;t give the AI instructions, and its searches are read-only.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Hardened service:</b> its own account on Windows, systemd sandboxing on Linux.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>One certificate authority for every server,</b> each server with its own OpenSearch certificate, revoked at once when a server is removed.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Encrypted archives</b> of old data that you can check and restore when an investigation needs them.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Fuzz-tested parsers:</b> every parser that reads data from the network is fuzzed in CI and every night.</span></li>
+    <li><svg class="icon" aria-hidden="true"><use href="#i-lock"/></svg><span><b>Verifiable releases</b> with an SBOM and build attestations for every package and image.</span></li>
+  </ul>
   </div>
 </section>
 
@@ -557,8 +559,8 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
     <h2>Your logs, your servers, your SIEM.</h2>
     <p>Signalith is free to use, change and share under the Apache License 2.0. Star it, try it, and open an issue with what you would like next. If it is useful to you, sponsoring it helps keep it going.</p>
     <div class="hero__cta">
-      <a class="btn btn--primary btn--lg" href="https://github.com/jrsamsanchez/signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>Star on GitHub</a>
-      <a class="btn btn--glass btn--lg" href="https://github.com/jrsamsanchez/signalith/issues">Open an issue</a>
+      <a class="btn btn--primary btn--lg" href="https://github.com/jrsamsanchez/Signalith"><svg class="icon" aria-hidden="true"><use href="#i-github"/></svg>Star on GitHub</a>
+      <a class="btn btn--glass btn--lg" href="https://github.com/jrsamsanchez/Signalith/issues">Open an issue</a>
       <a class="btn btn--glass btn--lg cta__sponsor" href="https://github.com/sponsors/jrsamsanchez"><svg class="icon" aria-hidden="true"><use href="#i-heart"/></svg>Sponsor</a>
     </div>
   </div>
@@ -573,12 +575,16 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
       <p>An open-source personal project by <a class="foot__me" href="https://www.linkedin.com/in/samuel-sanchez-ab2ab3124" rel="noopener me" title="Samuel Sanchez Jr. on LinkedIn">Samuel Sanchez Jr.<svg class="icon" aria-hidden="true"><use href="#i-linkedin"/></svg><span class="sr">on LinkedIn</span></a></p>
     </div>
     <nav class="foot__links" aria-label="Footer">
-      <a href="https://github.com/jrsamsanchez/signalith">GitHub</a>
       <a href="docs/">Documentation</a>
+      <a href="docs/query-language/">Query language</a>
       <a href="docs/comparison/">How it compares</a>
+      <a href="docs/roadmap/">Roadmap</a>
+      <a href="https://demo.signalith.io">Live demo</a>
+      <a href="https://github.com/jrsamsanchez/Signalith">GitHub</a>
+      <a href="https://github.com/jrsamsanchez/Signalith/releases">Releases</a>
+      <a href="https://github.com/jrsamsanchez/Signalith/blob/main/SECURITY.md">Security policy</a>
       <a href="https://github.com/sponsors/jrsamsanchez">Sponsor</a>
-      <a href="https://github.com/jrsamsanchez/signalith/blob/main/docs/query-language.md">Query language</a>
-      <a href="https://github.com/jrsamsanchez/signalith/blob/main/LICENSE">Apache License 2.0</a>
+      <a href="https://github.com/jrsamsanchez/Signalith/blob/main/LICENSE">Apache License 2.0</a>
       <a href="docs/code-signing/">Code signing policy</a>
     </nav>
     <p class="foot__legal">Signalith is an independent project. It is not affiliated with, endorsed by or sponsored by Splunk or Cisco, and contains no Splunk software code (its optional Splunk Security Content pack ships rules from Splunk’s Apache 2.0 security_content project). Splunk, Splunk Enterprise Security and SPL are trademarks or registered trademarks of Splunk LLC, a Cisco company, in the United States and other countries; they are named here only to describe the rules Signalith can run and its search syntax. OpenSearch, Fluent Bit, Sigma and MITRE ATT&amp;CK are trademarks of their respective owners. Fonts: Inter and JetBrains Mono (SIL Open Font License). Icons: Lucide (ISC). Music in the demos: an original track made for Signalith, CC0. Visits are counted with <a href="https://www.goatcounter.com">GoatCounter</a>, which sets no cookies and keeps no personal data.</p>

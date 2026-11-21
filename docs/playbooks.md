@@ -116,7 +116,7 @@ still be approved or rejected.
 ## Which server runs playbooks
 
 Only one server runs playbooks: the server that holds the **background jobs** (see
-[servers.md](servers.md)), in the job `playbooks`. It checks it still holds them before
+[Servers](servers.md)), in the job `playbooks`. It checks it still holds them before
 each step. Approving and rejecting work on every server; the server running the jobs picks
 the decision up within 15 seconds.
 
@@ -170,7 +170,7 @@ waits for its own approval and goes into C-12 too.
 
 A playbook can hand off to a SOAR such as [Shuffle](https://shuffler.io). Add the SOAR's
 webhook as a response action (the **Shuffle workflow webhook** template, see
-[response-actions.md](response-actions.md#shuffle)), then add it to a playbook as a step.
+[Response actions](response-actions.md#shuffle)), then add it to a playbook as a step.
 Its target is any entity, so pick the one the workflow should get, or **A fixed value**.
 
 The Shuffle template is marked disruptive, so the step waits for an analyst to approve it.

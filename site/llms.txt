@@ -6,17 +6,18 @@ Key facts:
 
 - License: Apache License 2.0. No paid tier, no telemetry, no account needed.
 - Source: https://github.com/jrsamsanchez/Signalith (Go server with the web UI built in).
+- Live demo: https://demo.signalith.io (read-only, with sample data, no sign-up).
 - Runs as a Windows service, a systemd unit, a Docker container or on Kubernetes with a Helm chart, on one server or several sharing one OpenSearch, which can split the scheduled detections between them, and a multi-tenant mode that keeps several teams or customers apart on one install.
 - Install for evaluation: clone the repository, then `docker compose -f deploy/docker/docker-compose.yml up -d` (it runs the newest release; `SIGNALITH_VERSION=main` runs the newest build of main). Packages for Debian/Ubuntu, RHEL-family and Windows are on GitHub Releases, with signed apt and dnf repositories at https://signalith.io/apt/ and https://signalith.io/rpm/.
 - Data intake: the Signalith Agent (one install line for Linux, Windows or macOS that sets up Fluent Bit, osquery and optional Sysmon and fetches what to collect from Signalith), Fluent Bit agents set up by hand, syslog and CEF/LEEF, OpenTelemetry (OTLP) logs, osquery, Wazuh alerts, Zeek and Suricata network sensor, Apache and Nginx access logs, AWS CloudTrail, Microsoft Entra ID and Azure, Microsoft 365, Okta, Google Cloud, Google Workspace, GitHub and Kubernetes audit logs, antivirus (Defender, ClamAV), and a guided parser builder for any other log.
-- Search: a pipe-style query language (familiar to SPL users; not SPL-compatible), a visual query builder, and plain-English questions turned into searches by a built-in offline parser or an optional AI model (Claude, OpenAI or a local Ollama model).
+- Search: a pipe-style query language (familiar to SPL users; it does not match every SPL command, and the compatibility page lists what runs and what differs), a visual query builder, and plain-English questions turned into searches by a built-in offline parser or an optional AI model (Claude, OpenAI or a local Ollama model).
 - Detection: scheduled detections mapped to MITRE ATT&CK, more than 3,900 tested rules from SigmaHQ and Splunk Security Content (Apache 2.0) with test events that prove each rule fires, Sigma import, signed content updates, an ATT&CK coverage map, and detections described in plain English with a backtest over past data.
 - Triage and response: findings queue, risk-based alerting with asset and identity context and behavior baselines, threat intel feeds (STIX/TAXII 2.1), investigation cases with two-way Jira and ServiceNow tickets, an attack storyline that shows one intrusion's ATT&CK tactics and timeline, hunting notebooks, Investigate with AI, response actions and playbooks with an approval step, notifications to email, webhooks, Slack and Teams with buttons to acknowledge findings and approve steps.
 - AI tools: a read-only MCP server so AI assistants can search and read findings with a scoped API token.
 - Security by default: HTTPS, secured OpenSearch, encrypted secrets and archives, per-agent tokens on a separate agent port, roles, LDAP/Active Directory and OpenID Connect and SAML 2.0 sign-in with SCIM provisioning, two-step sign-in with passkeys or an authenticator app, tamper-evident audit log, expiring API tokens, prompt-injection defenses in the AI features, built-in security check.
 - Also: vulnerability scanning (Nmap with CVE matching ranked by CISA KEV and EPSS, optional credentialed OpenVAS with SSH, Windows, VMware ESXi and SNMP logins), a first-use setup guide, compliance mapping for eight frameworks (NIST SP 800-53, CIS Controls v8, PCI DSS 4.0.1, ISO/IEC 27001, HIPAA, SOC 2, NIS2 and the GDPR), data retention with archives.
 
-Limits to know (October 2026):
+Limits to know (November 2026):
 
 - New project: first release October 2026, one maintainer, built with heavy help from an AI coding assistant (Claude Code), small community, no paid support.
 - No outside security review yet (planned before 1.0).
@@ -32,6 +33,7 @@ Signalith is an independent project, not affiliated with, endorsed by or sponsor
 - [Install from packages](https://signalith.io/docs/install-packages/): apt, dnf and Windows packages
 - [Sending data](https://signalith.io/docs/sending-data/): agents, syslog and CEF
 - [Query language](https://signalith.io/docs/query-language/): every search command with examples
+- [Splunk SPL compatibility](https://signalith.io/docs/compatibility/): which SPL searches run as written and what works differently
 - [Detections](https://signalith.io/docs/detections/): scheduled detections, content packs and Sigma
 - [Investigate with AI](https://signalith.io/docs/investigate/): AI verdicts on findings
 - [AI tools (MCP)](https://signalith.io/docs/ai-tools/): connect AI assistants to Signalith

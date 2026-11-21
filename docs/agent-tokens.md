@@ -237,7 +237,7 @@ fixed token in the configuration. New agents should get their own token instead.
 | Route | Role | Does |
 |---|---|---|
 | `GET /api/agent-tokens` | Analyst | Lists tokens and shared tokens: name, status, created, last used, events in the last hour. Never a token |
-| `POST /api/agent-tokens` | Admin | `{"name": "Linux servers", "purpose": "linux"}` creates a token. `purpose` is `linux`, `windows`, `otel`, `osquery`, `sensor` (a network sensor), `agent` (the Signalith Agent, [signalith-agent.md](signalith-agent.md)) or empty. The `201` answer is the only one that holds the token, in `secret` |
+| `POST /api/agent-tokens` | Admin | `{"name": "Linux servers", "purpose": "linux"}` creates a token. `purpose` is `linux`, `windows`, `otel`, `osquery`, `sensor` (a network sensor), `agent` (the Signalith Agent, [Signalith Agent](signalith-agent.md)) or empty. The `201` answer is the only one that holds the token, in `secret` |
 | `PATCH /api/agent-tokens/{id}` | Admin | `{"name": "New name"}` renames it |
 | `POST /api/agent-tokens/{id}/revoke` | Admin | Revokes it; answers `hosts_removed`, the osquery hosts removed with it |
 | `POST /api/agent-tokens/legacy/{id}/refuse` | Admin | Stops accepting a shared token |
@@ -315,7 +315,7 @@ osquery send with the key.
 
 ## osquery hosts
 
-Hosts running osquery (see [endpoints.md](endpoints.md)) enroll with an agent token as their
+Hosts running osquery (see [Endpoints (osquery)](endpoints.md)) enroll with an agent token as their
 enroll secret, and each host remembers which token it enrolled with. The setup script Add
 data makes for osquery holds a token of its own, named `osquery hosts` unless you choose
 another name.

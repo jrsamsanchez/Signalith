@@ -4,7 +4,7 @@ People can sign in to Signalith with an identity provider over OpenID Connect, s
 Microsoft Entra ID, Okta, Google or Keycloak, or over [SAML 2.0](#saml-20), such as AD FS,
 Okta or Entra ID. Either or both can be on. The sign-in page then shows a
 **Sign in with ...** button above the username and password. Local users, directory
-sign-in ([users.md](users.md#sign-in-with-active-directory-or-ldap)) and the built-in
+sign-in ([Sign in with Active Directory or LDAP](users.md#sign-in-with-active-directory-or-ldap)) and the built-in
 admin keep working beside it, so you can't lock yourself out by setting it up wrong.
 
 Each person's role comes from their groups at the provider, checked at every sign-in.
@@ -48,7 +48,7 @@ recommends for web applications:
     - the `nonce` matches the one sent in step 1, so a token can't be replayed.
 4. Signalith works out the username, email address and role from the claims, records
    the user and starts an ordinary session. The session follows the same idle sign-out
-   and lifetime as any other (see [users.md](users.md#signing-in)).
+   and lifetime as any other (see [Users and sign-in](users.md#signing-in)).
 
 After signing in, the browser goes back to the page it started from. Only a path on
 Signalith itself is accepted there, so the sign-in can't be used to send anyone to
@@ -431,12 +431,12 @@ before turning a check on: a server from before this release does not check.
 ## Several servers
 
 Servers that share one OpenSearch share the single sign-on settings, and the users, like
-other shared settings ([servers.md](servers.md)). The client secret is stored encrypted, and
+other shared settings ([Servers](servers.md)). The client secret is stored encrypted, and
 is only ever sent to the issuer it was entered for: change the provider or the issuer and
 you must enter it again.
 
 Register the redirect URI of the address people use, normally the load balancer's (see
-[load-balancers.md](load-balancers.md)). The sign-in can start and finish on different
+[Load balancers](load-balancers.md)). The sign-in can start and finish on different
 servers. A browser that opens Signalith by another address is sent to that address first,
 so the sign-in cookie is where the provider sends the browser back. With SAML, register
 the load balancer's address the same way. A SAML assertion is accepted once across every
@@ -490,7 +490,7 @@ Provisioning is under `auth.scim`: `enabled: true` and `token_sha256`, the SHA-2
 the token, which the Single sign-on tab writes for you.
 
 Store the client secret with `signalith secrets set auth.oidc.client_secret`, which keeps it
-encrypted (see [encryption.md](encryption.md)), or set it in the
+encrypted (see [Encryption](encryption.md)), or set it in the
 `SIGNALITH_OIDC_CLIENT_SECRET` environment variable where Signalith starts.
 
 A provider with a certificate from a private certificate authority must be trusted by the
@@ -529,7 +529,7 @@ These routes need an admin.
 client secret only whether it is set), whether single sign-on is `on`, the `redirect_uri`
 to register, the provider `presets`, and `sso_users`, how many single sign-on users there
 are. Save changes with `PUT /api/settings` and the `auth.oidc.*` keys
-([settings.md](settings.md#api)).
+([Server settings](settings.md#api)).
 
 `POST /api/auth/oidc/test` takes `{"values": {...}, "clear": [...]}` with any unsaved
 `auth.oidc.*` values, and returns `ok`, a `message` and the `steps` checked. It answers
