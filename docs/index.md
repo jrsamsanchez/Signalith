@@ -152,7 +152,9 @@ OTLP collectors ──HTTPS────▶ (one server or several)
 ```
 
 Signalith is a personal open-source project by Samuel Sanchez Jr., licensed under
-[Apache 2.0](https://github.com/jrsamsanchez/Signalith/blob/main/LICENSE). Questions,
+[Apache 2.0](https://github.com/jrsamsanchez/Signalith/blob/main/LICENSE). It is written
+with an AI coding tool, Claude Code; [Built with AI](built-with-ai.md) says who does what
+and how the work is checked. Questions,
 bug reports and ideas are welcome on
 [GitHub](https://github.com/jrsamsanchez/Signalith/issues); see
 [Contributing](https://github.com/jrsamsanchez/Signalith/blob/main/CONTRIBUTING.md) to help

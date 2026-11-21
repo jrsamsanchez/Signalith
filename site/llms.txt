@@ -44,6 +44,7 @@ Signalith is an independent project, not affiliated with, endorsed by or sponsor
 
 - [How Signalith compares](https://signalith.io/docs/comparison/): a fair comparison with Wazuh, Security Onion, Elastic Security, OpenSearch Security Analytics and Splunk Enterprise Security, including where Signalith is weaker
 - [Roadmap](https://signalith.io/docs/roadmap/): what is done, in progress and planned
+- [Built with AI](https://signalith.io/docs/built-with-ai/): how Signalith is written with Claude Code, who does what, how changes are checked and what has not been checked yet
 
 ## Optional
 

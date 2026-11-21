@@ -27,7 +27,7 @@ program with the web UI built in.
 - **It is new.** The first release was in October 2026. It has no long record in large
   production deployments, and its community is small.
 - **One maintainer.** It is a personal project, built in the open by one person with heavy
-  help from an AI coding assistant (Claude Code). Every change goes through automated
+  help from an AI coding assistant, Claude Code ([Built with AI](built-with-ai.md)). Every change goes through automated
   tests in CI, but there is no company behind it and no paid support.
 - **No outside security review yet.** One is planned before 1.0 (see the
   [roadmap](roadmap.md)).

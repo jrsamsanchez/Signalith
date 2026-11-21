@@ -552,6 +552,35 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
   </div>
 </section>
 
+<!-- How it is built -->
+<section class="section" id="built">
+  <div class="wrap">
+    <div class="section__head">
+      <p class="kicker">How it is built</p>
+      <h2>Written with AI, in the open.</h2>
+      <p class="section__lede">Nearly all of Signalith&rsquo;s code, tests and docs, and this website, were written by Claude Code, an AI coding tool, directed by one person. You should know that before you trust it with your logs.</p>
+    </div>
+    <div class="grid">
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-users"/></svg></span>
+        <h3>Who does what</h3>
+        <p>Samuel Sanchez Jr. decides what gets built, sets the security bar and is responsible for every change. Claude Code writes the code, tests and docs. It is a personal project, not a product of his employer or of Anthropic.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-clipboard"/></svg></span>
+        <h3>How it is checked</h3>
+        <p>Every change is a public pull request that must pass tests on Linux and Windows, fuzzing, static analysis and install tests. Each detection rule ships with test events that prove it fires, and security-sensitive changes get a security review.</p>
+      </article>
+      <article class="card">
+        <span class="card__icon"><svg class="icon" aria-hidden="true"><use href="#i-flag"/></svg></span>
+        <h3>What is not checked yet</h3>
+        <p>Those security reviews are done with AI too, no second person approves changes, and there has been no outside security review. One is planned before 1.0. Try it next to what you run today before you rely on it.</p>
+      </article>
+    </div>
+    <p class="start__more"><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>The full account is in <a href="docs/built-with-ai/">Built with AI</a> in the documentation.</p>
+  </div>
+</section>
+
 <!-- Closing call to action -->
 <section class="cta">
   <div class="wrap cta__in">
@@ -572,13 +601,14 @@ sudo dnf install signalith</code></pre><button class="copy" type="button" aria-l
   <div class="wrap foot__in">
     <div class="foot__brand">
       <svg viewBox="0 0 156.53 28" width="112" height="20" aria-hidden="true"><use href="#logo-lockup"/></svg>
-      <p>An open-source personal project by <a class="foot__me" href="https://www.linkedin.com/in/samuel-sanchez-ab2ab3124" rel="noopener me" title="Samuel Sanchez Jr. on LinkedIn">Samuel Sanchez Jr.<svg class="icon" aria-hidden="true"><use href="#i-linkedin"/></svg><span class="sr">on LinkedIn</span></a></p>
+      <p>An open-source personal project by <a class="foot__me" href="https://www.linkedin.com/in/samuel-sanchez-ab2ab3124" rel="noopener me" title="Samuel Sanchez Jr. on LinkedIn">Samuel Sanchez Jr.<svg class="icon" aria-hidden="true"><use href="#i-linkedin"/></svg><span class="sr">on LinkedIn</span></a>, <a href="docs/built-with-ai/">written with AI</a></p>
     </div>
     <nav class="foot__links" aria-label="Footer">
       <a href="docs/">Documentation</a>
       <a href="docs/query-language/">Query language</a>
       <a href="docs/comparison/">How it compares</a>
       <a href="docs/roadmap/">Roadmap</a>
+      <a href="docs/built-with-ai/">Built with AI</a>
       <a href="https://demo.signalith.io">Live demo</a>
       <a href="https://github.com/jrsamsanchez/Signalith">GitHub</a>
       <a href="https://github.com/jrsamsanchez/Signalith/releases">Releases</a>
