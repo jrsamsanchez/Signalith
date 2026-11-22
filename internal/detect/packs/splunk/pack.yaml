@@ -3,8 +3,8 @@ name: splunk
 title: Splunk Security Content
 description: Windows detections for process, file and registry events, macOS detections for the program starts osquery reports, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.
 source: https://github.com/splunk/security_content
-version: 4c1652e36f137c83d2279f455a4911ee5bd76305
-date: "2026-11-09"
+version: 342a77792f78be960b2b958dd188577c2f03cd17
+date: "2026-11-16"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.
@@ -426,10 +426,6 @@ rules:
     rule_id: e97a5ffe-90bf-11eb-928a-acde48001122
     file: bits_job_persistence.yml
     path: detections/endpoint/bits_job_persistence.yml
-  - id: splunk-bitsadmin-download-file
-    rule_id: 80630ff4-8e4c-11eb-aab5-acde48001122
-    file: bitsadmin_download_file.yml
-    path: detections/endpoint/bitsadmin_download_file.yml
   - id: splunk-certutil-exe-certificate-extraction
     rule_id: 337a46be-600f-11eb-ae93-0242ac130002
     file: certutil_exe_certificate_extraction.yml
@@ -2466,10 +2462,6 @@ rules:
     rule_id: 4a3f2a7d-6402-4e64-a76a-869588ec3b57
     file: powershell_script_block_with_url_chain.yml
     path: detections/endpoint/powershell_script_block_with_url_chain.yml
-  - id: splunk-powershell-start-bitstransfer
-    rule_id: 39e2605a-90d8-11eb-899e-acde48001122
-    file: powershell_start_bitstransfer.yml
-    path: detections/endpoint/powershell_start_bitstransfer.yml
   - id: splunk-powershell-start-or-stop-service
     rule_id: 04207f8a-e08d-4ee6-be26-1e0c4488b04a
     file: powershell_start_or_stop_service.yml
@@ -3474,10 +3466,6 @@ rules:
     rule_id: 63a449ae-9f04-11ec-945e-acde48001122
     file: windows_disable_windows_group_policy_features_through_registry.yml
     path: detections/endpoint/windows_disable_windows_group_policy_features_through_registry.yml
-  - id: splunk-windows-disableantispyware-registry
-    rule_id: 23150a40-9301-4195-b802-5bb4f43067fb
-    file: windows_disableantispyware_registry.yml
-    path: detections/endpoint/windows_disableantispyware_registry.yml
   - id: splunk-windows-diskshadow-proxy-execution
     rule_id: 58adae9e-8ea3-11ec-90f6-acde48001122
     file: windows_diskshadow_proxy_execution.yml
@@ -4270,6 +4258,10 @@ rules:
     rule_id: a5fffbbd-271f-4980-94ed-4fbf17f0af1c
     file: windows_njrat_fileless_storage_via_registry.yml
     path: detections/endpoint/windows_njrat_fileless_storage_via_registry.yml
+  - id: splunk-windows-non-browser-process-access-browser-cache-dir
+    rule_id: 44037eba-9673-41ef-9fc6-3bec3de43d1f
+    file: windows_non_browser_process_access_browser_cache_dir.yml
+    path: detections/endpoint/windows_non_browser_process_access_browser_cache_dir.yml
   - id: splunk-windows-non-discord-app-access-discord-leveldb
     rule_id: 1166360c-d495-45ac-87a6-8948aac1fa07
     file: windows_non_discord_app_access_discord_leveldb.yml

@@ -136,13 +136,15 @@ Everything below is in Signalith now.
   agent Service.
 - A first-use [setup guide](getting-started.md#the-setup-guide) that opens the page for
   each step and ticks it off once it is done.
+- A [Data sources](sending-data.md#checking-that-sources-still-send) page that shows
+  which hosts and source types still send, and which stopped or changed sharply.
 
 **Detect and triage**
 
 - Scheduled [detections](detections.md) mapped to MITRE ATT&CK, with throttling, a
   findings queue for triage, and an ATT&CK coverage map.
-- Content packs of tested community rules: 2,642 from
-  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,337 from Splunk Security Content,
+- Content packs of tested community rules: 2,641 from
+  [SigmaHQ](https://github.com/SigmaHQ/sigma) and 1,335 from Splunk Security Content,
   each with test events that prove it fires, and signed content updates.
 - [Sigma](https://github.com/SigmaHQ/sigma) rule import.
 - A [starter set](detections.md#the-starter-set) of about 140 high and critical rules
@@ -150,6 +152,8 @@ Everything below is in Signalith now.
   the process auditing and the logs those rules need.
 - [Describe a detection](detections.md#describe-a-detection-in-plain-english) in plain
   English, then backtest it over the past 7, 30 or 90 days before turning it on.
+- [Share detections](detections.md#sharing-detections) as one YAML file, and
+  [set up notifications](notifications.md#from-a-detection) straight from a detection.
 
 **Security depth**
 
@@ -168,7 +172,8 @@ Everything below is in Signalith now.
 - Investigation [cases](cases.md) that collect findings, notes, searches, evidence and
   attached files, with templates and tasks and case reports signed with SHA-256
   fingerprints, and
-  [Investigate with AI](investigate.md) for a first verdict on a finding.
+  [Investigate with AI](investigate.md) for a first verdict on a finding, with an
+  optional [AI first pass](investigate.md#ai-first-pass-on-new-findings) on new findings.
 - An [attack storyline](storyline.md) that shows one intrusion as a single story: the
   ATT&CK tactics it reached, a timeline and the entities that tie it together.
 - [Hunting notebooks](hunting-notebooks.md): saved, shareable hunts of notes and searches
@@ -243,7 +248,8 @@ Everything below is in Signalith now.
 - HTTPS by default, a secured OpenSearch, and [encrypted](encryption.md) passwords, keys
   and archives.
 - [Users and roles](users.md), with Active Directory and LDAP sign-in,
-  [single sign-on](sso.md) with OpenID Connect or SAML 2.0 and SCIM provisioning, and two-step sign-in
+  [single sign-on](sso.md) with OpenID Connect or SAML 2.0 and SCIM provisioning (which can
+  [require the provider's two-step sign-in](sso.md#two-step-sign-in-at-the-provider)), and two-step sign-in
   with [passkeys](users.md#passkeys) or an authenticator app; a list of your signed-in
   sessions with a way to end them, **Sign out everywhere** for admins, and a
   [sign-in notice](sign-in-notice.md) people can be asked to agree to.

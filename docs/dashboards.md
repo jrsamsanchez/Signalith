@@ -79,7 +79,7 @@ removed, protection turned off, the top threats and hosts, protection rule block
 and antivirus health problems, across Microsoft Defender, ClamAV and antivirus
 consoles. It opens on the last 7 days. Until antivirus events arrive it shows a
 **Set up antivirus logs** button (for admins) that opens Add data. See
-[antivirus.md](antivirus.md#the-malware-dashboard) for each panel.
+[Antivirus](antivirus.md#the-malware-dashboard) for each panel.
 
 ## Network
 
@@ -222,7 +222,7 @@ panels:
 | `time_range` | `24h` | Default time range for panels |
 | `refresh` | off | Auto-refresh interval |
 | `panels[].title` | required | Panel heading |
-| `panels[].query` | required | Any Signalith query; see [query-language.md](query-language.md) |
+| `panels[].query` | required | Any Signalith query; see [Query language](query-language.md) |
 | `panels[].viz` | from the query | `single`, `table`, `bar`, `line` or `area` |
 | `panels[].width` | `third` for single values, `full` for line and area, else `half` | Panel width on wide screens; every panel is full width on a phone |
 | `panels[].field` | first number | Column a single value shows |

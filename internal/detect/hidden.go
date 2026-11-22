@@ -38,6 +38,10 @@ func ShowHidden(s string) string {
 	return b.String()
 }
 
+// Hidden reports whether r is a character ShowHidden can mark: one that
+// is invisible or changes how the text around it is laid out.
+func Hidden(r rune) bool { return hiddenRune(r) }
+
 // partOfScript reports whether a joiner or variation selector is doing
 // its real job in emoji or in Persian, Arabic or Indic writing, where it
 // is left alone; next to plain ASCII it has no business.

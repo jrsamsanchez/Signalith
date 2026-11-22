@@ -8,7 +8,7 @@ four ways:
 | The **built-in admin** | `auth.admin_user` and `auth.admin_password_hash` in `signalith.yaml` | The server, with `signalith passwd` |
 | **Local users** | `users.json` in the lookups folder | The **Users** page |
 | **Directory users** | Your Active Directory or LDAP server; Signalith keeps a record after their first sign-in | The directory; on the **Users** page you can only disable or delete them |
-| **Single sign-on users** | Your OpenID Connect identity provider (Entra ID, Okta, Google, Keycloak); Signalith keeps a record after their first sign-in | The provider; on the **Users** page you can only disable or delete them. See [sso.md](sso.md) |
+| **Single sign-on users** | Your OpenID Connect identity provider (Entra ID, Okta, Google, Keycloak); Signalith keeps a record after their first sign-in | The provider; on the **Users** page you can only disable or delete them. See [Single sign-on](sso.md) |
 
 Servers that share one OpenSearch keep all of this in OpenSearch instead, once every
 one of them runs this version: see [Users on several servers](#users-on-several-servers).
@@ -806,7 +806,7 @@ The keys are the same in `signalith.yaml` and the API.
 People can also sign in with an OpenID Connect identity provider, such as Microsoft Entra ID,
 Okta, Google or Keycloak, from a button on the sign-in page. Their role comes from their groups
 at the provider, at every sign-in, and they show on the Users page with the source
-**Single sign-on**. Set it up on **Settings > Single sign-on**; see [sso.md](sso.md).
+**Single sign-on**. Set it up on **Settings > Single sign-on**; see [Single sign-on](sso.md).
 
 ## Troubleshooting
 
@@ -889,7 +889,7 @@ example `sudo sh -c 'set -a; . /etc/signalith/signalith.env; signalith validate 
 
 ## Users on several servers
 
-Servers that share one OpenSearch as a cluster (see [servers.md](servers.md)) share
+Servers that share one OpenSearch as a cluster (see [Servers](servers.md)) share
 their users too, once every one of them runs this version: the local users, the
 directory users seen so far, their roles and password hashes, the built-in admin's
 password, the directory sign-in settings and the sign-in sessions. A user added,
@@ -1084,7 +1084,7 @@ Signalith is stopped.
 
 Signalith reads `directory.json` at start-up. It also looks at `users.json` while it
 runs, because servers that share a lookups folder share that file (see
-[servers.md](servers.md)): before every change it reads the file as it is now, and
+[Servers](servers.md)): before every change it reads the file as it is now, and
 otherwise it checks for changes about once a second. While a server changes
 `users.json` it keeps a small `users.json.lock` file next to it; leave that file
 alone, it goes away by itself.
@@ -1104,7 +1104,7 @@ Signalith logs every sign-in, sign-out and change to users or directory settings
 its log (journald, the Windows event log, or the container's output), with
 `audit=true`, who did it and from which address. Passwords never appear. Changes on
 the Settings page and restarts are logged the same way; see
-[settings.md](settings.md#audit-log).
+[Server settings](settings.md#audit-log).
 
 | Message | Fields |
 | --- | --- |
@@ -1177,7 +1177,7 @@ All routes need a signed-in user (session cookie or HTTP Basic auth) except
 `POST /api/otlp/v1/logs` and the [HEC](hec.md) routes under `/services/collector` (which take an [agent token](agent-tokens.md), never a session or
 password), and osquery's routes under `/api/osquery/` (`POST /api/osquery/enroll` takes an agent
 token; the others take the node key a host got when it enrolled; see
-[endpoints.md](endpoints.md)), and the two routes a new server joins the cluster with,
+[Endpoints (osquery)](endpoints.md)), and the two routes a new server joins the cluster with,
 `GET /api/cluster/join/ca` (the certificate a join token names, which is public) and
 `POST /api/cluster/join` (which takes a proof that the new server holds a join token, never the
 token itself; it counts against the sign-in limits per token and per address, its body is at most
@@ -1185,13 +1185,13 @@ token itself; it counts against the sign-in limits per token and per address, it
 matched and the token was left unused, such as another version; `500` when the token was used but
 the join could not be finished, so the new server needs a new token), and `GET /api/cluster/join/install.sh`,
 `GET /api/cluster/join/install.ps1` and `GET /api/cluster/join/binary` (the install scripts and this server's
-program, which a new server downloads before it can sign in; see [multi-server.md](multi-server.md)),
+program, which a new server downloads before it can sign in; see [Adding servers](multi-server.md)),
 `GET /api/sensor/install.sh` (the network sensor's install script, also public), and the two
 routes that script calls with the sensor's own agent token, `GET /api/sensor/config` (the
 sensor's Fluent Bit configuration) and `GET /api/sensor/seen` (whether the sensor's data
 arrives), and `GET /api/sensor/tuning` (the Suricata rule tuning the sensor fetches every 10
 minutes); all three take only an active token made for a sensor (see
-[network-sensor.md](network-sensor.md#building-a-new-sensor)).
+[Building a new sensor](network-sensor.md#building-a-new-sensor)).
 `GET /api/agent/install.sh`, `GET /api/agent/install.ps1` and `GET /api/agent/install-macos.sh` (the
 [Signalith Agent](signalith-agent.md)'s install scripts for Linux, Windows and macOS, also public), and the five routes the script and the agent call with the agent's token,
 `GET /api/agent/program` (the agent program), `GET /api/agent/manifest` (the programs' signed
@@ -1201,14 +1201,14 @@ manifest, for updates), `GET /api/agent/config` (what the agent runs),
 the Signalith Agent, or a computer's key.
 The two single sign-on routes are public too: `GET /api/auth/oidc/start` sends the browser to
 the identity provider, and `GET /api/auth/oidc/callback` is where it comes back (see
-[sso.md](sso.md#how-it-works)). So are the three SAML routes: `GET /api/auth/saml/start` sends the
+[Single sign-on](sso.md#how-it-works)). So are the three SAML routes: `GET /api/auth/saml/start` sends the
 browser to the SAML identity provider, `POST /api/auth/saml/acs` is where the provider posts its
 signed response, and `GET /api/auth/saml/metadata` is Signalith's own SAML metadata (see
-[sso.md](sso.md#saml-20)). The `/api/scim/v2` routes, through which the identity provider
+[Single sign-on](sso.md#saml-20)). The `/api/scim/v2` routes, through which the identity provider
 provisions single sign-on users, take the SCIM token instead of a sign-in, and only over HTTPS
-(see [sso.md](sso.md#provisioning-with-scim)). `GET /metrics`, outside `/api/`, answers `404` until an admin turns
+(see [Single sign-on](sso.md#provisioning-with-scim)). `GET /metrics`, outside `/api/`, answers `404` until an admin turns
 it on, and then takes the scrape token instead of a sign-in, only over HTTPS or from the server itself
-(see [metrics.md](metrics.md)). Requests from a browser that change something must come from the Signalith
+(see [Metrics (Prometheus)](metrics.md)). Requests from a browser that change something must come from the Signalith
 page itself.
 
 Every answer carries the server's build token in `X-Signalith-Build`. Answers to
@@ -1267,7 +1267,7 @@ or deletes one), `POST /api/intel/indicators`, `DELETE /api/intel/indicators/{id
 `GET /api/respond/actions`, `GET /api/respond/runs`, `POST /api/respond/run` (running
 [response actions](response-actions.md)), `GET /api/playbooks/runs`,
 `POST /api/playbooks/runs/{id}/approve`, `POST /api/playbooks/runs/{id}/reject`
-(the Approvals page; see [playbooks.md](playbooks.md)), `POST /api/findings/{id}/propose-exception`,
+(the Approvals page; see [Playbooks](playbooks.md)), `POST /api/findings/{id}/propose-exception`,
 `GET /api/exception-requests` ([proposing an exception](detections.md#proposing-an-exception) for an admin to approve), `GET /api/agent-tokens` (the names,
 status and use of the [agent tokens](agent-tokens.md), never a secret), `GET /api/agent-hosts` (the
 computers with [keys of their own](agent-tokens.md#computer-keys), never a key), `GET /api/agents` (the
@@ -1276,21 +1276,21 @@ agents that send events, shown on the [Endpoints page](endpoints.md)), `GET /api
 ([Investigate with AI](investigate.md), once an admin turns it on).
 
 **Admin:** `POST /api/tenants` and `PATCH /api/tenants/{id}` (adding a [tenant](multi-tenant.md), renaming it or turning it off; the provider's admins only), `GET /api/agents/config`, `GET /api/agents/destinations` (where agents can send,
-with a DNS check; see [load-balancers.md](load-balancers.md)),
+with a DNS check; see [Load balancers](load-balancers.md)),
 `GET /api/sensor/install` (the line that sets up a
 [network sensor](network-sensor.md#building-a-new-sensor)), `GET /api/agent/install` (the line that installs the
 [Signalith Agent](signalith-agent.md)), `GET /api/sensors` (every network
 sensor's health and checklist, and the sensor tokens), `GET /api/sensors/tuning` and
 `PUT /api/sensors/tuning` (the Suricata rule tuning sensors fetch; see
-[network-sensor.md](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,
+[Rule tuning from Signalith](network-sensor.md#rule-tuning-from-signalith)), `POST /api/agent-tokens`,
 `PATCH /api/agent-tokens/{id}`, `POST /api/agent-tokens/{id}/revoke`,
 `POST /api/agent-tokens/legacy/{id}/refuse`, `POST /api/agent-tokens/legacy/{id}/accept`,
 `POST /api/agent-hosts/{host}/revoke`, `POST /api/agent-hosts/{host}/release`
-(see [agent-tokens.md](agent-tokens.md#commands)), `PUT /api/agent-tokens/{id}/collect` (what the
+(see [Agent tokens](agent-tokens.md#commands)), `PUT /api/agent-tokens/{id}/collect` (what the
 Signalith Agents of an install line collect; see
-[signalith-agent.md](signalith-agent.md#change-what-agents-collect)), `GET /api/api-tokens`, `POST /api/api-tokens`,
+[Change what agents collect](signalith-agent.md#change-what-agents-collect)), `GET /api/api-tokens`, `POST /api/api-tokens`,
 `POST /api/api-tokens/{id}/revoke` (the [API tokens](ai-tools.md#api-tokens) of the AI tools
-server, which can only read and expire after `expires_in_days`, 90 unless set), `GET /api/metrics` and `POST /api/metrics/token` (the Metrics tab of Settings and its scrape token; see [metrics.md](metrics.md)), `POST /api/tls/names`, `GET /api/security`,
+server, which can only read and expire after `expires_in_days`, 90 unless set), `GET /api/metrics` and `POST /api/metrics/token` (the Metrics tab of Settings and its scrape token; see [Metrics (Prometheus)](metrics.md)), `POST /api/tls/names`, `GET /api/security`,
 `POST /api/security/ca`, `POST /api/detections`,
 `POST /api/detections/test`, `POST /api/detections/draft`, `POST /api/detections/backtest`, `POST /api/detections/sigma`, `POST /api/detections/convert` (reading a shared file of rules for review), `POST /api/detections/enable`, `POST /api/detections/{id}/exceptions`, `DELETE /api/detections/{id}/exceptions/{exception}`, `POST /api/detections/exceptions`, `DELETE /api/detections/exceptions/{exception}`, `POST /api/findings/{id}/suppress`, `POST /api/exception-requests/{id}/approve`, `POST /api/exception-requests/{id}/decline`, `PUT /api/case-templates`, `POST /api/cases/reports/keys/{id}/revoke` ([revoking a report key](cases.md#report-keys)),
 `PUT /api/detections/{id}`, `DELETE /api/detections/{id}`,
@@ -1302,7 +1302,7 @@ server, which can only read and expire after `expires_in_days`, 90 unless set), 
 `POST /api/intel/taxii/collections`, `POST /api/intel/upload`,
 `GET /api/respond/config`, `PUT /api/respond/config`, `POST /api/respond/test`
 (setting up [response actions](response-actions.md)),
-`GET /api/playbooks`, `PUT /api/playbooks` (the Playbooks page; see [playbooks.md](playbooks.md)),
+`GET /api/playbooks`, `PUT /api/playbooks` (the Playbooks page; see [Playbooks](playbooks.md)),
 `GET /api/sample`, `POST /api/sample/load`, `POST /api/sample/remove`
 (the one-click [sample data](sample-data.md)), `PUT /api/endpoints/settings`,
 `DELETE /api/endpoints/{id}`, `GET /api/endpoints/blocked`, `DELETE /api/endpoints/blocked/{host}`,
@@ -1315,37 +1315,37 @@ Signalith or not applicable), `POST /api/compliance/history` (taking a record of
 compliance evidence now), `GET /api/baselines`, `PUT /api/baselines`,
 `POST /api/baselines/{check}/reset`, `POST /api/baselines/{check}/unlearn` (the [behavior baselines](baselines.md) and their exceptions),
 `GET /api/summaries` (how far each data model's [summaries](summaries.md) reach, for every tenant),
-`GET /api/cluster` (the Servers page; see [servers.md](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [opensearch-failover.md](opensearch-failover.md)), `POST /api/cluster/restart`
+`GET /api/cluster` (the Servers page; see [Servers](servers.md)), `GET /api/cluster/opensearch` (its OpenSearch card; see [OpenSearch with several nodes](opensearch-failover.md)), `POST /api/cluster/restart`
 (restart servers one at a time to apply the shared settings), `GET /api/cluster/tls`,
 `POST /api/cluster/tls/choose`, `POST /api/cluster/tls/rotate-ca` (the cluster's one certificate authority, and
-replacing it; see [servers.md](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,
+replacing it; see [Servers](servers.md#one-certificate-authority)), `GET /api/cluster/join/tokens`,
 `POST /api/cluster/tokens`, `DELETE /api/cluster/tokens/{id}` (join tokens that add a server to
 the cluster; a token is shown once, in the answer that makes it), `GET /api/cluster/pending`,
 `POST /api/cluster/servers/{id}/approve` (servers that wait to join, approved by their
 fingerprint), `GET /api/cluster/opensearch-identity`
 (who each server signs in to OpenSearch as; see
-[servers.md](servers.md#each-servers-own-opensearch-certificate)), `GET /api/cluster/lifecycle`,
+[Each server's own OpenSearch certificate](servers.md#each-servers-own-opensearch-certificate)), `GET /api/cluster/lifecycle`,
 `POST /api/cluster/servers/{id}/drain`, `POST /api/cluster/servers/{id}/resume`,
 `DELETE /api/cluster/servers/{id}`, `POST /api/cluster/jobs/move`, `POST /api/cluster/rotate-key`
 (draining and removing servers, and rotating the cluster key; see
-[servers.md](servers.md#draining-and-removing-a-server)), `GET /api/cluster/upgrade` (the upgrade checklist of the Servers
-page; see [servers.md](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /api/cluster/join/prepare`,
-`GET /api/cluster/servers/{id}/check` (Add a server; see [multi-server.md](multi-server.md)), `GET /api/requests/{id}`
+[Draining and removing a server](servers.md#draining-and-removing-a-server)), `GET /api/cluster/upgrade` (the upgrade checklist of the Servers
+page; see [Upgrading servers you set up by hand](servers.md#upgrading-servers-you-set-up-by-hand)), `GET /api/cluster/join/prepare`,
+`GET /api/cluster/servers/{id}/check` (Add a server; see [Adding servers](multi-server.md)), `GET /api/requests/{id}`
 (work asked of the server that runs the background jobs, such as a feed download or a retention
-run; see [servers.md](servers.md#shared-feeds-and-retention-policies)), every
-`/api/notify` route (the Notifications page; see [notifications.md](notifications.md)),
+run; see [Shared feeds and retention policies](servers.md#shared-feeds-and-retention-policies)), every
+`/api/notify` route (the Notifications page; see [Notifications](notifications.md)),
 `GET /api/chat/links` and `DELETE /api/chat/links/{id}` (every linked chat account), every
 `/api/ticketing` route (`GET` and `PUT /api/ticketing`, `POST /api/ticketing/test`: Settings >
-Ticketing; see [ticketing.md](ticketing.md)), every
-`/api/retention` route (see [retention.md](retention.md)), `GET /api/audit`,
+Ticketing; see [Ticketing (Jira, ServiceNow)](ticketing.md)), every
+`/api/retention` route (see [Data retention](retention.md)), `GET /api/audit`,
 `GET /api/audit/servers` and `GET /api/audit/verify` (the [Audit page](audit.md)), every
 `/api/users`, `/api/auth/directory`, `/api/auth/oidc`, `/api/auth/saml` and `/api/auth/scim` route below (the last
 four are `GET /api/auth/oidc`, `POST /api/auth/oidc/test`, `POST /api/auth/saml/test` and `POST /api/auth/scim/token`; see
-[sso.md](sso.md#api)), `GET /api/auth/notice` (the Sign-in notice tab of Settings; see
-[sign-in-notice.md](sign-in-notice.md)), and every `/api/settings` route
+[Single sign-on](sso.md#api)), `GET /api/auth/notice` (the Sign-in notice tab of Settings; see
+[Sign-in notice](sign-in-notice.md)), and every `/api/settings` route
 (`GET` and `PUT /api/settings`, `POST /api/settings/test/opensearch`,
 `POST /api/settings/test/assistant`, `POST /api/settings/test/m365`, `POST /api/settings/test/okta`, `POST /api/settings/assistant/models`, `POST /api/settings/restart`,
-`GET /api/settings/export`; see [settings.md](settings.md#api)).
+`GET /api/settings/export`; see [Server settings](settings.md#api)).
 
 **Provider only:** on a [multi-tenant](multi-tenant.md) install, the routes about the server
 itself rather than one tenant's data are refused to tenants' users, whatever their role:

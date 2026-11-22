@@ -1201,8 +1201,14 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	// The node outlives ctx: stopping gives the job lease up first, which
 	// needs it.
 	node.Start(context.WithoutCancel(ctx))
-	r.shared.Start(ctx)
-	return r.run(ctx, c)
+	sctx, stopShared := context.WithCancel(ctx)
+	r.shared.Start(sctx)
+	err = r.run(ctx, c)
+	// Wait for the shared settings' loop and the writer of cache.enc, which
+	// saves what changed last, before the process may exit.
+	stopShared()
+	r.shared.Wait()
+	return err
 }
 
 // instance is every component built from one config: what a restart from
@@ -1335,6 +1341,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// the feeds and retention policies come from it or from this server's
 	// files depends on what it finds.
 	sharedOn, settingsOn := false, false
+	// follow starts following the settings once the server is complete.
+	var follow func()
 	if r.node != nil {
 		sharedOn = useShared(r.shared, r.sharedContent, c, cl)
 		// The settings of the Settings page come from the shared settings
@@ -2241,8 +2249,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				// while this start runs: what applies at once is applied,
 				// and the rest waits for a restart. The settings set aside
 				// with signalith settings reset -local are refused there.
-				in.jobs.Go(func() { r.followSettings(ctx, srv, ret, c) })
-				in.jobs.Go(func() { r.settleSetAside(ctx, c) })
+				// They start once srv is complete (below): applying a
+				// setting reads fields set further down, such as
+				// TenantRuntime.
+				follow = func() {
+					in.jobs.Go(func() { r.followSettings(ctx, srv, ret, c) })
+					in.jobs.Go(func() { r.settleSetAside(ctx, c) })
+				}
 			}
 		}
 		in.node = r.node
@@ -2277,6 +2290,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobs.Go(tr.startAll)
 	}
 	r.srv.Store(srv)
+	if follow != nil {
+		follow()
+	}
 	if c.Server.AgentAddr() != "" && !c.DemoOn() {
 		in.agentHandler = srv.AgentHandler()
 		in.agentPlain = srv.AgentPlainHandler(in.agentHandler)

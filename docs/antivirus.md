@@ -212,7 +212,7 @@ quarantine. The detections, the dashboard and the Ask box all use this set.
 
 The `file_md5`, `file_sha1` and `file_sha256` fields are checked against
 threat intel hashes by `threatmatch` and `intel` (see
-[threat-intel.md](threat-intel.md)).
+[Threat intel](threat-intel.md)).
 
 ## Searching
 
@@ -267,7 +267,7 @@ techniques:
 | Ransomware protection, Controlled folder access | T1486 |
 
 Sigma rules with `logsource: category: antivirus` convert to
-`datamodel=Malware` searches (see [detections.md](detections.md#sigma-rules)).
+`datamodel=Malware` searches (see [Detections](detections.md#sigma-rules)).
 
 ## The Malware dashboard
 
@@ -296,7 +296,7 @@ button that opens **Add data › Antivirus** (for admins).
 The dashboard can't be edited. To change it, choose **Make a copy** (analysts
 and admins, when custom dashboards are on): the copy, *Malware (copy)*, is a
 custom dashboard you can edit, add panels to and delete. **Download YAML**
-saves its definition. See [dashboards.md](dashboards.md).
+saves its definition. See [Dashboards](dashboards.md).
 
 ## Testing with the EICAR test file
 

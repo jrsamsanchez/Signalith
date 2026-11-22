@@ -144,6 +144,12 @@ func IsGitHubRecord(r map[string]any) bool {
 	return r["actor_id"] != nil && (r["org"] != nil || r["business"] != nil || r["repo"] != nil)
 }
 
+// isGitHubTag reports whether a Fluent Bit tag is GitHub's: "github" or
+// "github.*".
+func isGitHubTag(tag string) bool {
+	return tag == GitHubTag || strings.HasPrefix(tag, GitHubTag+".")
+}
+
 // githubSniffTag reports whether events under tag may be read as GitHub's
 // by their shape: not when the tag names another source.
 func githubSniffTag(tag string) bool {

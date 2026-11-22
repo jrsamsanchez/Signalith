@@ -193,4 +193,5 @@ nav:
       - Code signing policy: code-signing.md
   - Roadmap: roadmap.md
   - Project:
+      - Built with AI: built-with-ai.md
       - Releasing: releasing.md
