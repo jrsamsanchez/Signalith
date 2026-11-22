@@ -16,9 +16,9 @@ security teams and anyone who wants a real SIEM without a big budget or weeks of
   syslog, OpenTelemetry, cloud audit logs (AWS, Azure, Microsoft 365, Google) and more.
 - **Detect** with 2,641 SigmaHQ rules and 1,335 rules from Splunk's open-source
   security_content, each tested in CI against sample events, tagged with 181 ATT&CK
-  techniques. High and critical rules turn on in one click. Signalith also ships 60
-  built-in detections (brute force, password spray, encoded PowerShell, credential
-  dumping and more); 55 are on by default.
+  techniques. A starter set of about 140 high and critical rules turns on in one click.
+  Signalith also ships 60 built-in detections (brute force, password spray, encoded
+  PowerShell, credential dumping and more); 55 are on by default.
 - **Triage** with risk-based alerting, a findings queue, cases, an attack storyline and
   an optional *Investigate with AI* step that also works with a local model.
 - **Search** with a pipe-style language familiar to SPL users, a click-to-build query

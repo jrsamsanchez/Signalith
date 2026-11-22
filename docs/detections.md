@@ -6,7 +6,7 @@ raised recently.
 
 Signalith ships 60 built-in detections mapped to MITRE ATT&CK: brute force, password
 spray, encoded PowerShell, Office spawning shells, shadow copy deletion, credential
-dumping, privileged group changes, malware and more, plus two risk incident rules. 54
+dumping, privileged group changes, malware and more, plus two risk incident rules. 55
 are on by default. With both [content packs](#content-packs) on, rules are tagged with
 181 ATT&CK techniques.
 
