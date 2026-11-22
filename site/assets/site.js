@@ -33,6 +33,27 @@ menuBtn.addEventListener('click', () => setMenu(mobile.hidden));
 mobile.addEventListener('click', (e) => { if (e.target.closest('a')) setMenu(false); });
 addEventListener('keydown', (e) => { if (e.key === 'Escape' && !mobile.hidden) { setMenu(false); menuBtn.focus(); } });
 
+// Nav: mark the link of the section on screen ----------------------------------
+const spy = new Map();
+document.querySelectorAll('.nav__links a[href^="#"]').forEach((a) => {
+  const sec = document.getElementById(a.getAttribute('href').slice(1));
+  if (sec) spy.set(sec, a);
+});
+if ('IntersectionObserver' in window && spy.size) {
+  const seen = new Set();
+  const mark = () => {
+    // the last section in page order that crosses the middle band of the window
+    let on = null;
+    spy.forEach((a, sec) => { if (seen.has(sec)) on = a; });
+    spy.forEach((a) => { if (a === on) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current'); });
+  };
+  const so = new IntersectionObserver((entries) => {
+    entries.forEach((e) => { if (e.isIntersecting) seen.add(e.target); else seen.delete(e.target); });
+    mark();
+  }, { rootMargin: '-45% 0px -45% 0px' });
+  spy.forEach((a, sec) => so.observe(sec));
+}
+
 // Tabs (shared by the tour and the install steps) -----------------------------
 function tabs(list, onSelect) {
   const items = [...list.querySelectorAll('[role="tab"]')];
@@ -43,6 +64,7 @@ function tabs(list, onSelect) {
       t.tabIndex = on ? 0 : -1;
     });
     if (focus) tab.focus();
+    if (list.scrollWidth > list.clientWidth) list.scrollTo({ left: tab.offsetLeft - (list.clientWidth - tab.offsetWidth) / 2, behavior: reduced ? 'auto' : 'smooth' });
     onSelect(tab);
   };
   items.forEach((t, i) => {

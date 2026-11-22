@@ -27,7 +27,7 @@ program with the web UI built in.
 - **It is new.** The first release was in October 2026. It has no long record in large
   production deployments, and its community is small.
 - **One maintainer.** It is a personal project, built in the open by one person with heavy
-  help from an AI coding assistant (Claude Code). Every change goes through automated
+  help from an AI coding assistant, Claude Code ([Built with AI](built-with-ai.md)). Every change goes through automated
   tests in CI, but there is no company behind it and no paid support.
 - **No outside security review yet.** One is planned before 1.0 (see the
   [roadmap](roadmap.md)).
@@ -50,7 +50,7 @@ program with the web UI built in.
 | License | Apache 2.0 | GPLv2 (manager and agent); indexer and dashboard Apache 2.0 | Elastic License 2.0 for its own and Elastic parts | Elastic License 2.0, SSPL or AGPLv3 for Elasticsearch and Kibana; some features need a paid subscription | Commercial |
 | Main focus | General SIEM with detection content, triage and AI help | Host security: agents, integrity monitoring, configuration checks, active response | Network security monitoring, hunting and incident response | Search, SIEM and endpoint security at large scale | Enterprise SIEM and SOC workflows |
 | Storage | OpenSearch | Wazuh indexer (built on OpenSearch) | Elasticsearch | Elasticsearch | Splunk Enterprise or Splunk Cloud |
-| Runs on | Windows or Linux server, or Docker | Linux servers (agents on many systems) | Its own Linux distribution on dedicated machines | Linux, Windows, macOS, or Elastic Cloud | Linux or Windows, or Splunk Cloud |
+| Runs on | Windows or Linux server, Docker or Kubernetes | Linux servers (agents on many systems) | Its own Linux distribution on dedicated machines | Linux, Windows, macOS, or Elastic Cloud | Linux or Windows, or Splunk Cloud |
 | Search | Pipe-style language, plain-English questions, visual builder | OpenSearch Dashboards queries | Its own Hunt and Dashboards views over Elasticsearch | KQL, Lucene, EQL, ES&#124;QL | SPL |
 | Detection content | Thousands of tested SigmaHQ and Splunk Security Content rules, Sigma import | Wazuh rules and decoders | Suricata, Zeek, Sigma and YARA rules | Elastic's prebuilt rules | Splunk's detection content |
 | Endpoint agent | Signalith Agent running Fluent Bit and osquery (no EDR) | Wazuh agent | Elastic Agent | Elastic Agent with Elastic Defend | Universal Forwarder |
@@ -111,8 +111,9 @@ ecosystem, the SPL search language and vendor support. Choose it when you want a
 enterprise product with support behind it.
 
 Signalith is not related to Splunk. Two facts may matter if your team knows Splunk: its
-search is pipe-style and will feel familiar to SPL users (it does not claim SPL
-compatibility), and it can run detection rules from Splunk's open-source
+search is pipe-style and will feel familiar to SPL users (it does not match every SPL
+command; [Splunk SPL compatibility](compatibility.md) lists what runs and what differs),
+and it can run detection rules from Splunk's open-source
 [security_content](https://github.com/splunk/security_content) project, which is under
 the Apache License 2.0. Splunk, Splunk Enterprise Security and SPL are trademarks or
 registered trademarks of Splunk LLC, a Cisco company. Signalith is not affiliated with,
@@ -120,7 +121,7 @@ endorsed by or sponsored by Splunk or Cisco.
 
 ## Signalith may fit if
 
-- You want a free, Apache 2.0 SIEM that runs on a Windows or Linux server, or in Docker,
+- You want a free, Apache 2.0 SIEM that runs on a Windows or Linux server, or in Docker
   in two commands ([getting started](getting-started.md)).
 - You want to ask questions in plain English, or connect an AI model or AI tools
   ([Investigate with AI](investigate.md), [AI tools](ai-tools.md)), with nothing sent

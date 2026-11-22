@@ -8,15 +8,15 @@ description: Install Signalith with Docker, on Linux or on Windows, sign in, and
 
 Signalith needs two things: **OpenSearch 2.17 or newer (3.x included)**, where events are stored, and the
 **`signalith` server**, a single program with the web UI built in. The Docker quick start
-runs both for you, and so does the Windows installer from 0.3.1 on. On Linux, from 0.4.0,
-one command sets up OpenSearch next to Signalith; before that, and on Windows with 0.3.0,
-you install OpenSearch first and then Signalith next to it.
+and the Windows installer run both for you, and on Linux one command sets up OpenSearch
+next to Signalith. Or try it first, with nothing to install, in the
+[live demo](https://demo.signalith.io).
 
 | Way to run it | Good for | Takes |
 | --- | --- | --- |
 | [Docker quick start](#docker-quick-start) | Trying Signalith, labs, small sites | Two commands |
-| [Linux](#linux) | A systemd service on a server | A few commands (OpenSearch included from 0.4.0) |
-| [Windows](#windows) | A Windows service | One installer (OpenSearch included from 0.3.1) |
+| [Linux](#linux) | A systemd service on a server | A few commands, OpenSearch included |
+| [Windows](#windows) | A Windows service | One installer, OpenSearch included |
 
 ## Docker quick start
 
@@ -196,7 +196,7 @@ From 0.3.1 on it installs OpenSearch as well, so there is nothing to set up firs
     `.\install.ps1 -OpenSearchUrl https://opensearch.example.com:9200`, then
     [secure it](opensearch-security.md).
 
-2. Open https://localhost:9000 and sign in as `signalithadmin`
+2. Open `https://localhost:9000` and sign in as `signalithadmin`
    ([trust the certificate](https.md#trust-the-certificate) to stop the warning). To see
    the first password, run `signalith initial-password` in PowerShell as Administrator.
 
@@ -217,11 +217,14 @@ container image. See [Install from packages](install-packages.md).
 
 ## Send data
 
-Open **Add data** in the UI, pick **Linux** or **Windows**, and follow the steps: install
-Fluent Bit, save Signalith's CA certificate and the generated configuration, and restart
-it. The configuration already contains the server address and ingest token, and sends
-over HTTPS, checking the server's certificate with that CA.
+Open **Add data** in the UI and pick **Signalith Agent**: it gives you one line to paste
+on each Windows, Linux or macOS computer. The line installs the agent, which runs Fluent
+Bit and osquery for you and asks Signalith what to collect, so there is no configuration
+file to edit. It sends over HTTPS with a token of its own and checks the server's
+certificate ([Signalith Agent](signalith-agent.md)).
 
+- To set up Fluent Bit by hand instead: pick **Linux** or **Windows**
+  ([Agents and syslog](sending-data.md)).
 - Firewalls, switches and other network devices: pick **Syslog**
   ([Agents and syslog](sending-data.md#syslog)).
 - Hosts with an OpenTelemetry Collector, and apps with an OpenTelemetry SDK: pick
@@ -239,6 +242,7 @@ over HTTPS, checking the server's certificate with that CA.
 - Learn the [query language](query-language.md), or ask questions in plain English on
   the Search page.
 - Review the built-in [detections](detections.md) and import Sigma rules.
-- Add [users](users.md), or sign in with Active Directory or LDAP.
+- Add [users](users.md), or sign in with Active Directory, LDAP or
+  [single sign-on](sso.md).
 - Run the [security check](security.md) to see what to tighten on your server.
 - Set how long data is kept on the [Data retention](retention.md) page.

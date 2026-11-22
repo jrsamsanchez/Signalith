@@ -40,7 +40,7 @@ security teams and anyone who wants a real SIEM without a big budget or weeks of
 Elastic Security and others, including where it is weaker ·
 [roadmap](https://signalith.io/docs/roadmap/)
 
-> Signalith is a personal project by Samuel Sanchez Jr., written with Claude Code, and
+> Signalith is a personal project by Samuel Sanchez Jr., written with Claude Code ([Built with AI](https://signalith.io/docs/built-with-ai/)), and
 > it is early software: it has not had an independent security audit yet, and the
 > Windows installer is not code signed yet. Issues and feedback are welcome.
 >
