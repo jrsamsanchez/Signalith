@@ -45,7 +45,12 @@ for arch in amd64 arm64; do
   (cd "$apt" && apt-ftparchive --arch "$arch" packages pool/main) > "$dir/Packages"
   gzip -9nk "$dir/Packages"
 done
+# Valid-Until: apt refuses a copy of the repository older than 30 days, so
+# whoever could serve an old, signed copy cannot hold clients on an old
+# release. The Website workflow rebuilds the repositories every week.
+valid_until=$(LC_ALL=C date -u -d '+30 days' '+%a, %d %b %Y %H:%M:%S UTC')
 (cd "$apt/dists/stable" && apt-ftparchive \
+  -o APT::FTPArchive::Release::Valid-Until="$valid_until" \
   -o APT::FTPArchive::Release::Origin=Signalith \
   -o APT::FTPArchive::Release::Label=Signalith \
   -o APT::FTPArchive::Release::Suite=stable \
