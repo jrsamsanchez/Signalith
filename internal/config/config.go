@@ -856,11 +856,11 @@ type Auth struct {
 	// signed in or not: from 1h to 30d, default 24h (NIST SP 800-63B asks
 	// for a new sign-in at least every 24 hours at AAL2).
 	SessionMaxAge string `yaml:"session_max_age,omitempty"`
-	// TempPasswordMaxAge is how long a temporary password an admin set
+	// TempSignInMaxAge is how long a temporary password an admin set
 	// (a new user's, or a reset) works before the user must have chosen
 	// their own: from 1h to 30d, default 24h. Past it, an admin resets the
 	// password again.
-	TempPasswordMaxAge string `yaml:"temp_password_max_age,omitempty"`
+	TempSignInMaxAge string `yaml:"temp_password_max_age,omitempty"`
 	// KeepSignedIn offers "Keep me signed in" on the sign-in page, which
 	// keeps a session through idle periods (still ending it at
 	// SessionMaxAge). Unset means on (see KeepSignedInOn).
@@ -976,21 +976,21 @@ const (
 	MaxSessionMaxAge = 30 * 24 * time.Hour
 )
 
-// DefaultTempPasswordMaxAge is how long a temporary password works when
-// auth.temp_password_max_age is not set; MinTempPasswordMaxAge and
-// MaxTempPasswordMaxAge bound the setting.
+// DefaultTempSignInMaxAge is how long a temporary password works when
+// auth.temp_password_max_age is not set; MinTempSignInMaxAge and
+// MaxTempSignInMaxAge bound the setting.
 const (
-	DefaultTempPasswordMaxAge = 24 * time.Hour
-	MinTempPasswordMaxAge     = time.Hour
-	MaxTempPasswordMaxAge     = 30 * 24 * time.Hour
+	DefaultTempSignInMaxAge = 24 * time.Hour
+	MinTempSignInMaxAge     = time.Hour
+	MaxTempSignInMaxAge     = 30 * 24 * time.Hour
 )
 
-// TempPasswordMaxAge returns auth.temp_password_max_age as a duration.
-func (c *Config) TempPasswordMaxAge() time.Duration {
-	if d, err := detect.ParseDuration(c.Auth.TempPasswordMaxAge); err == nil && d > 0 {
+// TempSignInMaxAge returns auth.temp_password_max_age as a duration.
+func (c *Config) TempSignInMaxAge() time.Duration {
+	if d, err := detect.ParseDuration(c.Auth.TempSignInMaxAge); err == nil && d > 0 {
 		return d
 	}
-	return DefaultTempPasswordMaxAge
+	return DefaultTempSignInMaxAge
 }
 
 // SessionIdle returns auth.session_timeout as a duration.
@@ -2895,9 +2895,9 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("auth.session_max_age %q must be a duration from 1h to 30d, for example 24h", c.Auth.SessionMaxAge))
 		}
 	}
-	if c.Auth.TempPasswordMaxAge != "" {
-		if d, err := detect.ParseDuration(c.Auth.TempPasswordMaxAge); err != nil || d < MinTempPasswordMaxAge || d > MaxTempPasswordMaxAge {
-			p = append(p, fmt.Sprintf("auth.temp_password_max_age %q must be a duration from 1h to 30d, for example 24h", c.Auth.TempPasswordMaxAge))
+	if c.Auth.TempSignInMaxAge != "" {
+		if d, err := detect.ParseDuration(c.Auth.TempSignInMaxAge); err != nil || d < MinTempSignInMaxAge || d > MaxTempSignInMaxAge {
+			p = append(p, fmt.Sprintf("auth.temp_password_max_age %q must be a duration from 1h to 30d, for example 24h", c.Auth.TempSignInMaxAge))
 		}
 	}
 	if c.Auth.LDAP != nil {

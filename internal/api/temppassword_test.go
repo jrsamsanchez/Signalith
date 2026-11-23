@@ -63,26 +63,26 @@ func TestTemporaryPasswordsExpire(t *testing.T) {
 
 	// Signed in while it worked, but it expired before the change: the
 	// change is refused too.
-	s.Config.Auth.TempPasswordMaxAge = "1h"
+	s.Config.Auth.TempSignInMaxAge = "1h"
 	at = time.Now().Add(-2 * time.Hour)
 	code, body, _ = admin("POST", "/api/users", `{"username":"slow","role":"viewer"}`)
 	if code != 201 {
 		t.Fatalf("create = %d %v", code, body)
 	}
 	slowTemp := body["temporary_password"].(string)
-	s.Config.Auth.TempPasswordMaxAge = "24h"
+	s.Config.Auth.TempSignInMaxAge = "24h"
 	code, _, slowCookie := login(t, ts, "slow", slowTemp)
 	if code != 200 {
 		t.Fatalf("sign-in within 24h = %d", code)
 	}
-	s.Config.Auth.TempPasswordMaxAge = "1h"
+	s.Config.Auth.TempSignInMaxAge = "1h"
 	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"`+slowTemp+`","new_password":"a-brand-new-pass"}`, "", "", slowCookie); code != 403 || body["code"] != "temporary_password_expired" {
 		t.Errorf("change with an expired temporary password = %d %v", code, body)
 	}
 
 	// The fresh one is still in time, and choosing a password ends the
 	// clock: the user's own password never expires.
-	s.Config.Auth.TempPasswordMaxAge = ""
+	s.Config.Auth.TempSignInMaxAge = ""
 	if code, body, _ := call(t, ts, "POST", "/api/me/password", `{"current_password":"`+newTemp+`","new_password":"my-own-new-pass"}`, "", "", c); code != 200 || body["must_change_password"] != false {
 		t.Fatalf("change = %d %v", code, body)
 	}

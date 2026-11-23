@@ -515,7 +515,7 @@ func principalFromUser(u users.User) *principal {
 // signalith passwd replaces it anyway.
 func (s *Server) tempPasswordExpired(u users.User) bool {
 	return u.Source == users.SourceLocal && u.MustChangePassword && !u.Updated.IsZero() &&
-		time.Since(u.Updated) > s.conf().TempPasswordMaxAge()
+		time.Since(u.Updated) > s.conf().TempSignInMaxAge()
 }
 
 // signInError is a refused sign-in, with the status and words to send.
