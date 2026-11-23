@@ -80,7 +80,7 @@ Testers share one set of data, and can see and change each other's cases,
 notebooks, dashboards and indicators. The invitation, sent privately, says
 so (the account is made once the tester replies that they have read it),
 and so does `https://lab.signalith.io/about-this-lab`: that this
-is a test system: no real customer, production or employer data and no
+is a test system whose events are recorded and simulated attacks; no real customer, production or employer data and no
 secrets; data may be reset; other testers may connect their own AI tools,
 so anything written there can reach their AI provider; report security
 issues as [SECURITY.md](../../SECURITY.md) says.

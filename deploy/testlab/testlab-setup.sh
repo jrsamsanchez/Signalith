@@ -247,6 +247,7 @@ caddy_setup() {
 <title>About this lab</title>
 <style>body{font:16px/1.5 system-ui,sans-serif;max-width:40em;margin:2em auto;padding:0 1em}</style>
 <h1>About the Signalith test lab</h1>
+<p>The events here are recorded and simulated attacks (for example Atomic Red Team on a test domain), not a real network, so investigations may end in "Unsure".</p>
 <p>This is a shared test system for trying Signalith. By signing in you agree that:</p>
 <ul>
 <li>Everything you write or upload here can be seen and changed by the other testers.</li>
