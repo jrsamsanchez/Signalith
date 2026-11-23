@@ -65,6 +65,45 @@ request: Signalith looks up the role every time instead of remembering it in the
 session. If they have Signalith open and try something their new role does not
 allow, the page reloads to match the new role and says why.
 
+## Locked out or forgot a password
+
+Signalith has no "forgot password" email. Every reset is done by an admin, or on the
+server itself, so a reset never depends on someone's inbox.
+
+| Who is locked out | What to do |
+| --- | --- |
+| A local user forgot their password | An admin opens **Settings > Users**, **Actions** on their row, **Reset password**. The user gets a temporary password and must choose a new one at their next sign-in. See [Managing local users](#managing-local-users). |
+| A user lost their phone or passkey | They sign in with a recovery code. If those are gone too, another admin chooses **Reset two-step sign-in** on their row. See [Two-step sign-in](#two-step-sign-in). |
+| An admin forgot their password | Another admin resets it on the Users page, as for any local user. |
+| Every admin is locked out, or nobody knows the built-in admin's password | Set the built-in admin's password on the server, as below. |
+| A directory or single sign-on user | Reset it in the directory or at the identity provider. |
+
+**Reset the built-in admin's password on the server.** Run the command on a server
+as root or Administrator. It asks for the new password twice without showing it; a
+script can give it in the `SIGNALITH_NEW_PASSWORD` environment variable instead
+(never on the command line, where other users can see it).
+
+- **Linux packages:** `sudo signalith passwd`, then `sudo systemctl restart signalith`
+  if the command says to.
+- **Windows:** in PowerShell opened as Administrator,
+  `& "$env:ProgramFiles\Signalith\signalith.exe" passwd`, then
+  `Restart-Service Signalith` if the command says to.
+- **Docker quick start:** from the Signalith folder,
+  `docker compose -f deploy/docker/docker-compose.yml exec signalith signalith passwd`,
+  then `docker compose -f deploy/docker/docker-compose.yml restart signalith`.
+- **Kubernetes:** `kubectl -n signalith exec -it signalith-0 -- signalith passwd`.
+
+Then sign in as the built-in admin (`signalithadmin` on a new install, `admin` on one
+made before 0.3.1). If the built-in admin was turned off, this turns it on again; turn
+it off once you have fixed what went wrong. On servers that share their users, the new
+password works on every server at once. If `SIGNALITH_ADMIN_PASSWORD` is set for the
+service, it wins over the file: change it there instead. More detail is in
+[The built-in admin](#the-built-in-admin) and
+[The built-in admin on several servers](#the-built-in-admin-on-several-servers).
+
+`signalith passwd` does not reset the built-in admin's two-step sign-in. Keep a second
+local admin, so that one admin can always reset the other's two-step sign-in.
+
 ## The built-in admin
 
 The account in `auth.admin_user` (`signalithadmin` on a new install, `admin` on one made
