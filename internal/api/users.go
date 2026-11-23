@@ -168,6 +168,14 @@ func (s *Server) handleChangeOwnPassword(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	attempt.Succeed()
+	if !builtin {
+		if u, ok := s.userStore().Get(p.Username); ok && s.tempPasswordExpired(u) {
+			s.Log.Warn("password change refused", slices.Concat([]any{"audit", true, "user", p.Username}, from.logAttrs(),
+				[]any{"reason", "temporary password expired"})...)
+			writeSignInError(w, errTempPasswordExpired)
+			return
+		}
+	}
 	if req.New == req.Current {
 		writeJSON(w, http.StatusBadRequest, map[string]any{"code": "same_password", "field": "new_password",
 			"error": "Choose a new password that is different from the current one."})
@@ -275,7 +283,10 @@ type userView struct {
 	Source             string     `json:"source"`
 	Disabled           bool       `json:"disabled"`
 	MustChangePassword bool       `json:"must_change_password"`
-	DN                 string     `json:"dn,omitempty"`
+	// TempPasswordExpired is set when the temporary password is too old
+	// to sign in with (auth.temp_password_max_age): reset it again.
+	TempPasswordExpired bool   `json:"temp_password_expired,omitempty"`
+	DN                  string `json:"dn,omitempty"`
 	// Refused says why the directory no longer lets a directory user in;
 	// their role is then empty.
 	Refused string `json:"refused,omitempty"`
@@ -302,7 +313,7 @@ func (s *Server) viewUser(u users.User, me string) userView {
 	v := userView{Username: u.Username, Name: u.Name, Email: u.Email, Role: u.Role, Source: u.Source,
 		Disabled: u.Disabled, MustChangePassword: u.MustChangePassword, DN: u.DN,
 		Refused: u.Refused, Created: &created, Updated: &updated, LastSignIn: u.LastSignIn, You: strings.EqualFold(u.Username, me),
-		ETag: s.userStore().ETag(u.Username)}
+		ETag: s.userStore().ETag(u.Username), TempPasswordExpired: s.tempPasswordExpired(u)}
 	if u.Refused != "" {
 		v.Role = ""
 	}

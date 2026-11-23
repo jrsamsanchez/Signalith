@@ -323,7 +323,7 @@ docker compose -f deploy/docker/docker-compose.yml up -d
 ## The built-in admin's password
 
 ```
-signalith passwd [-c file] [-local]
+signalith passwd [-c file] [-local] [-reset-mfa]
 ```
 
 On a server of a cluster whose servers share their users (see
@@ -349,6 +349,12 @@ need it; it never changes the password of the other servers. On a server that wa
 in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 `signalith passwd` does there.
 
+`-reset-mfa` also removes the built-in admin's two-step sign-in (authenticator app,
+passkeys and recovery codes), for when they are lost and no other admin can reset it
+from the Users page. With shared users it applies on every server at once, like the
+password; otherwise it applies when the server restarts with the new password. It cannot
+be combined with `-local`.
+
 ## When to use which
 
 | What happened | What to do |
@@ -359,6 +365,7 @@ in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 | Every copy of the cluster key is lost | Stop every server, `reset-key`, then `export-key` and `import-key`, then `tls import` the certificate authority's key from your offline copy |
 | No server can run the background jobs, and you need the cluster now | `found` |
 | The built-in admin's password is lost or must change on every server | `signalith passwd` on any server |
+| The built-in admin's two-step sign-in is lost and no other admin can reset it | `signalith passwd -reset-mfa` on any server |
 | You want a password for one server that works while OpenSearch is down | `signalith passwd -local` on that server |
 | Servers set up separately each have their own certificate authority | `tls`, then `tls choose` the one to keep |
 | A server is retired for good | Drain it and remove it on the Servers page, or `remove`; on the server itself, stop it and `leave` |
