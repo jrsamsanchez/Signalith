@@ -822,7 +822,8 @@ func builtinOnInFile(path string) {
 func mfaResetInFile(path string) {
 	c, err := config.Load(path)
 	if err != nil {
-		fmt.Printf("Warning: the built-in admin's two-step sign-in was not reset: the configuration could not be read (%v).\n", err)
+		// The error is not printed: it may quote values of the file.
+		fmt.Printf("Warning: the built-in admin's two-step sign-in was not reset: %s could not be read. Run signalith validate to see why.\n", path)
 		return
 	}
 	if _, err := os.Stat(c.UsersFile()); err != nil {
