@@ -113,6 +113,11 @@ rebuilds from the five newest releases after every **Release** run
 the secret is set, the website has no repositories. The **Package repositories** workflow then
 installs the latest release from them on four Linux distributions, after every website
 publish and weekly, so a broken publish or an expiring key shows up there.
+The apt repository's `Release` file carries a `Valid-Until` 30 days ahead, so an old
+signed copy cannot hold servers on an old release. The **Website** workflow also runs
+every Monday to renew it: if it fails for 30 days, `apt update` refuses the repository
+until a run succeeds, so a failed **Website** run (it opens a CI alert issue) needs fixing
+within that time.
 
 To make the key (with Docker, on any computer), in an empty folder:
 
