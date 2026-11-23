@@ -505,6 +505,19 @@ func principalFromUser(u users.User) *principal {
 		MustChangePassword: u.MustChangePassword, epoch: u.SessionEpoch, Tenant: u.Tenant}
 }
 
+// tempPasswordExpired reports whether u is a local user whose temporary
+// password (from Add user or Reset password) is older than
+// auth.temp_password_max_age (NIST SP 800-63B and OWASP ASVS ask for
+// such one-time secrets to expire). It counts from the last time an admin
+// set the password or changed the account (User.Updated), which only an
+// admin can move on. The built-in admin's first password is never
+// counted: an install may wait days for its first sign-in, and
+// signalith passwd replaces it anyway.
+func (s *Server) tempPasswordExpired(u users.User) bool {
+	return u.Source == users.SourceLocal && u.MustChangePassword && !u.Updated.IsZero() &&
+		time.Since(u.Updated) > s.conf().TempPasswordMaxAge()
+}
+
 // signInError is a refused sign-in, with the status and words to send.
 type signInError struct {
 	status     int
@@ -528,6 +541,11 @@ var (
 		msg: "Your organization's access to Signalith is turned off. Ask your provider."}
 	errPasswordExpired = &signInError{status: http.StatusForbidden, code: "password_expired",
 		msg: "Your directory password has expired or must be changed. Change it (for example by signing in to Windows), then sign in here again."}
+	// errTempPasswordExpired refuses a temporary password older than
+	// auth.temp_password_max_age. It is answered only to the right
+	// password, which the person was given.
+	errTempPasswordExpired = &signInError{status: http.StatusForbidden, code: "temporary_password_expired",
+		msg: "This temporary password has expired. Ask an admin to reset your password."}
 	errNoRole = &signInError{status: http.StatusForbidden, code: "not_in_group",
 		msg: "Your directory account is not in a group that can use Signalith. Ask an admin to add you to one."}
 	errDirectoryDown = &signInError{status: http.StatusServiceUnavailable, code: "directory_unavailable",
@@ -837,6 +855,9 @@ func (s *Server) checkCredentials(ctx context.Context, name, password string) (*
 		}
 		if u.Disabled {
 			return nil, "account disabled", errDisabled
+		}
+		if s.tempPasswordExpired(u) {
+			return nil, "temporary password expired", errTempPasswordExpired
 		}
 		if u.Tenant != "" && !s.tenantUsable(u.Tenant) {
 			return nil, fmt.Sprintf("tenant %q is turned off or unknown", u.Tenant), errTenantOff

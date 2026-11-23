@@ -72,7 +72,7 @@ server itself, so a reset never depends on someone's inbox.
 
 | Who is locked out | What to do |
 | --- | --- |
-| A local user forgot their password | An admin opens **Settings > Users**, **Actions** on their row, **Reset password**. The user gets a temporary password and must choose a new one at their next sign-in. See [Managing local users](#managing-local-users). |
+| A local user forgot their password, or their temporary password expired | An admin opens **Settings > Users**, **Actions** on their row, **Reset password**. The user gets a temporary password, which works for 24 hours, and must choose a new one at their next sign-in. See [Managing local users](#managing-local-users). |
 | A user lost their phone or passkey | They sign in with a recovery code. If those are gone too, another admin chooses **Reset two-step sign-in** on their row. See [Two-step sign-in](#two-step-sign-in). |
 | An admin forgot their password | Another admin resets it on the Users page, as for any local user. |
 | Every admin is locked out, or nobody knows the built-in admin's password | Set the built-in admin's password on the server, as below. |
@@ -101,8 +101,14 @@ service, it wins over the file: change it there instead. More detail is in
 [The built-in admin](#the-built-in-admin) and
 [The built-in admin on several servers](#the-built-in-admin-on-several-servers).
 
-`signalith passwd` does not reset the built-in admin's two-step sign-in. Keep a second
-local admin, so that one admin can always reset the other's two-step sign-in.
+**The built-in admin lost its phone, passkeys and recovery codes too?** Add
+`-reset-mfa`, for example `sudo signalith passwd -reset-mfa`. It sets the new password
+and removes the built-in admin's two-step sign-in with it: at once on servers that share
+their users, or when the server restarts with the new password on a server that keeps
+its own (so the old password alone never works meanwhile). Sign in with the new password
+alone and set two-step sign-in up again from the account menu. The audit log records
+`two-step sign-in reset` with `by=signalith passwd` (or `cli:` and who ran the command).
+Another admin can also reset it from the Users page, without the command.
 
 ## The built-in admin
 
@@ -230,11 +236,15 @@ role (Viewer if you don't). Usernames are 1 to 64 lower-case letters, digits, do
 dashes, underscores or `@`, starting with a letter or digit; they are not case
 sensitive. Signalith makes up a temporary password and shows it once (or you can
 type one that follows the [password rules](#password-rules)). Give it to the person: at their first sign-in they
-must choose their own password before they can do anything else.
+must choose their own password before they can do anything else. A temporary password
+works for 24 hours (**Temporary passwords work for**, `auth.temp_password_max_age`,
+from 1 hour to 30 days); after that the Users page shows **Temporary password
+expired** and the person cannot sign in with it until an admin resets the password
+again.
 
 **Change a user.** Edit their name and email, change their role, disable or enable
-them, reset their password (they get a new temporary password and must change it at
-the next sign-in), or delete them. Disabling, deleting or resetting a password signs
+them, reset their password (they get a new temporary password, which works for 24
+hours, and must change it at the next sign-in), or delete them. Disabling, deleting or resetting a password signs
 that user out everywhere at once. Resetting a password also removes their
 [passkeys](#passkeys).
 
@@ -311,6 +321,7 @@ they do not reveal which usernames exist. Other answers are:
 | `disabled` (403) | The account is disabled in Signalith |
 | `not_in_group` (403) | A directory user in no group mapped to a role: *"Your directory account is not in a group that can use Signalith."* |
 | `password_expired` (403) | Active Directory says the password expired or must be changed |
+| `temporary_password_expired` (403) | A local user's temporary password is older than `auth.temp_password_max_age` (24 hours by default); an admin resets it again |
 | `directory_unavailable` (503) | The directory server could not be reached, or too many directory sign-ins are being checked at once |
 | `locked_out` (429) | Too many wrong passwords; see below |
 | `mfa_required`, `mfa_wrong`, `mfa_basic` | See [Two-step sign-in](#two-step-sign-in) |
@@ -442,6 +453,12 @@ accounts disabled in the directory are picked up as described in
 says `"must_change_password": true` and the sign-in page asks for a new password.
 Until it is changed, every request other than `GET /api/me` and
 `POST /api/me/password` answers `403` with code `password_change_required`.
+A temporary password works for `auth.temp_password_max_age` (24 hours by default),
+counted from when an admin last set it or changed the account. After that, signing in
+with it, and changing it at `POST /api/me/password`, answer `403` with code
+`temporary_password_expired`, and an admin resets the password again. A password the
+person chose themselves never expires this way, and neither does the built-in admin's
+first password.
 
 ## Two-step sign-in
 
@@ -482,7 +499,9 @@ stays on until the last passkey is removed too.
 **Lost your phone and your recovery codes?** An admin opens **Settings > Users** and
 chooses **Reset two-step sign-in** on your row. You then sign in with your password
 alone, and set it up again. Admins cannot reset their own; another admin can. The
-built-in admin can also be reset by another admin.
+built-in admin can also be reset by another admin, or with `signalith passwd -reset-mfa`
+on a server when no other admin can sign in (see
+[Locked out or forgot a password](#locked-out-or-forgot-a-password)).
 
 **Require it.** On the **Settings** page, **Require two-step sign-in**
 (`auth.mfa_required`) is `off` (the default), `admins` (every admin) or `everyone`.
@@ -1170,7 +1189,7 @@ the Settings page and restarts are logged the same way; see
 | `passkey removed` | `by`, `user`, `passkey`, `host` |
 | `passkeys removed` | `by` (the admin), `user`, `count`, `reason` (`password reset`) |
 | `passkey refused` | `user`, `client`, `locked_out`; with `passkey` when its counter went backwards |
-| `two-step sign-in reset` | `by` (the admin), `user` |
+| `two-step sign-in reset` | `by` (the admin, or `signalith passwd` or `cli:` and the operating system user for `signalith passwd -reset-mfa`), `user`; for the command also `source=builtin` and `reason` |
 | `new recovery codes made` | `by`, `user` |
 | `recovery code used` | `by`, `user`, `recovery_codes_left` |
 | `two-step code refused` | `user`, `client`, `locked_out` |

@@ -822,6 +822,8 @@ server:
   15 minutes, sign-in pauses for 15 minutes. The API is limited the same way.
 - Sign-ins end after 24 hours by default (`auth.session_max_age`, 30 days at most),
   even with **Keep me signed in**.
+- Temporary passwords from an admin stop working after 24 hours by default
+  (`auth.temp_password_max_age`).
 - Passwords are stored only as bcrypt hashes.
 - Logs, pages and the API never show stored passwords or keys.
 - With HTTPS on, agents set up from **Add data** check the server's certificate before
