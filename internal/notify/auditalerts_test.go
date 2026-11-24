@@ -123,6 +123,15 @@ func TestAuditAlertsMatch(t *testing.T) {
 		{"audit lost", audit.Event{Message: "audit records lost: the spool was full", Action: audit.ActionLost}, "audit_integrity"},
 		{"tamper", audit.Event{Message: "config.tamper: a shared setting was changed", Action: "config.tamper"}, "audit_integrity"},
 		{"search", audit.Event{Message: "search.run: search run", Action: "search.run"}, ""},
+		{"detections off", audit.Event{Message: "detection.enable: detections turned off", Action: "detection.enable", Fields: map[string]string{"enabled": "false"}}, "detection_change"},
+		{"detections on", audit.Event{Message: "detection.enable: detections turned on", Action: "detection.enable", Fields: map[string]string{"enabled": "true"}}, ""},
+		{"exception", audit.Event{Message: "detection.scoped_exception_add: exception for many detections added", Action: "detection.scoped_exception_add"}, "detection_change"},
+		{"playbooks", audit.Event{Message: "playbook.change: playbooks changed", Action: "playbook.change"}, "detection_change"},
+		{"passkey added", ev("passkey added", nil), "access_change"},
+		{"recovery codes", ev("new recovery codes made", nil), "access_change"},
+		{"built-in admin back", ev("turned the built-in admin on again", nil), "access_change"},
+		{"key export", ev("exported the cluster key", nil), "audit_integrity"},
+		{"server joined", audit.Event{Message: "cluster.join: a server joined the cluster with a join token", Action: "cluster.join"}, "token_change"},
 	} {
 		if got := first(c.ev); got != c.want {
 			t.Errorf("%s: matched %q, want %q", c.name, got, c.want)

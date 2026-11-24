@@ -7,6 +7,8 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
+	"fmt"
+	"log/slog"
 	"maps"
 	"slices"
 	"strconv"
@@ -159,7 +161,9 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 	if err := walk(body, true, func(l *otlpLog, size int, _ *BodyError) error {
 		count, extra := 1, 0
 		if l != nil {
-			if _, recs, split := otlpRecords(l); split {
+			// A record that panics here counts as one; the second pass
+			// rejects it (ING-215).
+			if _, recs, split := safeOTLPRecords(l); split {
 				count = len(recs)
 				extra = max(count-1, 0) * len(otlpHost(l.resource))
 			}
@@ -215,7 +219,13 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 			total.add(&Result{Rejected: 1, Errors: []store.BulkItemError{{Reason: bad.Msg}}})
 			return nil
 		}
-		evs := otlpEvents(l, p.now())
+		evs, ok := safeOTLPEvents(l, p.now())
+		if !ok {
+			done++
+			p.stats.Failed.Add(1)
+			total.add(&Result{Rejected: 1, Errors: []store.BulkItemError{{Reason: fmt.Sprintf("log record %d could not be read", pos)}}})
+			return nil
+		}
 		// Each event counts as what was built for it, or its share of the
 		// record's size when that is more, and the batch is written as
 		// soon as it is full, so neither a message split into many records
@@ -249,6 +259,39 @@ func (p *Pipeline) IngestOTLP(ctx context.Context, body []byte, isJSON bool) (*R
 	}
 	return total, nil
 }
+
+// safeOTLPEvents is otlpEvents for one record, with ok false when reading
+// it panicked, so one crafted record is rejected on its own instead of
+// failing the request or stopping the server (ING-215).
+func safeOTLPEvents(l *otlpLog, now time.Time) (evs []Event, ok bool) {
+	defer func() {
+		if p := recover(); p != nil {
+			parserPanics.Add(1)
+			if last := lastParserPanicLog.Load(); now.Unix()-last >= 60 && lastParserPanicLog.CompareAndSwap(last, now.Unix()) {
+				slog.Warn("an OTLP log record stopped its parser; rejected it (logged once a minute)", "panic", fmt.Sprint(p))
+			}
+			evs, ok = nil, false
+		}
+	}()
+	return otlpEventsOf(l, now), true
+}
+
+// safeOTLPRecords is otlpRecords, with split false when reading the
+// record panicked.
+func safeOTLPRecords(l *otlpLog) (parse func(map[string]any) Event, recs []map[string]any, split bool) {
+	defer func() {
+		if recover() != nil {
+			parse, recs, split = nil, nil, false
+		}
+	}()
+	return otlpRecordsOf(l)
+}
+
+// otlpRecordsOf is otlpRecords, which a test replaces with one that panics.
+var otlpRecordsOf = otlpRecords
+
+// otlpEventsOf is otlpEvents, which a test replaces with one that panics.
+var otlpEventsOf = otlpEvents
 
 // otlpTooExpanded refuses a request over maxOTLPExpandedBytes.
 func otlpTooExpanded() *BodyError {

@@ -543,6 +543,9 @@ type hourRun struct {
 	// fleetRaised those that added risk as new to many hosts at once.
 	fleetNew    map[string]bool
 	fleetRaised map[string]bool
+	// fleetCapped is set once the hour raised maxFleetFirsts programs
+	// and left one out, so that is logged once.
+	fleetCapped bool
 }
 
 // A unit is the checks that learn from the same searches. A unit learns
@@ -1287,7 +1290,7 @@ func (r *hourRun) processes(ctx context.Context) error {
 		}
 	}
 	prevalence := map[string]int{}
-	r.fleetNew, r.fleetRaised = map[string]bool{}, map[string]bool{}
+	r.fleetNew, r.fleetRaised, r.fleetCapped = map[string]bool{}, map[string]bool{}, false
 	err = r.learn(ctx, prevalenceCheck, procs, func(p *Profile, key string, s *seen) []detect.RiskEvent {
 		r.fleetNew[key] = len(p.Values) == 0 && !p.Many
 		for _, h := range sortedValues(s) {
@@ -1352,7 +1355,15 @@ func (r *hourRun) processes(ctx context.Context) error {
 // for the first time in the same hour: once per program, at a quarter of
 // the check's risk, to the program itself, at most maxFleetFirsts an hour.
 func (r *hourRun) fleetFirst(proc string, hosts int, host string, sv *seenValue) (detect.RiskEvent, bool) {
-	if r.fleetRaised[proc] || len(r.fleetRaised) >= maxFleetFirsts {
+	if r.fleetRaised[proc] {
+		return detect.RiskEvent{}, false
+	}
+	if len(r.fleetRaised) >= maxFleetFirsts {
+		if !r.fleetCapped {
+			r.fleetCapped = true
+			r.e.log().Info("behavior baselines: more programs than the hourly limit ran for the first time on many hosts; the rest add no risk this hour",
+				"check", RareProcess, "hour", r.start.Format(time.RFC3339), "limit", maxFleetFirsts, "left_out", proc)
+		}
 		return detect.RiskEvent{}, false
 	}
 	r.fleetRaised[proc] = true
