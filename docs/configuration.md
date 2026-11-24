@@ -52,7 +52,7 @@ environment variable wins over the page, which wins over `signalith.yaml`. See
 | `retention.guard` | on, 85%, 7 days | Disk guard: `enabled`, `max_disk_percent`, `min_days` |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalithadmin` on a new install (`admin` on one made before 0.3.1, which keeps it) | The built-in admin, a break-glass account; change its password with `signalith passwd` (it asks twice without showing the password, or reads one line from a pipe or `SIGNALITH_NEW_PASSWORD`, and changes only this line of the file) |
 | `auth.session_timeout` | `1h` | Sign the web UI out after this long without activity; `auth.session_max_age` (`24h`) ends every session, "Keep me signed in" too |
-| `auth.temp_password_max_age` | `24h` | How long a temporary password from **Add user** or **Reset password** works before it must have been changed (1h to 30d); an expired one needs a new reset |
+| `auth.temp_password_max_age` | `24h` | How long a temporary password from **Add user** or **Reset password** works before it must have been changed (1h to 30d); an expired one needs a new reset. From the release after 0.4.2 |
 | `auth.keep_signed_in` | `true` | `false` hides "Keep me signed in" on the sign-in page, so every new session signs out after `auth.session_timeout` without use |
 | `auth.users_file` | `users.json` in `lookups.dir` | Where users added on the Users page are kept; directory settings go in `directory.json` next to it |
 | `auth.ldap` | none | Active Directory or LDAP sign-in, when you would rather not set it up on the Users page; see [docs/users.md](users.md#setting-it-in-signalithyaml) |

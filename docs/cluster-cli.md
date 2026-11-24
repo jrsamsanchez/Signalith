@@ -349,7 +349,7 @@ need it; it never changes the password of the other servers. On a server that wa
 in a cluster, `-local` writes `admin-password-hash` and needs a restart, as
 `signalith passwd` does there.
 
-`-reset-mfa` also removes the built-in admin's two-step sign-in (authenticator app,
+`-reset-mfa` (from the release after 0.4.2) also removes the built-in admin's two-step sign-in (authenticator app,
 passkeys and recovery codes), for when they are lost and no other admin can reset it
 from the Users page. With shared users it applies on every server at once, like the
 password; otherwise it applies when the server restarts with the new password. It cannot

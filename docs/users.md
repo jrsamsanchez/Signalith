@@ -67,6 +67,10 @@ allow, the page reloads to match the new role and says why.
 
 ## Locked out or forgot a password
 
+!!! note "Arriving with the next release"
+    Temporary passwords that stop working after 24 hours, and `signalith passwd -reset-mfa`,
+    are on `main` and come with the release after 0.4.2.
+
 Signalith has no "forgot password" email. Every reset is done by an admin, or on the
 server itself, so a reset never depends on someone's inbox.
 
@@ -236,8 +240,8 @@ role (Viewer if you don't). Usernames are 1 to 64 lower-case letters, digits, do
 dashes, underscores or `@`, starting with a letter or digit; they are not case
 sensitive. Signalith makes up a temporary password and shows it once (or you can
 type one that follows the [password rules](#password-rules)). Give it to the person: at their first sign-in they
-must choose their own password before they can do anything else. A temporary password
-works for 24 hours (**Temporary passwords work for**, `auth.temp_password_max_age`,
+must choose their own password before they can do anything else. From the release after 0.4.2, a
+temporary password works for 24 hours (**Temporary passwords work for**, `auth.temp_password_max_age`,
 from 1 hour to 30 days); after that the Users page shows **Temporary password
 expired** and the person cannot sign in with it until an admin resets the password
 again.
@@ -453,7 +457,7 @@ accounts disabled in the directory are picked up as described in
 says `"must_change_password": true` and the sign-in page asks for a new password.
 Until it is changed, every request other than `GET /api/me` and
 `POST /api/me/password` answers `403` with code `password_change_required`.
-A temporary password works for `auth.temp_password_max_age` (24 hours by default),
+From the release after 0.4.2, a temporary password works for `auth.temp_password_max_age` (24 hours by default),
 counted from when an admin last set it or changed the account. After that, signing in
 with it, and changing it at `POST /api/me/password`, answer `403` with code
 `temporary_password_expired`, and an admin resets the password again. A password the
@@ -499,8 +503,8 @@ stays on until the last passkey is removed too.
 **Lost your phone and your recovery codes?** An admin opens **Settings > Users** and
 chooses **Reset two-step sign-in** on your row. You then sign in with your password
 alone, and set it up again. Admins cannot reset their own; another admin can. The
-built-in admin can also be reset by another admin, or with `signalith passwd -reset-mfa`
-on a server when no other admin can sign in (see
+built-in admin can also be reset by another admin, or (from the release after 0.4.2) with
+`signalith passwd -reset-mfa` on a server when no other admin can sign in (see
 [Locked out or forgot a password](#locked-out-or-forgot-a-password)).
 
 **Require it.** On the **Settings** page, **Require two-step sign-in**
