@@ -21,6 +21,11 @@ Ideas and requests are welcome as
 
 ## Now <span class="sg-pill sg-pill--now">In progress</span> { #now data-toc-label="Now" }
 
+**The next release**
+:   Finished and waiting for the next release: temporary passwords that stop working after
+    24 hours, and `signalith passwd -reset-mfa` for a built-in admin who lost their
+    two-step sign-in.
+
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
     Splunk's answers where the two should agree.
