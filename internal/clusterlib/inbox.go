@@ -328,6 +328,11 @@ func (in *Inbox) scan(seen *seenFile, fresh bool) (map[string]*file, error) {
 // readYAMLDir lists the *.yaml files in dir, sorted, and fails when dir
 // cannot be read.
 func readYAMLDir(dir string) ([]string, error) {
+	// A file where the folder should be is an error, not a missing
+	// folder: Windows reports reading it as a directory as "not found".
+	if fi, err := os.Stat(dir); err == nil && !fi.IsDir() {
+		return nil, fmt.Errorf("%s is a file, not a folder", dir)
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
