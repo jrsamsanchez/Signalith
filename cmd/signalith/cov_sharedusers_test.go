@@ -98,7 +98,7 @@ func TestPasswdSharedFallsBack(t *testing.T) {
 	// Never a member: nothing is said.
 	var ok bool
 	var err error
-	out := captureStdout(t, func() { ok, err = passwdShared(path, state, "$2a$10$x") })
+	out := captureStdout(t, func() { ok, err = passwdShared(path, state, "$2a$10$x", false) })
 	if ok || err != nil || out != "" {
 		t.Errorf("never a member: %v %v %q", ok, err, out)
 	}
@@ -113,7 +113,7 @@ func TestPasswdSharedFallsBack(t *testing.T) {
 		{"no config", filepath.Join(t.TempDir(), "none.yaml"), "The configuration could not be read"},
 		{"no identity", path, "This server has no identity yet"},
 	} {
-		out := captureStdout(t, func() { ok, err = passwdShared(c.path, state, "$2a$10$x") })
+		out := captureStdout(t, func() { ok, err = passwdShared(c.path, state, "$2a$10$x", false) })
 		if ok || err != nil || !strings.Contains(out, c.want) || !strings.Contains(out, "in this server's files only") {
 			t.Errorf("%s: %v %v %q", c.name, ok, err, out)
 		}
