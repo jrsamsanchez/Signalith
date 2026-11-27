@@ -78,7 +78,7 @@ Only admins can change it, and only the provider's admins on a
 `GET /api/auth/notice` (admins) returns `{"title", "text", "agree", "on",
 "text_max", "title_max", "editable"}`. Save it with `PUT /api/settings` and the
 settings `auth.notice.title`, `auth.notice.text` and `auth.notice.agree` (see
-[settings.md](settings.md#api)).
+[Server settings](settings.md#api)).
 
 The sign-in routes take `"agreed": true` in their body (`POST /api/login`,
 `POST /api/login/passkey` and `POST /api/demo`), and the single sign-on starts

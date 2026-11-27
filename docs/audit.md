@@ -156,7 +156,7 @@ What it cannot show:
 
 - Someone who holds the cluster key (an admin of a member server, or anyone who can read its
   state folder and master key) can write lines that check out. Keep those as safe as the
-  master key; see [encryption.md](encryption.md). A removed server keeps the cluster key it
+  master key; see [Encryption](encryption.md). A removed server keeps the cluster key it
   had, so rotate the key when you remove one (the default); lines signed with an old key
   after its rotation still check out.
 - Lines removed at the end of a server's chain after the last checkpoint, such as in the last

@@ -13,8 +13,6 @@ package integration
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -83,14 +81,12 @@ func viaBalancer(t *testing.T, port int, client string) net.Conn {
 // balancer as client.
 func (s *testServer) clientVia(t *testing.T, client string) *http.Client {
 	t.Helper()
-	pem, err := os.ReadFile(filepath.Join(s.dir, "tls", "ca.pem"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	pool := x509.NewCertPool()
-	pool.AppendCertsFromPEM(pem)
+	// Trust what httpsClient trusts: tls/ca.pem read again at each
+	// connection, since a server that joins the cluster moves to the
+	// cluster's certificate authority after it starts.
+	conf := s.httpsClient().Transport.(*http.Transport).TLSClientConfig
 	return &http.Client{Timeout: 10 * time.Second, Transport: &http.Transport{
-		TLSClientConfig: &tls.Config{RootCAs: pool},
+		TLSClientConfig: conf,
 		DialContext: func(context.Context, string, string) (net.Conn, error) {
 			return viaBalancer(t, s.port, client), nil
 		},

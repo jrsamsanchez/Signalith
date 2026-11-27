@@ -208,7 +208,7 @@ ticket, so a change missed while a system was down is still brought in step.
 ## Which server syncs
 
 When several servers share one OpenSearch, only the server that holds the **background
-jobs** talks to Jira and ServiceNow (see [servers.md](servers.md)). It runs the `ticketing`
+jobs** talks to Jira and ServiceNow (see [Servers](servers.md)). It runs the `ticketing`
 job every minute.
 
 - Connections live in that server's ticketing file. On other servers the page shows them

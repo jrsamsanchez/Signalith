@@ -138,12 +138,17 @@ type Filter struct {
 // AITriage is what the AI first pass made of a finding. Verdict is
 // "real", "benign" or "unsure"; a pass that failed has Error instead.
 type AITriage struct {
-	Verdict    string    `json:"verdict,omitempty"`
-	Confidence string    `json:"confidence,omitempty"`
-	Summary    string    `json:"summary,omitempty"`
-	Model      string    `json:"model,omitempty"`
-	At         time.Time `json:"at"`
-	Error      string    `json:"error,omitempty"`
+	Verdict    string `json:"verdict,omitempty"`
+	Confidence string `json:"confidence,omitempty"`
+	Summary    string `json:"summary,omitempty"`
+	Model      string `json:"model,omitempty"`
+	// Injection is set when text in the finding's data looked like
+	// instructions to an AI; Caution then warns beside a benign verdict
+	// that planted text may have steered it.
+	Injection bool      `json:"injection,omitempty"`
+	Caution   string    `json:"caution,omitempty"`
+	At        time.Time `json:"at"`
+	Error     string    `json:"error,omitempty"`
 }
 
 // AINone asks a filter for findings the AI first pass has not looked
