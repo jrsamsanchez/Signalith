@@ -21,6 +21,8 @@ const (
 	BuiltinPassword = "password"
 	BuiltinEnabled  = "enabled"
 	BuiltinDisabled = "disabled"
+	// BuiltinMFAReset is its two-step sign-in removed.
+	BuiltinMFAReset = "mfa_reset"
 )
 
 // BuiltinChange is one change to the built-in admin a server saw in the
@@ -35,7 +37,7 @@ type BuiltinChange struct {
 
 // BuiltinWatch compares each copy of the built-in admin's document with
 // the one before, and hands Report what changed: a new name, a new
-// password, turned off or on. The first copy it sees only sets what it
+// password, turned off or on, its two-step sign-in removed. The first copy it sees only sets what it
 // compares with, so a change made while this server was not running is
 // not reported.
 type BuiltinWatch struct {
@@ -48,7 +50,7 @@ type BuiltinWatch struct {
 
 type builtinSeen struct {
 	name, hash string
-	off        bool
+	off, mfa   bool
 }
 
 // Check looks at the built-in admin now. It is called after the users or
@@ -59,7 +61,7 @@ func (w *BuiltinWatch) Check() {
 	if !ok {
 		return
 	}
-	cur := &builtinSeen{name: v.Username, hash: v.PasswordHash, off: v.Disabled}
+	cur := &builtinSeen{name: v.Username, hash: v.PasswordHash, off: v.Disabled, mfa: v.MFA != nil}
 	var by shared.By
 	if it, ok := w.Docs.Users().Item(v.Username); ok {
 		by = it.UpdatedBy
@@ -83,5 +85,8 @@ func (w *BuiltinWatch) Check() {
 			what = BuiltinDisabled
 		}
 		w.Report(BuiltinChange{What: what, User: cur.name, By: by})
+	}
+	if prev.mfa && !cur.mfa {
+		w.Report(BuiltinChange{What: BuiltinMFAReset, User: cur.name, By: by})
 	}
 }

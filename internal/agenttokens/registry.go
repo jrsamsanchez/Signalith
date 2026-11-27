@@ -193,18 +193,23 @@ type Registry struct {
 		key  []byte
 	}
 	ensured atomic.Bool
-	// loadedAt is when Load last read everything (Unix ns), and missMu
-	// lets one Check at a time read again for a key it does not know.
-	loadedAt, missTry atomic.Int64
-	missMu            sync.Mutex
-	hooksMu           sync.Mutex
-	onRevoke          []func(ctx context.Context, tokenID string) (int, error)
+	// missMu lets one Check at a time look again for a key it does not
+	// know, and missAt is when one last did (see reloadForMiss).
+	missMu sync.Mutex
+	missAt time.Time
+	// watchMu guards watch, the version of the watched document read
+	// just before the last full read that succeeded.
+	watchMu  sync.Mutex
+	watch    watchSeen
+	hooksMu  sync.Mutex
+	onRevoke []func(ctx context.Context, tokenID string) (int, error)
 
 	useMu sync.Mutex
 	uses  map[string]*use
 
 	logMu    sync.Mutex
 	lastFail time.Time
+	lastFull time.Time // when warnHosts last logged
 }
 
 func (r *Registry) now() time.Time {
@@ -539,8 +544,45 @@ func (r *Registry) load(ctx context.Context) error {
 		return errRaced
 	}
 	r.snap.Store(s)
-	r.loadedAt.Store(time.Now().UnixNano())
 	return nil
+}
+
+// watchSeen is a version of the watched document, or its absence.
+type watchSeen struct {
+	v     store.Version
+	found bool
+}
+
+// readWatch reads the version of the watched document, which every
+// change of the tokens or keys rewrites (touch).
+func (r *Registry) readWatch(ctx context.Context) (watchSeen, error) {
+	ref := store.Ref{Index: r.index(), ID: watchDocID}
+	vs, err := r.Client.MGetVersions(ctx, []store.Ref{ref})
+	if err != nil {
+		return watchSeen{}, err
+	}
+	v, found := vs[ref]
+	return watchSeen{v, found}, nil
+}
+
+// watchChanged reports whether w differs from the version seen before
+// the last full read.
+func (r *Registry) watchChanged(w watchSeen) bool {
+	r.watchMu.Lock()
+	defer r.watchMu.Unlock()
+	return w.found != r.watch.found || !w.v.Same(r.watch.v)
+}
+
+// loadSince reads everything again, and remembers w, read before, as
+// what the read covers.
+func (r *Registry) loadSince(ctx context.Context, w watchSeen) error {
+	err := r.Load(ctx)
+	if err == nil {
+		r.watchMu.Lock()
+		r.watch = w
+		r.watchMu.Unlock()
+	}
+	return err
 }
 
 func parseKey(s string) []byte {
@@ -610,21 +652,18 @@ func (r *Registry) Run(ctx context.Context) {
 	if flush <= 0 {
 		flush = time.Minute
 	}
-	var seen store.Version
-	var seenFound bool
 	lastFull := time.Time{}
 	lastFlush := time.Now()
 	t := time.NewTicker(poll)
 	defer t.Stop()
 	for {
 		if r.Client != nil {
-			vs, err := r.Client.MGetVersions(ctx, []store.Ref{{Index: r.index(), ID: watchDocID}})
+			w, err := r.readWatch(ctx)
 			if err == nil {
-				v, found := vs[store.Ref{Index: r.index(), ID: watchDocID}]
 				needKey := r.current().idKey == nil && len(r.legacy()) > 0
-				if !r.Loaded() || needKey || found != seenFound || !v.Same(seen) || time.Since(lastFull) >= reload {
-					if err = r.Load(ctx); err == nil {
-						seen, seenFound, lastFull = v, found, time.Now()
+				if !r.Loaded() || needKey || r.watchChanged(w) || time.Since(lastFull) >= reload {
+					if err = r.loadSince(ctx, w); err == nil {
+						lastFull = time.Now()
 					} else if errors.Is(err, errRaced) {
 						err = nil // read again at the next tick
 					}
@@ -1202,6 +1241,7 @@ func (r *Registry) Revoke(ctx context.Context, id, by string) (Token, int, error
 			n += r.revoked(ctx, h.ID)
 		}
 	}
+	r.dropLineHosts(ctx, id)
 	return r.listed(ctx, d), n, nil
 }
 

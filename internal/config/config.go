@@ -856,6 +856,11 @@ type Auth struct {
 	// signed in or not: from 1h to 30d, default 24h (NIST SP 800-63B asks
 	// for a new sign-in at least every 24 hours at AAL2).
 	SessionMaxAge string `yaml:"session_max_age,omitempty"`
+	// TempSignInMaxAge is how long a temporary password an admin set
+	// (a new user's, or a reset) works before the user must have chosen
+	// their own: from 1h to 30d, default 24h. Past it, an admin resets the
+	// password again.
+	TempSignInMaxAge string `yaml:"temp_password_max_age,omitempty"`
 	// KeepSignedIn offers "Keep me signed in" on the sign-in page, which
 	// keeps a session through idle periods (still ending it at
 	// SessionMaxAge). Unset means on (see KeepSignedInOn).
@@ -970,6 +975,23 @@ const (
 	MinSessionMaxAge = time.Hour
 	MaxSessionMaxAge = 30 * 24 * time.Hour
 )
+
+// DefaultTempSignInMaxAge is how long a temporary password works when
+// auth.temp_password_max_age is not set; MinTempSignInMaxAge and
+// MaxTempSignInMaxAge bound the setting.
+const (
+	DefaultTempSignInMaxAge = 24 * time.Hour
+	MinTempSignInMaxAge     = time.Hour
+	MaxTempSignInMaxAge     = 30 * 24 * time.Hour
+)
+
+// TempSignInMaxAge returns auth.temp_password_max_age as a duration.
+func (c *Config) TempSignInMaxAge() time.Duration {
+	if d, err := detect.ParseDuration(c.Auth.TempSignInMaxAge); err == nil && d > 0 {
+		return d
+	}
+	return DefaultTempSignInMaxAge
+}
 
 // SessionIdle returns auth.session_timeout as a duration.
 func (c *Config) SessionIdle() time.Duration {
@@ -2873,6 +2895,11 @@ func (c *Config) Validate() error {
 			p = append(p, fmt.Sprintf("auth.session_max_age %q must be a duration from 1h to 30d, for example 24h", c.Auth.SessionMaxAge))
 		}
 	}
+	if c.Auth.TempSignInMaxAge != "" {
+		if d, err := detect.ParseDuration(c.Auth.TempSignInMaxAge); err != nil || d < MinTempSignInMaxAge || d > MaxTempSignInMaxAge {
+			p = append(p, fmt.Sprintf("auth.temp_password_max_age %q must be a duration from 1h to 30d, for example 24h", c.Auth.TempSignInMaxAge))
+		}
+	}
 	if c.Auth.LDAP != nil {
 		if s, err := c.LDAP(); err != nil {
 			p = append(p, err.Error())
@@ -3387,6 +3414,8 @@ const header = `# Signalith configuration.
 # auth.session_timeout  sign the web UI out after this long idle (default 1h)
 # auth.session_max_age  sign the web UI out this long after sign-in, even when kept
 #                    signed in (default 24h; 1h to 30d)
+# auth.temp_password_max_age  how long a temporary password from an admin works
+#                    before it must be changed (default 24h; 1h to 30d)
 # auth.keep_signed_in  false hides "Keep me signed in": every session then signs
 #                    out after session_timeout without use
 # auth.mfa_required     who must use two-step sign-in: off, admins or everyone

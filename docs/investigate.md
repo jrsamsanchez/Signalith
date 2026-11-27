@@ -165,6 +165,10 @@ instead of three. The model's verdict, confidence and summary are kept on the fi
 - the finding's Overview shows the note, with the model and when it looked, for everyone
   who can see the finding.
 
+When text in a finding's data looked like instructions to an AI, the note is shown as a
+warning whatever the verdict, and a "benign" verdict carries the same caution as in
+Investigate with AI: planted log text may have steered it, so check the evidence yourself.
+
 It skips findings from sample data, findings no longer **New**, and findings
 older than a day, so turning it on does not send the backlog. A finding is looked at once;
 if the model fails, the finding says why and the first pass waits 15 minutes before it

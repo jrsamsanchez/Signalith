@@ -36,8 +36,13 @@ function aiTriageChip(f) {
   const a = f.ai_triage;
   if (!a || !a.verdict) return null;
   const v = INV_VERDICT[a.verdict] || INV_VERDICT.unsure;
-  return el('span', { class: 'badge ai-chip ' + v.badge, title: `AI first pass (a suggestion, not a decision): ${v.label.toLowerCase()}, ${a.confidence || 'low'} confidence` },
-    icon('sparkles', 'icon--xs'), 'AI: ' + v.label.toLowerCase());
+  // A verdict on data that tried to instruct the AI is shown as a warning,
+  // whatever it says: a planted "benign" is what an attacker would want.
+  const warn = a.injection || a.caution;
+  const title = `AI first pass (a suggestion, not a decision): ${v.label.toLowerCase()}, ${a.confidence || 'low'} confidence` +
+    (warn ? '. Text in the data looked like instructions to an AI: check it yourself.' : '');
+  return el('span', { class: 'badge ai-chip ' + (warn ? 'badge--warning' : v.badge), title },
+    icon(warn ? 'triangle-alert' : 'sparkles', 'icon--xs'), 'AI: ' + v.label.toLowerCase() + (warn ? ', check' : ''));
 }
 
 // findingFirstPass is the AI first pass's note on a finding's Overview:
@@ -58,6 +63,9 @@ function findingFirstPass(f) {
       el('div', { class: 'ai-pass__head' }, el('span', { class: 'badge ' + v.badge }, icon(v.icon, 'icon--xs'), v.label),
         el('span', { class: 'muted' }, `${a.confidence || 'low'} confidence`)),
       el('p', { class: 'ai-pass__text' }, a.summary || 'The model gave no summary.')),
+    a.caution || a.injection ? el('div', { class: 'alert', 'data-tone': 'warning', role: 'status' }, icon('triangle-alert'),
+      el('div', {}, el('b', {}, 'Check this verdict yourself'),
+        el('p', {}, a.caution || 'Text in this finding’s data looked like instructions to an AI, so planted log text may have steered this note.'))) : null,
     el('p', { class: 'dx-hint' }, 'A suggestion from ', a.model || 'the AI model', ', ', when, ', made without a person asking. It changed nothing; check it before you act on it.'));
 }
 

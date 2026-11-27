@@ -203,4 +203,4 @@ Revoking the agent token a host enrolled with, or choosing **Stop accepting** on
 token, removes every host enrolled with it, on every server, and their next request is
 refused at once. A host whose shared token was deleted from signalith.yaml or the
 environment is refused too. They enroll again with an active token. See
-[agent-tokens.md](agent-tokens.md#osquery-hosts).
+[Agent tokens](agent-tokens.md#osquery-hosts).
