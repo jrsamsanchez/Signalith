@@ -428,10 +428,20 @@ func (p *Pipeline) write(ctx context.Context, events []Event, ids []string) (*Re
 			ev.Model = "Other"
 		}
 		day := dayOf(ev.Time)
-		index := p.Rollover.Index(datamodel.IndexName(prefix, ev.Model, day))
+		index := p.Rollover.IndexFor(prefix, ev.Model, ev.Time)
 		isFull, asked := full[index]
 		if !asked && hasUnknown(ev.Fields) {
-			isFull = p.mappingFull(ctx, index)
+			n, known := p.mappingFields(ctx, index)
+			if known && n >= MonthFieldsClose && p.Rollover.CloseMonth(index) {
+				// A monthly index with many field names: the rest of its
+				// month goes to daily indices, each with room for more.
+				index = p.Rollover.IndexFor(prefix, ev.Model, ev.Time)
+				if isFull, asked = full[index]; !asked {
+					isFull = p.mappingFull(ctx, index)
+				}
+			} else {
+				isFull = known && n >= mappingStop
+			}
 			full[index] = isFull
 		}
 		if n := nReserved + p.names.limitTo(index, day, oldest, sender, ev.Fields, budget, isFull); n > 0 {

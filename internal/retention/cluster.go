@@ -141,6 +141,11 @@ func coldIndex(prefix, name string) (string, bool) {
 	if i <= 0 || !strings.HasPrefix(name, prefix+"-") {
 		return "", false
 	}
+	// A daily index's own name is no snapshot's: its day (.02) is not the
+	// UUID of a monthly index.
+	if _, _, daily := ParseIndex(prefix, name); daily {
+		return "", false
+	}
 	if _, _, ok := ParseIndex(prefix, name[:i]); !ok {
 		return "", false
 	}
@@ -246,12 +251,17 @@ const dayLayout = "2006.01.02"
 // indices of that day too.
 //
 // It also accepts the monthly indices of KindMonthly categories,
-// <prefix>_<category>-YYYY.MM, whose day is the first of the month.
+// <prefix>_<category>-YYYY.MM, and those of quiet event categories,
+// <prefix>-<category>-YYYY.MM (see EventMonth), whose day is the first of
+// the month.
 func ParseIndex(prefix, name string) (category string, day time.Time, ok bool) {
 	if rest, ok := strings.CutPrefix(name, prefix+"_"); ok {
 		return parseMonthly(rest)
 	}
 	rest, ok := strings.CutPrefix(name, prefix+"-")
+	if stem, month, isMonth := datamodel.SplitMonth(rest); ok && isMonth {
+		return parseEventMonth(strings.TrimSuffix(stem, "-"), month)
+	}
 	if day, n, isPart := datamodel.SplitPart(rest); ok && isPart && n > 1 {
 		rest = day
 	}
@@ -268,6 +278,40 @@ func ParseIndex(prefix, name string) (category string, day time.Time, ok bool) {
 		return "", time.Time{}, false
 	}
 	return category, day, true
+}
+
+// parseEventMonth is the category and first day of a monthly event
+// index (see ingest.Rollover.IndexFor), <prefix>-<category>-YYYY.MM.
+func parseEventMonth(category, month string) (string, time.Time, bool) {
+	if c, found := CategoryByID(category); !found || c.Kind != KindEvents {
+		return "", time.Time{}, false
+	}
+	day, err := time.Parse(monthLayout, month)
+	if err != nil {
+		return "", time.Time{}, false
+	}
+	return category, day, true
+}
+
+// EventMonth reports whether name is a monthly index of an event
+// category, <prefix>-<category>-YYYY.MM: a quiet data model's events of a
+// whole month. Retention takes it as a day that ends on the month's last
+// day: it is kept, compacted, moved or deleted by that day's age.
+func EventMonth(prefix, name string) bool {
+	if _, _, ok := ParseIndex(prefix, name); !ok || !strings.HasPrefix(name, prefix+"-") {
+		return false
+	}
+	_, _, ok := datamodel.SplitMonth(name)
+	return ok
+}
+
+// lastDay is the last day name holds events of: day itself for a daily
+// index, the month's last day for a monthly one.
+func lastDay(prefix, name string, day time.Time) time.Time {
+	if cat, _, ok := ParseIndex(prefix, name); ok && isMonthly(cat) || EventMonth(prefix, name) {
+		return monthEnd(day)
+	}
+	return day
 }
 
 // monthLayout is the date suffix of monthly index names.

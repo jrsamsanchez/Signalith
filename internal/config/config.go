@@ -578,7 +578,15 @@ type OpenSearch struct {
 	// index (signalith-network-2026.10.17-2, and so on). 0 is
 	// DefaultRolloverGB.
 	RolloverGB int `yaml:"rollover_gb,omitempty"`
+	// MonthlyIndices stores a quiet data model kept more than
+	// MonthlyMinKeepDays in one index a month instead of one a day (see
+	// ingest.Rollover.IndexFor), so a node holds about 30 times fewer of
+	// its shards. Unset is on.
+	MonthlyIndices *bool `yaml:"monthly_indices,omitempty"`
 }
+
+// MonthlyOn reports whether opensearch.monthly_indices is on (unset is).
+func (o *OpenSearch) MonthlyOn() bool { return o.MonthlyIndices == nil || *o.MonthlyIndices }
 
 // DefaultRolloverGB is opensearch.rollover_gb when it is not set: shards
 // of 30 to 50 GB are what OpenSearch recommends for logs, big enough not

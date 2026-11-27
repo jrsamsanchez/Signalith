@@ -54,7 +54,8 @@ func searchSpan(earliest, latest string, now time.Time, loc *time.Location) (fro
 }
 
 // narrowToDays limits the index pattern of a search to the daily indices,
-// and their parts, of the days from from through to. Whole months and
+// and their parts, of the days from from through to, and the monthly
+// indices of their months. Whole months and
 // years in the range are named as one pattern each. Patterns it does not
 // know, ranges that end before they start and ranges too long to list are
 // returned unchanged.
@@ -87,23 +88,37 @@ func narrowToDays(index, prefix string, from, to time.Time) string {
 	}
 	var list []string
 	size := 0
+	add := func(p string) bool {
+		size += len(url.PathEscape(p)) + len("%2C")
+		list = append(list, p)
+		return size <= maxIndexList
+	}
+	month := ""
 	for d := start; !d.After(end); {
 		var period string
 		var next time.Time
+		year := false
 		switch {
 		case d.YearDay() == 1 && !d.AddDate(1, 0, -1).After(end):
-			period, next = d.Format("2006")+".*", d.AddDate(1, 0, 0)
+			// Its days and its months (YYYY.MM), both.
+			period, next, year = d.Format("2006")+".*", d.AddDate(1, 0, 0), true
 		case d.Day() == 1 && !d.AddDate(0, 1, -1).After(end):
 			period, next = d.Format("2006.01")+".*", d.AddDate(0, 1, 0)
 		default:
 			// The day's index and its parts, YYYY.MM.DD-2 and on.
 			period, next = d.Format("2006.01.02")+"*", d.AddDate(0, 0, 1)
 		}
-		p := stem + period
-		if size += len(url.PathEscape(p)) + len("%2C"); size > maxIndexList {
+		if !add(stem + period) {
 			return index
 		}
-		list = append(list, p)
+		// A quiet model's month is one index, <prefix>-<model>-YYYY.MM
+		// (see ingest.Rollover.IndexFor), which no day's pattern names.
+		if m := d.Format("2006.01"); !year && m != month {
+			month = m
+			if !add(stem + m) {
+				return index
+			}
+		}
 		d = next
 	}
 	return strings.Join(append(list, parts[1:]...), ",")

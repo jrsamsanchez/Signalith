@@ -3,7 +3,10 @@
 
 package datamodel
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestMalwareModel(t *testing.T) {
 	var names []string
@@ -192,5 +195,25 @@ func TestSplitPart(t *testing.T) {
 		if day, n, ok := SplitPart(name); ok {
 			t.Errorf("SplitPart(%s) accepted it: %s %d", name, day, n)
 		}
+	}
+}
+
+func TestMonthIndexName(t *testing.T) {
+	at := time.Date(2026, 11, 30, 23, 59, 0, 0, time.UTC)
+	name := MonthIndexName("sig", "Network_Traffic", MonthOf(at))
+	if name != "sig-network_traffic-2026.11" {
+		t.Fatalf("MonthIndexName = %s", name)
+	}
+	if stem, month, ok := SplitMonth(name); !ok || stem != "sig-network_traffic-" || month != "2026.11" {
+		t.Errorf("SplitMonth(%s) = %q %q %v", name, stem, month, ok)
+	}
+	for _, n := range []string{"sig-network-2026.11.30", "sig-network-2026.13", "sig-network-2026.1", "sig-network-2026.11-2", "2026.11", "sig-network2026.11"} {
+		if _, _, ok := SplitMonth(n); ok {
+			t.Errorf("SplitMonth(%s) accepted it", n)
+		}
+	}
+	// A month's name is no day's, nor a part of one.
+	if _, _, ok := SplitPart(name); ok {
+		t.Errorf("SplitPart(%s) accepted a month", name)
 	}
 }

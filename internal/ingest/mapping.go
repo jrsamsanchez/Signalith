@@ -175,16 +175,31 @@ func (c *fieldCounter) count(ctx context.Context, index string, now time.Time, f
 // as not full (the retry with known fields stays as the backstop) and is
 // logged.
 func (p *Pipeline) mappingFull(ctx context.Context, index string) bool {
+	n, ok := p.mappingFields(ctx, index)
+	return ok && n >= mappingStop
+}
+
+// MonthFieldsClose is how many fields a monthly index's mapping may hold
+// before the rest of its month goes to daily indices (Rollover.CloseMonth).
+// It is the known fields and some 550 names senders chose: a daily index
+// starts each day with room for up to maxNewNamesPerIndex of them, and a
+// month whose names keep changing would otherwise reach mappingStop and
+// drop new names for weeks.
+const MonthFieldsClose = 1600
+
+// mappingFields is how many fields index's mapping holds, or ok false
+// when that could not be had (which is logged).
+func (p *Pipeline) mappingFields(ctx context.Context, index string) (int, bool) {
 	if p.FieldCount == nil {
-		return false
+		return 0, false
 	}
 	n, err := p.counter.count(ctx, index, p.now(), p.FieldCount)
 	if err != nil {
-		p.warn("mapping", "the number of fields of a daily index could not be read from OpenSearch; new field names are kept within this server's share until it can be",
+		p.warn("mapping", "the number of fields of an index could not be read from OpenSearch; new field names are kept within this server's share until it can be",
 			"index", index, "err", err)
-		return false
+		return 0, false
 	}
-	return n >= mappingStop
+	return n, true
 }
 
 // servers is how many servers share the day's field-name budgets.

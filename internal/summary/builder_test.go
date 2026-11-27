@@ -695,6 +695,20 @@ func TestDayIndicesReadParts(t *testing.T) {
 	}
 }
 
+// A month stored as one index holds each of its days, so their summaries
+// are not taken for orphans.
+func TestDayIndicesReadMonths(t *testing.T) {
+	b, f, _ := newBuilder(t)
+	f.extra = []string{"sig-authentication-2026.02", "sig-authentication-2026.03.01", "sig-authenticationx-2026.04"}
+	days, err := b.dayIndices(context.Background(), "Authentication")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(days) != 29 || !days["2026.02.01"] || !days["2026.02.28"] || !days["2026.03.01"] || days["2026.04.01"] {
+		t.Errorf("days = %v", days)
+	}
+}
+
 func TestBuildStopsWhenFenced(t *testing.T) {
 	b, f, clk := newBuilder(t)
 	at := clk.Now().Add(-90 * time.Minute)

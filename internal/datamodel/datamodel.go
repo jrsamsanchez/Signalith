@@ -589,6 +589,34 @@ func IndexName(prefix, model, day string) string {
 	return prefix + "-" + strings.ToLower(model) + "-" + day
 }
 
+// MonthIndexName returns the monthly index of a model: a quiet model's
+// events of a whole month (YYYY.MM) go to one index instead of one a day,
+// so a node holds about 30 times fewer of its shards (see
+// ingest.Rollover). It has no parts: once it is full, the rest of the
+// month goes to daily indices.
+func MonthIndexName(prefix, model, month string) string {
+	return prefix + "-" + strings.ToLower(model) + "-" + month
+}
+
+// MonthOf is the month (YYYY.MM, UTC) monthly indices name for t.
+func MonthOf(t time.Time) string { return t.UTC().Format(monthLayout) }
+
+const monthLayout = "2006.01"
+
+// SplitMonth returns the stem (<prefix>-<model>-) and month (YYYY.MM) of
+// a monthly index name, or ok false for any other name.
+func SplitMonth(name string) (stem, month string, ok bool) {
+	if len(name) < len(monthLayout)+2 || name[len(name)-len(monthLayout)-1] != '-' {
+		return "", "", false
+	}
+	month = name[len(name)-len(monthLayout):]
+	m, err := time.Parse(monthLayout, month)
+	if err != nil || m.Format(monthLayout) != month {
+		return "", "", false
+	}
+	return name[:len(name)-len(monthLayout)], month, true
+}
+
 // MaxPart is the most parts one day's index of a model may be split into
 // by rollover (see ingest.Rollover).
 const MaxPart = 999

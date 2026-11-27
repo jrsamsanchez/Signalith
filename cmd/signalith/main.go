@@ -1411,7 +1411,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// server's: every tenant's pipeline shares them (see ingest.Limits).
 	ingestLimits := ingest.NewLimits(c.Ingest.MaxConcurrent, ingest.DefaultMaxReceiving)
 	pipeline := &ingest.Pipeline{Store: store.NewBulkGroup(cl, 0), Prefix: c.OpenSearch.IndexPrefix, MaxEventAge: maxAge, Limits: ingestLimits, Log: log,
-		Rollover: &ingest.Rollover{Client: cl, Prefix: c.OpenSearch.IndexPrefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log}}
+		Rollover: &ingest.Rollover{Client: cl, Prefix: c.OpenSearch.IndexPrefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log,
+			ByMonth: byMonth(c, ret, r.shared)}}
 	in.jobs.Go(func() { pipeline.Rollover.Run(ctx) })
 	pipeline.SetURLQuery(c.URLQueryMode())
 	// Each day's new field names are shared out among the servers that
@@ -2726,6 +2727,20 @@ func newRetention(c *config.Config, cl *store.Client, log *slog.Logger) *retenti
 		// Retention runs on one of the servers that share an OpenSearch,
 		// never on one with detections.scheduler off.
 		ReadOnly: !c.Detections.Scheduler,
+	}
+}
+
+// byMonth is ingest.Rollover.ByMonth: a data model is stored by month
+// while opensearch.monthly_indices is on, every server that shares
+// OpenSearch reads monthly indices (shared.LevelMonthlyIndices), and its
+// category's retention policy allows it (retention.Policy.ByMonth).
+func byMonth(c *config.Config, ret *retention.Manager, rt *shared.Runtime) func(string) bool {
+	if !c.OpenSearch.MonthlyOn() {
+		return nil
+	}
+	policy := retention.ByMonthFunc(ret.Settings)
+	return func(model string) bool {
+		return rt != nil && rt.MonthlyIndices() && policy(model)
 	}
 }
 

@@ -13,6 +13,7 @@ import (
 	"github.com/jrsamsanchez/signalith/internal/audit"
 	"github.com/jrsamsanchez/signalith/internal/cluster/ostest"
 	"github.com/jrsamsanchez/signalith/internal/ingest"
+	"github.com/jrsamsanchez/signalith/internal/retention"
 	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
@@ -92,7 +93,7 @@ func simulateShards(t *testing.T, models []string, keepDays, n int) shardSim {
 
 		limit := 1000
 		card := osCard{ShardsUsed: &used, ShardLimit: &limit}
-		p := projectShards(prefix, held, used, limit, func(string) int { return keepDays }, now)
+		p := projectShards(prefix, held, used, limit, func(string) int { return keepDays }, nil, 0, now)
 		card.ShardsPerDay, card.ShardsProjected, card.ShardsFullInDays, card.keepDays = &p.PerDay, &p.Projected, p.FullInDays, p.KeepDays
 		out.maxUsed = max(out.maxUsed, used)
 		if w := shardWarning(card); w != "" && out.firstWarn < 0 {
@@ -189,8 +190,83 @@ func TestProjectShardsMonthlyIndex(t *testing.T) {
 	held := append(days(twelveModels[:2], 3, 1, firstOfMonth),
 		indexCopies{Index: audit.IndexName("signalith", firstOfMonth), Copies: 1},
 		indexCopies{Index: audit.IndexName("signalith", firstOfMonth.AddDate(0, -1, 0)), Copies: 1})
-	p := projectShards("signalith", held, 8, 1000, func(string) int { return 90 }, firstOfMonth)
+	p := projectShards("signalith", held, 8, 1000, func(string) int { return 90 }, nil, 0, firstOfMonth)
 	if p.PerDay != 2 || p.Projected != 8-6+2*91 {
 		t.Errorf("%+v, want 2 shards a day and %d projected", p, 8-6+2*91)
+	}
+}
+
+// Every event data model of a single server, all kept 90 days and each
+// stored by month, as quiet data models are: over 130 days, which spans
+// month ends and the first deletions, one node stays far under its 1,000
+// shards and the Servers page never warns. The same models stored by day
+// would need 18 x 91 = 1,638 shards.
+func TestShardRoomByMonthOnOneNode(t *testing.T) {
+	const prefix = "signalith"
+	var models []string
+	for _, c := range retention.Categories() {
+		if c.Kind == retention.KindEvents {
+			models = append(models, c.ID)
+		}
+	}
+	if len(models) < 18 {
+		t.Fatalf("only %d event categories", len(models))
+	}
+	start := time.Now().UTC().Truncate(24 * time.Hour).Add(12 * time.Hour)
+	maxUsed := 0
+	for d := range 130 {
+		now := start.AddDate(0, 0, d)
+		today := now.Truncate(24 * time.Hour)
+		var held []indexCopies
+		used := 0
+		for _, name := range []string{prefix + "_findings", prefix + "_cases", prefix + "_intel", prefix + "_config", prefix + "_runtime"} {
+			held = append(held, indexCopies{Index: name, Copies: 1})
+			used++
+		}
+		// The months since the start whose last day retention keeps.
+		for m := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.UTC); !m.After(today); m = m.AddDate(0, 1, 0) {
+			if today.Sub(m.AddDate(0, 1, -1)) > 90*24*time.Hour {
+				continue
+			}
+			for _, model := range models {
+				held = append(held, indexCopies{Index: prefix + "-" + model + "-" + m.Format("2006.01"), Copies: 1, PerShard: 1 << 30})
+				used++
+			}
+		}
+		maxUsed = max(maxUsed, used)
+		limit := 1000
+		byMonth := func(string) bool { return true }
+		p := projectShards(prefix, held, used, limit, func(string) int { return 90 }, byMonth, 40<<30, now)
+		card := osCard{ShardsUsed: &used, ShardLimit: &limit}
+		card.ShardsPerDay, card.ShardsProjected, card.ShardsFullInDays, card.keepDays = &p.PerDay, &p.Projected, p.FullInDays, p.KeepDays
+		if w := shardWarning(card); w != "" {
+			t.Fatalf("day %d: warned %q (%d used, %d projected)", d, w, used, p.Projected)
+		}
+		if p.Projected > 150 {
+			t.Errorf("day %d: projected %d shards, want at most 150", d, p.Projected)
+		}
+	}
+	if maxUsed > 120 {
+		t.Errorf("at most %d shards, want at most 120", maxUsed)
+	}
+}
+
+// A model whose day would fill a monthly index within the month, or whose
+// month's index is full, is projected by day: the rest of its month goes
+// to daily indices.
+func TestProjectShardsBusyModelsByDay(t *testing.T) {
+	now := time.Now().UTC().Truncate(24 * time.Hour).Add(12 * time.Hour)
+	month := now.Format("2006.01")
+	held := []indexCopies{
+		{Index: "signalith-endpoint-" + now.Format("2006.01.02"), Copies: 1, PerShard: 5 << 30}, // 5 GB a day
+		{Index: "signalith-web-" + month, Copies: 1, PerShard: 41 << 30},                        // full
+		{Index: "signalith-web-" + now.Format("2006.01.02"), Copies: 1},
+		{Index: "signalith-authentication-" + month, Copies: 1, PerShard: 1 << 30},
+	}
+	byMonth := func(string) bool { return true }
+	p := projectShards("signalith", held, 4, 1000, func(string) int { return 90 }, byMonth, 40<<30, now)
+	// endpoint and web by day (91 each), authentication by month (5).
+	if want := 4 - 4 + 2*91 + 5; p.PerDay != 2 || p.Projected != want {
+		t.Errorf("%+v, want 2 shards a day and %d projected", p, want)
 	}
 }

@@ -1,7 +1,9 @@
 # Data retention
 
 Signalith keeps events in daily OpenSearch indices, one per data category and day
-(`<prefix>-endpoint-2026.10.12`). Retention policies decide, for each category:
+(`<prefix>-endpoint-2026.10.12`), or for a quiet category kept more than 30 days, one
+per month (`<prefix>-endpoint-2026.10`, see [Months stored as one index](#months-stored-as-one-index)).
+Retention policies decide, for each category:
 
 - how many days it stays searchable,
 - how large it may grow,
@@ -89,13 +91,35 @@ count toward a cap nor are deleted by it or by the disk guard.
 
 **Keep and the shard limit.** Each day of each data model is its own index, and
 OpenSearch allows at most `cluster.max_shards_per_node` shards (1,000 unless set)
-per data node. On one node, a data model kept 90 days holds 91 shards, so 11 or more
-data models kept 90 days fill the limit, and OpenSearch then refuses each new day's
-indices. The OpenSearch card on the Servers page warns ahead of that, from the data
-models written today and their keep days. Keeping fewer days, especially for
-categories you search least, makes room; so do more data nodes or a higher
-`cluster.max_shards_per_node`. See
-[How many shards a day uses](settings.md) under Shards. Compacted days still count.
+per data node. On one node, a data model kept 90 days by day holds 91 shards, so 11 or
+more such data models would fill the limit. That is why a quiet data model kept more
+than 30 days is stored by month instead (see [Months stored as one index](#months-stored-as-one-index)):
+then it holds 4 or 5 shards. The OpenSearch card on the Servers page warns ahead of
+the limit, from the data models written today and their keep days. Keeping fewer days,
+especially for categories you search least, makes room; so do more data nodes or a
+higher `cluster.max_shards_per_node`. See [How many shards a day uses](settings.md)
+under Shards. Compacted days still count.
+
+### Months stored as one index
+
+With **Store quiet data models by month** on (the default, `opensearch.monthly_indices`),
+a category whose policy keeps it more than 30 days or forever, with no size cap and no
+move to cold storage within 30 days, keeps its events of a month in one index,
+`<prefix>-<category>-YYYY.MM`, until that index holds the rollover size per primary
+shard. The rest of a busy month is stored by day, so the page can list a month and
+some days of it. Retention treats a month as a day that ends on the month's last day:
+
+- the current month is never deleted, compacted or moved;
+- **Keep** deletes a month once its last day is more than `keep_days` days old, so
+  with 90 days, October goes at the start of February. A month can stay up to a month
+  longer than its days would one by one;
+- **Compact after**, **Move to cold storage after**, the size caps and the disk guard
+  count a month's age from its last day too;
+- the archive holds a month as one file, restored as one index.
+
+Where days must go exactly on time, set a size cap on the category, or turn the setting
+off (in the OpenSearch card of the Settings page); policies of 30 days or fewer are
+always stored by day.
 
 A day that OpenSearch cannot read, because a primary shard is missing (a red index,
 for example while its node is down), is left alone: it is not deleted, archived or

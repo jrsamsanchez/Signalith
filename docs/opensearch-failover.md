@@ -115,7 +115,7 @@ Its warnings mean:
 | Shards on no node | OpenSearch could not place them, often for lack of disk or of nodes. `GET _cluster/allocation/explain` says why |
 | A disk past the low watermark | OpenSearch puts no new shards on that node. Free or add disk |
 | Signalith indices with no copy on another node | Set Replicas to `auto`. New days get a copy; to give an old day one too, set `index.number_of_replicas: 1` on it in OpenSearch |
-| OpenSearch holds, or will hold, 80% of the shards it allows | Keep fewer days, send fewer data models, add a data node, or raise `cluster.max_shards_per_node` (a soft limit). See Shards in [Settings](settings.md) |
+| OpenSearch holds, or will hold, 80% of the shards it allows | Keep quiet data models stored by month (the default), keep fewer days, send fewer data models, add a data node, or raise `cluster.max_shards_per_node` (a soft limit). See [What adds room for shards](scaling.md#what-adds-room-for-shards) |
 | Every primary shard of today's event indices on one node | Set `cluster.routing.allocation.balance.prefer_primary` and `cluster.routing.allocation.rebalance.primary.enable` to `true` (see above). OpenSearch then moves primaries to other nodes as it rebalances |
 
 When OpenSearch has more than one data node and **Replicas** is `0`, the card offers
