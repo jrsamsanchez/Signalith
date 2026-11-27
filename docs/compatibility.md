@@ -91,7 +91,7 @@ Missing: `estdc`, `exactperc`, `upperperc`, `earliest_time`, `latest_time`, `rat
 - **Conversion:** `tonumber`, `tostring`, `ipmask`
 - **Multivalue:** `mvappend`, `mvcount`, `mvdedup`, `mvfilter`, `mvfind`, `mvindex`,
   `mvjoin`, `mvmap`, `mvrange`, `mvsort`, `mvzip`
-- **JSON:** `spath`, `json_extract`, `json_keys`, `json_valid`, `json_array_to_mv`,
+- **JSON:** `spath`, `json_extract`, `json_keys`, `json_set`, `json_delete`, `json_valid`, `json_array_to_mv`,
   `json_object`, `json_array`
 - **Time:** `now`, `time`, `strftime`, `strptime`, `relative_time`
 

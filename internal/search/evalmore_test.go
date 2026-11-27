@@ -112,6 +112,39 @@ func TestJSONFunctionsCountTheirInput(t *testing.T) {
 	}
 }
 
+// json_set and json_delete change dotted object paths; a missing delete
+// target leaves the document as it is, and invalid JSON gives null.
+func TestJSONSetAndDelete(t *testing.T) {
+	src := `| makeresults | eval j="{\"a\":{\"b\":1},\"n\":3}"`
+	cases := map[string]any{
+		`json_set(j, "s", "x")`:            `{"a":{"b":1},"n":3,"s":"x"}`,
+		`json_set(j, "n", "y")`:            `{"a":{"b":1},"n":"y"}`,
+		`json_set(j, "a.c.d", true())`:      `{"a":{"b":1,"c":{"d":true}},"n":3}`,
+		`json_set(j, "a.b", 2, "z", 4.5)`:  `{"a":{"b":2},"n":3,"z":4.5}`,
+		`json_set(j, "n.x", 1)`:            nil,
+		`json_set("{", "s", 1)`:            nil,
+		`json_delete(j, "n")`:              `{"a":{"b":1}}`,
+		`json_delete(j, "missing", "a.b")`: `{"a":{},"n":3}`,
+		`json_delete(j, "a.zz.q")`:         `{"a":{"b":1},"n":3}`,
+		`json_delete("{", "n")`:            nil,
+	}
+	for expr, want := range cases {
+		res, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), src+" | eval r="+expr)
+		if err != nil {
+			t.Errorf("%s: %v", expr, err)
+			continue
+		}
+		if got := res.Rows[0]["r"]; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s = %#v, want %#v", expr, got, want)
+		}
+	}
+	for _, bad := range []string{`json_set(j, "s")`, `json_set(j, "s", 1, "t")`, `json_delete()`} {
+		if _, err := (&Engine{Store: &fakeStore{}}).Run(context.Background(), src+" | eval r="+bad); err == nil {
+			t.Errorf("%s succeeded", bad)
+		}
+	}
+}
+
 // A cancelled search stops at the next JSON decode.
 func TestJSONFunctionsStopWhenCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())

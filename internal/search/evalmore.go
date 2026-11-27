@@ -75,6 +75,47 @@ func (ev *evaluator) callMore(fn string, args []any) (any, bool) {
 		sort.Strings(keys)
 		b, _ := json.Marshal(keys)
 		return ev.str(string(b)), true
+	case "json_set", "json_delete":
+		// Paths are dotted object paths (a.b.c) only; invalid JSON, a
+		// path that is not an object path, or a non-object on the way to
+		// a path gives null.
+		if fn == "json_set" && len(args)%2 == 0 {
+			return ev.fail("json_set() takes a path and a value in pairs after the document"), true
+		}
+		s, ok := evStr(arg(0))
+		if !ok {
+			return nil, true
+		}
+		doc, ok := ev.parseJSON(s)
+		m, isObj := doc.(map[string]any)
+		if !ok || !isObj {
+			return nil, true
+		}
+		step := 1
+		if fn == "json_set" {
+			step = 2
+		}
+		for i := 1; i < len(args); i += step {
+			path, ok := evStr(args[i])
+			keys, ok2 := jsonPath(path)
+			if !ok || !ok2 {
+				return nil, true
+			}
+			if fn == "json_delete" {
+				deleteJSON(m, keys)
+				continue
+			}
+			var vb strings.Builder
+			writeJSONValue(&vb, args[i+1])
+			if !setJSON(m, keys, json.RawMessage(vb.String())) {
+				return nil, true
+			}
+		}
+		b, _ := json.Marshal(m)
+		if !ev.fits(len(b)) {
+			return nil, true
+		}
+		return ev.str(string(b)), true
 	case "json_array_to_mv":
 		s, ok := evStr(arg(0))
 		if !ok {
@@ -216,6 +257,54 @@ func (ev *evaluator) parseJSON(s string) (any, bool) {
 	doc, ok := parseJSON(s)
 	ev.jsonText, ev.jsonDoc, ev.jsonOK = s, doc, ok
 	return doc, ok
+}
+
+// jsonPath splits a dotted object path (a.b.c) into its keys; ok is false
+// for an empty path, an empty key, or a path too long to use.
+func jsonPath(path string) ([]string, bool) {
+	if path == "" || len(path) > query.MaxSpathPath {
+		return nil, false
+	}
+	keys := strings.Split(path, ".")
+	for _, k := range keys {
+		if k == "" {
+			return nil, false
+		}
+	}
+	return keys, true
+}
+
+// setJSON sets the value at keys in m, creating objects along the path where
+// a key is missing or null. It returns false when a step on the path is
+// neither an object nor missing.
+func setJSON(m map[string]any, keys []string, v json.RawMessage) bool {
+	for _, k := range keys[:len(keys)-1] {
+		next, exists := m[k]
+		if !exists || next == nil {
+			next = map[string]any{}
+			m[k] = next
+		}
+		child, isObj := next.(map[string]any)
+		if !isObj {
+			return false
+		}
+		m = child
+	}
+	m[keys[len(keys)-1]] = v
+	return true
+}
+
+// deleteJSON removes the key at keys from m; a path that does not exist
+// leaves m unchanged.
+func deleteJSON(m map[string]any, keys []string) {
+	for _, k := range keys[:len(keys)-1] {
+		child, isObj := m[k].(map[string]any)
+		if !isObj {
+			return
+		}
+		m = child
+	}
+	delete(m, keys[len(keys)-1])
 }
 
 // parseJSON decodes one JSON value, numbers kept exact.

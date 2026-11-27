@@ -113,6 +113,7 @@ var EvalFuncs = map[string][2]int{
 	"typeof": {1, 1}, "upper": {1, 1}, "urldecode": {1, 1},
 	"mvfilter": {1, 1}, "mvmap": {2, 2}, "mvfind": {2, 2}, "mvzip": {2, 3},
 	"spath": {2, 2}, "json_extract": {1, 2}, "json_keys": {1, 1}, "json_valid": {1, 1}, "json_array_to_mv": {1, 1},
+	"json_set": {3, -1}, "json_delete": {2, -1},
 	"json_object": {0, -1}, "json_array": {0, -1}, "relative_time": {2, 2}, "mvrange": {2, 3},
 	"printf": {1, -1}, "isint": {1, 1}, "validate": {2, -1},
 	"bit_and": {2, -1}, "bit_or": {2, -1}, "bit_xor": {2, -1}, "bit_not": {1, 2},
