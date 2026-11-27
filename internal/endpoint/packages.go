@@ -130,32 +130,47 @@ func (s *Store) SavePackages(ctx context.Context, n *Node, pl *PackageList) erro
 	return err
 }
 
+// packagesBatch is how many hosts' package lists one read fetches. A
+// list holds up to maxPackages packages, so a batch stays some tens of
+// megabytes at most.
+const packagesBatch = 25
+
 // HostPackages returns the package list of every Linux host that sent
-// one, read one host at a time.
+// one, read packagesBatch hosts at a time.
 func (s *Store) HostPackages(ctx context.Context) ([]*HostPackages, error) {
 	nodes, err := s.Nodes(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var out []*HostPackages
+	var linux []*Node
 	for _, n := range nodes {
-		if n.Platform != Linux {
-			continue
+		if n.Platform == Linux {
+			linux = append(linux, n)
 		}
-		src, _, found, err := s.Docs.Get(ctx, s.Index, packagesDocID(n.ID))
+	}
+	var out []*HostPackages
+	for i := 0; i < len(linux); i += packagesBatch {
+		batch := linux[i:min(i+packagesBatch, len(linux))]
+		refs := make([]store.Ref, len(batch))
+		for j, n := range batch {
+			refs[j] = store.Ref{Index: s.Index, ID: packagesDocID(n.ID)}
+		}
+		docs, err := s.Docs.MGet(ctx, refs)
 		if err != nil {
 			return nil, err
 		}
-		if !found {
-			continue
+		for j, n := range batch {
+			if j >= len(docs) || !docs[j].Found {
+				continue
+			}
+			var hp HostPackages
+			if json.Unmarshal(docs[j].Source, &hp) != nil || hp.NodeID != n.ID {
+				continue
+			}
+			// The name and addresses as the host has them now.
+			hp.Hostname, hp.IPs = n.Hostname, n.IPs
+			out = append(out, &hp)
 		}
-		var hp HostPackages
-		if json.Unmarshal(src, &hp) != nil || hp.NodeID != n.ID {
-			continue
-		}
-		// The name and addresses as the host has them now.
-		hp.Hostname, hp.IPs = n.Hostname, n.IPs
-		out = append(out, &hp)
 	}
 	return out, nil
 }

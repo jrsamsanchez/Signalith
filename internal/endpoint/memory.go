@@ -43,6 +43,19 @@ func (f *MemoryDocs) Get(_ context.Context, _, id string) (json.RawMessage, stor
 	return d.src, d.v, ok, nil
 }
 
+func (f *MemoryDocs) MGet(_ context.Context, refs []store.Ref) ([]store.Doc, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]store.Doc, len(refs))
+	for i, r := range refs {
+		out[i].Ref = r
+		if d, ok := f.docs[r.ID]; ok {
+			out[i].Found, out[i].Version, out[i].Source = true, d.v, d.src
+		}
+	}
+	return out, nil
+}
+
 func (f *MemoryDocs) Create(_ context.Context, _, id string, body any, _ bool) (store.Version, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

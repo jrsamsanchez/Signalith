@@ -280,6 +280,10 @@ func (p *PackageCheck) Run(ctx context.Context, x *Exploits) error {
 		names = append(names, name)
 	}
 	sort.Strings(names)
+	// Releases that share a download, such as Red Hat Enterprise Linux 8
+	// and 9, are read from one copy of it.
+	var feedOrder []string
+	due := map[string][]*osvFeed{}
 	for _, name := range names {
 		f := feeds[name]
 		if f == nil {
@@ -289,17 +293,33 @@ func (p *PackageCheck) Run(ctx context.Context, x *Exploits) error {
 		if !feedDue(f.status, now) {
 			continue
 		}
-		f.status.TriedAt = now.UTC()
-		idx, err := p.fetch(ctx, base, f.eco)
+		if due[f.eco.Feed] == nil {
+			feedOrder = append(feedOrder, f.eco.Feed)
+		}
+		due[f.eco.Feed] = append(due[f.eco.Feed], f)
+	}
+	for _, feed := range feedOrder {
+		fs := due[feed]
+		list := make([]Ecosystem, len(fs))
+		for i, f := range fs {
+			f.status.TriedAt = now.UTC()
+			list[i] = f.eco
+		}
+		idxs, err := p.fetch(ctx, base, feed, list)
 		if err != nil {
-			f.status.Error = err.Error()
+			for _, f := range fs {
+				f.status.Error = err.Error()
+				p.log().Warn("package check: could not download a distribution's advisories; the last copy is used", "ecosystem", f.eco.Name, "err", err)
+			}
 			errs = append(errs, err)
-			p.log().Warn("package check: could not download a distribution's advisories; the last copy is used", "ecosystem", name, "err", err)
 			continue
 		}
-		f.index, refreshed = idx, true
-		f.status = FeedStatus{Count: idx.Advisories, FetchedAt: now.UTC(), TriedAt: now.UTC()}
-		p.log().Info("package check: advisories downloaded", "ecosystem", name, "advisories", idx.Advisories)
+		for i, f := range fs {
+			idx := idxs[i]
+			f.index, refreshed = idx, true
+			f.status = FeedStatus{Count: idx.Advisories, FetchedAt: now.UTC(), TriedAt: now.UTC()}
+			p.log().Info("package check: advisories downloaded", "ecosystem", f.eco.Name, "advisories", idx.Advisories)
+		}
 	}
 	// Releases no host runs any more are let go.
 	p.mu.Lock()
@@ -436,14 +456,16 @@ func findingsSig(h *Host) string {
 	return hex.EncodeToString(sum.Sum(nil))
 }
 
-// fetch reads one release's advisories: downloaded to a temporary file,
-// as a zip is read from its end, or from a folder on this server.
-func (p *PackageCheck) fetch(ctx context.Context, base string, eco Ecosystem) (*OSVIndex, error) {
+// fetch reads the advisories of the releases that share one download,
+// once: downloaded to a temporary file, as a zip is read from its end, or
+// from a folder on this server. It returns an index for each release, in
+// the order given.
+func (p *PackageCheck) fetch(ctx context.Context, base, feed string, ecos []Ecosystem) ([]*OSVIndex, error) {
 	if dir, ok := osvFolder(base); ok {
 		// Windows allows no : in a folder name, so Debian_12 also works.
-		fh, err := os.Open(filepath.Join(dir, eco.Feed, "all.zip"))
+		fh, err := os.Open(filepath.Join(dir, feed, "all.zip"))
 		if err != nil {
-			fh, err = os.Open(filepath.Join(dir, strings.ReplaceAll(eco.Feed, ":", "_"), "all.zip"))
+			fh, err = os.Open(filepath.Join(dir, strings.ReplaceAll(feed, ":", "_"), "all.zip"))
 		}
 		if err != nil {
 			return nil, err
@@ -456,9 +478,9 @@ func (p *PackageCheck) fetch(ctx context.Context, base string, eco Ecosystem) (*
 		if fi.Size() > maxOSVZip {
 			return nil, fmt.Errorf("the advisories are larger than %d MB", maxOSVZip>>20)
 		}
-		return ReadOSVZip(ctx, fh, fi.Size(), eco)
+		return ReadOSVZipAll(ctx, fh, fi.Size(), ecos)
 	}
-	src := strings.TrimRight(base, "/") + "/" + url.PathEscape(eco.Feed) + "/all.zip"
+	src := strings.TrimRight(base, "/") + "/" + url.PathEscape(feed) + "/all.zip"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, src, nil)
 	if err != nil {
 		return nil, err
@@ -474,7 +496,7 @@ func (p *PackageCheck) fetch(ctx context.Context, base string, eco Ecosystem) (*
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s answered %s for %s", hostOf(src), resp.Status, eco.Feed)
+		return nil, fmt.Errorf("%s answered %s for %s", hostOf(src), resp.Status, feed)
 	}
 	if resp.ContentLength > maxOSVZip {
 		return nil, fmt.Errorf("the advisories are larger than %d MB", maxOSVZip>>20)
@@ -494,7 +516,7 @@ func (p *PackageCheck) fetch(ctx context.Context, base string, eco Ecosystem) (*
 	if n > maxOSVZip {
 		return nil, fmt.Errorf("the advisories are larger than %d MB", maxOSVZip>>20)
 	}
-	return ReadOSVZip(ctx, tmp, n, eco)
+	return ReadOSVZipAll(ctx, tmp, n, ecos)
 }
 
 // osvFolder reports whether an advisories address is a folder on this

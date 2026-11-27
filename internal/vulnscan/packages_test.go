@@ -252,11 +252,11 @@ func TestPackageCheckFolderAndLimits(t *testing.T) {
 	maxOSVZip = int64(len(big) - 1)
 	defer func() { maxOSVZip = old }()
 	e, _ := EcosystemFor("ubuntu", "22.4")
-	if _, err := p.fetch(ctx, srv.URL, e); err == nil || !strings.Contains(err.Error(), "larger than") {
+	if _, err := p.fetch(ctx, srv.URL, e.Feed, []Ecosystem{e}); err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Errorf("oversized download = %v", err)
 	}
 	maxOSVZip = int64(len(big))
-	if _, err := p.fetch(ctx, srv.URL, e); err != nil {
+	if _, err := p.fetch(ctx, srv.URL, e.Feed, []Ecosystem{e}); err != nil {
 		t.Errorf("download at the cap = %v", err)
 	}
 }
@@ -307,5 +307,57 @@ func TestScannerRunsPackageCheck(t *testing.T) {
 	}
 	if inv.reads != 0 {
 		t.Error("checked on a server that does not run the jobs")
+	}
+}
+
+// osvRedHat89 is one Red Hat advisory that fixes both releases.
+const osvRedHat89 = `{"id":"RHSA-2024:0001","upstream":["CVE-2023-38408"],"summary":"Important: openssh security update",
+"affected":[{"package":{"name":"openssh-server","ecosystem":"Red Hat:enterprise_linux:8::baseos"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"0:8.0p1-19.el8_8"}]}]},
+ {"package":{"name":"openssh-server","ecosystem":"Red Hat:enterprise_linux:9::baseos"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"0:8.7p1-30.el9_2"}]}]}]}`
+
+func TestPackageCheckReadsASharedDownloadOnce(t *testing.T) {
+	var downloads atomic.Int32
+	rh := osvZip(t, map[string]string{"RHSA-2024:0001.json": osvRedHat89})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/Red Hat/all.zip" {
+			http.NotFound(w, r)
+			return
+		}
+		downloads.Add(1)
+		w.Write(rh)
+	}))
+	defer srv.Close()
+	now := time.Now().UTC()
+	inv := &fakeInventory{hosts: []*endpoint.HostPackages{
+		pkgHost("n1", "rhel8", "rhel", "8.8", now.Add(-time.Hour), endpoint.Package{Name: "openssh-server", Version: "8.0p1-17.el8", Type: "rpm"}),
+		pkgHost("n2", "rhel9", "rhel", "9.2", now.Add(-time.Hour), endpoint.Package{Name: "openssh-server", Version: "8.7p1-29.el9", Type: "rpm"}),
+	}}
+	st := NewStore(endpoint.NewMemoryDocs(), "signalith")
+	p := NewPackageCheck(st, inv, srv.URL)
+	p.Now, p.TempDir = func() time.Time { return now }, t.TempDir()
+	ctx := context.Background()
+	if err := p.Run(ctx, nil); err != nil {
+		t.Fatal(err)
+	}
+	if n := downloads.Load(); n != 1 {
+		t.Errorf("Red Hat downloads = %d, want 1 for both releases", n)
+	}
+	hosts, err := st.Hosts(ctx)
+	if err != nil || len(hosts) != 2 {
+		t.Fatalf("hosts = %+v, %v", hosts, err)
+	}
+	for _, h := range hosts {
+		if len(h.Services) != 1 || len(h.Services[0].Vulns) != 1 || h.Services[0].Vulns[0].CVE != "CVE-2023-38408" {
+			t.Errorf("%s = %+v", h.Hostname, h.Services)
+			continue
+		}
+		want := map[string]string{"rhel8": "0:8.0p1-19.el8_8", "rhel9": "0:8.7p1-30.el9_2"}[h.Hostname]
+		if got := h.Services[0].Vulns[0].Fixed; got != want {
+			t.Errorf("%s fixed in %q, want %q", h.Hostname, got, want)
+		}
+	}
+	stat, err := p.Status(ctx)
+	if err != nil || len(stat.Feeds) != 2 || stat.Feeds["Red Hat:enterprise_linux:8"].Count != 1 || stat.Feeds["Red Hat:enterprise_linux:9"].Count != 1 {
+		t.Errorf("status = %+v, %v", stat, err)
 	}
 }
