@@ -38,6 +38,7 @@ var Features = []Feature{
 	{"detection_epochs", "Detection run state ready to spread across servers", LevelDetectionEpochs, (*Runtime).DetectionEpochs},
 	{"builtin_off", "Turn off the built-in admin", LevelBuiltinOff, (*Runtime).BuiltinOff},
 	{"agent_host_keys", "A key of its own for each agent computer", LevelAgentHostKeys, (*Runtime).AgentHostKeys},
+	{"monthly_indices", "Quiet data models stored by month", LevelMonthlyIndices, (*Runtime).MonthlyIndices},
 }
 
 // FeatureState is whether a feature is on, on this server, and if not

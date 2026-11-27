@@ -175,6 +175,7 @@ nav:
       - Cloud test lab: cloud-lab.md
       - Public demo: demo.md
       - Performance and sizing: performance.md
+      - Sizing and scaling out: scaling.md
       - Summary indexes: summaries.md
       - Data retention: retention.md
       - Backup and restore: backup.md

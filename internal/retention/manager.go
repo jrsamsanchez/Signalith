@@ -840,20 +840,25 @@ func (m *Manager) apply(ctx context.Context, d Decision, today time.Time) Action
 	act := Action{Time: m.now(), Action: d.Action, Category: d.Category, Index: d.Index, Day: d.Day,
 		Bytes: d.Bytes, Rule: d.Rule, Reason: d.Reason}
 	cat, day, ok := ParseIndex(m.Prefix, d.Index)
+	// A month of events holds events up to its last day.
+	last := day
+	if ok && EventMonth(m.Prefix, d.Index) {
+		last = monthEnd(day)
+	}
 	switch {
 	case !ok || cat != d.Category:
 		act.Error = "refused: not a Signalith daily or monthly index"
 		return act
-	case d.Removes() && !day.Before(today):
+	case d.Removes() && !last.Before(today):
 		act.Error = "refused: today's and future days are never deleted"
 		return act
 	case isMonthly(cat) && (d.Action == ActionCompact || !monthEnd(day).Before(today)):
 		act.Error = "refused: the current month is never deleted, and monthly indices are never compacted"
 		return act
-	case d.Action == ActionCompact && !day.Before(today.AddDate(0, 0, -1)):
+	case d.Action == ActionCompact && !last.Before(today.AddDate(0, 0, -1)):
 		act.Error = "refused: today and yesterday are never compacted"
 		return act
-	case d.Action == ActionCold && (isMonthly(cat) || !day.Before(today.AddDate(0, 0, -1))):
+	case d.Action == ActionCold && (isMonthly(cat) || !last.Before(today.AddDate(0, 0, -1))):
 		act.Error = "refused: today, yesterday and monthly indices never move to cold storage"
 		return act
 	case (d.Action == ActionMount || d.snapshotOnly) && d.Snapshot == "":
@@ -1779,32 +1784,39 @@ func (m *Manager) Overview(ctx context.Context) *Overview {
 			continue
 		}
 		cv := byCat[cat]
-		ds := day.Format(time.DateOnly)
 		cv.Docs += ix.Docs
 		if ix.Cold != nil {
-			if once("cold", cat, ds) {
-				cv.ColdDays++
-				ov.Cold.Days++
-			}
 			cv.ColdBytes += ix.Bytes
 			ov.Cold.Bytes += ix.Bytes
 		} else {
 			cv.Bytes += ix.Bytes
 		}
-		if once("day", cat, ds) {
-			cv.Days++
+		// A month of events counts each of its days, up to today.
+		last := lastDay(m.Prefix, ix.Name, day)
+		if t := startOfDay(st.snap.Now); last.After(t) && !day.After(t) {
+			last = t
 		}
-		if cv.OldestDay == "" || ds < cv.OldestDay {
-			cv.OldestDay = ds
-		}
-		if ds > cv.NewestDay {
-			cv.NewestDay = ds
-		}
-		if ix.Compacted() && ix.Cold == nil && once("compacted", cat, ds) {
-			cv.CompactedDays++
-		}
-		if ix.RestoredUntil != "" && ix.RestoredUntil >= plan.Today && once("restored", cat, ds) {
-			cv.RestoredDays++
+		for d := day; !d.After(last); d = d.AddDate(0, 0, 1) {
+			ds := d.Format(time.DateOnly)
+			if ix.Cold != nil && once("cold", cat, ds) {
+				cv.ColdDays++
+				ov.Cold.Days++
+			}
+			if once("day", cat, ds) {
+				cv.Days++
+			}
+			if cv.OldestDay == "" || ds < cv.OldestDay {
+				cv.OldestDay = ds
+			}
+			if ds > cv.NewestDay {
+				cv.NewestDay = ds
+			}
+			if ix.Compacted() && ix.Cold == nil && once("compacted", cat, ds) {
+				cv.CompactedDays++
+			}
+			if ix.RestoredUntil != "" && ix.RestoredUntil >= plan.Today && once("restored", cat, ds) {
+				cv.RestoredDays++
+			}
 		}
 		if ix.DiskBlocked {
 			ov.DiskBlocked++

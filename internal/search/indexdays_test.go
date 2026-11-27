@@ -47,16 +47,18 @@ func TestNarrowToDays(t *testing.T) {
 	}{
 		// All data and one data model, within a day.
 		{"signalith-*,-signalith-risk-*", "2026-10-17T10:00:00Z", "2026-10-17T12:00:00Z",
-			"signalith-*-2026.10.17*,-signalith-risk-*"},
-		{"signalith-network-*", "2026-10-17T10:00:00Z", "2026-10-17T12:00:00Z", "signalith-network-2026.10.17*"},
+			"signalith-*-2026.10.17*,signalith-*-2026.10,-signalith-risk-*"},
+		{"signalith-network-*", "2026-10-17T10:00:00Z", "2026-10-17T12:00:00Z", "signalith-network-2026.10.17*,signalith-network-2026.10"},
 		// An hour either side reaches the day before and after.
 		{"signalith-network-*", "2026-10-17T00:30:00Z", "2026-10-17T23:30:00Z",
-			"signalith-network-2026.10.16*,signalith-network-2026.10.17*,signalith-network-2026.10.18*"},
-		// Whole months and years are one pattern each.
+			"signalith-network-2026.10.16*,signalith-network-2026.10,signalith-network-2026.10.17*,signalith-network-2026.10.18*"},
+		// Whole months and years are one pattern each, and each month
+		// names its monthly index (a whole year's pattern covers them).
 		{"signalith-network-*", "2026-09-30T12:00:00Z", "2026-11-02T12:00:00Z",
-			"signalith-network-2026.09.30*,signalith-network-2026.10.*,signalith-network-2026.11.01*,signalith-network-2026.11.02*"},
+			"signalith-network-2026.09.30*,signalith-network-2026.09,signalith-network-2026.10.*,signalith-network-2026.10," +
+				"signalith-network-2026.11.01*,signalith-network-2026.11,signalith-network-2026.11.02*"},
 		{"signalith-network-*", "2024-12-31T12:00:00Z", "2026-01-01T12:00:00Z",
-			"signalith-network-2024.12.31*,signalith-network-2025.*,signalith-network-2026.01.01*"},
+			"signalith-network-2024.12.31*,signalith-network-2024.12,signalith-network-2025.*,signalith-network-2026.01.01*,signalith-network-2026.01"},
 		// Patterns it does not know stay as they are.
 		{"signalith-network-2026.10.*", "2026-10-17T10:00:00Z", "2026-10-17T12:00:00Z", "signalith-network-2026.10.*"},
 		{"signalith-net*", "2026-10-17T10:00:00Z", "2026-10-17T12:00:00Z", "signalith-net*"},

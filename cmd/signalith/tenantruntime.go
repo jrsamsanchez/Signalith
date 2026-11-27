@@ -338,7 +338,8 @@ func (t *tenantRuntime) start(id string) (*tenantInstance, error) {
 	}
 	maxAge := c.MaxEventAge(retentionKeepDays(ret))
 	pipeline := &ingest.Pipeline{Store: store.NewBulkGroup(cl, 0), Prefix: prefix, MaxEventAge: maxAge, Limits: t.limits, Tenant: id, Log: log,
-		Rollover: &ingest.Rollover{Client: cl, Prefix: prefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log}}
+		Rollover: &ingest.Rollover{Client: cl, Prefix: prefix, MaxShardBytes: c.OpenSearch.RolloverBytes(), Log: log,
+			ByMonth: byMonth(c, ret, t.r.shared)}}
 	pipeline.SetURLQuery(c.URLQueryMode())
 	pipeline.Servers = func() int { return t.r.node.IndexingServers(10 * time.Minute) }
 	pipeline.FieldCount = ingest.MappingFieldCount(cl)

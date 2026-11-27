@@ -41,7 +41,7 @@ func TestProjectShards(t *testing.T) {
 	// One node, twelve models a day, kept 90 days: 12 x 91 = 1,092 shards
 	// once retention runs, though only 300 are held after 20 days.
 	held := append(days(twelveModels, 20, 1, now), indexCopies{Index: "signalith_config", Copies: 1})
-	p := projectShards("signalith", held, 260, 1000, keep90, now)
+	p := projectShards("signalith", held, 260, 1000, keep90, nil, 0, now)
 	if p.PerDay != 12 || p.Projected != 260-240+1092 || p.KeepDays != 91 || p.FullInDays != nil {
 		t.Errorf("one node: %+v", p)
 	}
@@ -49,14 +49,14 @@ func TestProjectShards(t *testing.T) {
 	// Just after midnight only one model has written today: yesterday's
 	// count stands for the others.
 	held = append(days(twelveModels, 5, 2, now.AddDate(0, 0, -1)), indexCopies{Index: "signalith-other-" + now.UTC().Format("2006.01.02"), Copies: 2})
-	if p := projectShards("signalith", held, 122, 2000, keep90, now); p.PerDay != 24 {
+	if p := projectShards("signalith", held, 122, 2000, keep90, nil, 0, now); p.PerDay != 24 {
 		t.Errorf("after midnight: %+v", p)
 	}
 
 	// Rollover parts of one day add up.
 	held = []indexCopies{{Index: "signalith-network_traffic-" + now.UTC().Format("2006.01.02"), Copies: 2},
 		{Index: "signalith-network_traffic-" + now.UTC().Format("2006.01.02") + "-2", Copies: 2}}
-	if p := projectShards("signalith", held, 4, 1000, func(string) int { return 9 }, now); p.PerDay != 4 || p.Projected != 40 {
+	if p := projectShards("signalith", held, 4, 1000, func(string) int { return 9 }, nil, 0, now); p.PerDay != 4 || p.Projected != 40 {
 		t.Errorf("parts: %+v", p)
 	}
 
@@ -68,7 +68,7 @@ func TestProjectShards(t *testing.T) {
 		return 7
 	}
 	held = days([]string{"other", "endpoint"}, 3, 1, now)
-	p = projectShards("signalith", held, 106, 1000, keep, now)
+	p = projectShards("signalith", held, 106, 1000, keep, nil, 0, now)
 	if p.Projected != 106-3+8 || p.FullInDays == nil || *p.FullInDays != (800-111)/1 {
 		t.Errorf("forever: %+v %v", p, p.FullInDays)
 	}

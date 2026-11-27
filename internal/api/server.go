@@ -308,6 +308,11 @@ type Server struct {
 	// (every server reads shared.LevelAgentHostKeys); nil is always, for a
 	// server without a cluster.
 	AgentHostKeys func() bool
+	// MonthlyIndices reports whether every server reads monthly event
+	// indices (shared.LevelMonthlyIndices), so quiet data models are
+	// stored by month; the OpenSearch card's shard projection counts them
+	// so. Nil projects every model by day.
+	MonthlyIndices func() bool
 	// Upgrade judges whether the next server may be upgraded, for the
 	// Servers page's checklist (GET /api/cluster/upgrade); nil on a
 	// server without a cluster.

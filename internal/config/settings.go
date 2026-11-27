@@ -391,6 +391,9 @@ var Registry = []Setting{
 		Help: "How large a day's index of one data model may grow, per primary shard, before that day's events continue in a new index (such as signalith-network-2026.10.17-2). " +
 			"Smaller shards merge, move and recover faster. Searches, retention and archives treat the parts of a day as that day.",
 		Placeholder: "40", EmptyMeans: "40"},
+	{Key: "opensearch.monthly_indices", Scope: ScopeCluster, Section: "opensearch", Label: "Store quiet data models by month", Type: TypeBool, Restart: true,
+		Help: "Keeps the events of a data model kept more than 30 days in one index a month instead of one a day, until that month holds a rollover size per shard; the rest of a busy month is stored by day. " +
+			"OpenSearch holds about 30 times fewer shards, so one node can keep every data model for months. A month is deleted once its last day is older than its retention. On by default; turn it off to store every day apart."},
 	{Key: "cluster.opensearch_url", Scope: ScopeCluster, Section: "opensearch", Label: "Address for new servers", Type: TypeURL, SharedOnly: true,
 		Help: "The OpenSearch address a new server is given when it is added to these servers, when it reaches OpenSearch another way than this one does: " +
 			"each server's own Address above may be, for one, 127.0.0.1.",
@@ -944,6 +947,8 @@ func (c *Config) Value(key string) any {
 		return c.LeaderEligible()
 	case "detections.spread":
 		return c.Detections.SpreadOn()
+	case "opensearch.monthly_indices":
+		return c.OpenSearch.MonthlyOn()
 	}
 	if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.String {
 		out := make([]string, v.Len())

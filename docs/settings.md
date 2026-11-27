@@ -118,16 +118,35 @@ minutes); days already stored keep the shards they have, and a day restored from
 archive gets the current setting. Findings, investigations and threat intel always
 have one shard; they are small.
 
-**How many shards a day uses.** Each UTC day adds one index per data model that
-receives events, and each index holds its primary shards times one plus its
-replicas. A day's index stays until retention deletes it, so a data model kept 90
-days holds 91 days of indices (today and the 90 before it). For example, one
-OpenSearch node receiving Windows and Sysmon events writes about 12 data models a
-day: 12 x 91 = 1,092 shards, more than the 1,000 one node allows, so about 12 weeks
-after install OpenSearch would refuse the day's new indices. Two nodes with automatic
-shards and replicas (2 primaries and 1 replica = 4 copies per index) reach their
-2,000 within the same 90 days. The limit counts every open index, Signalith's own
-and OpenSearch's system indices too.
+**How many shards a day uses.** A data model's events go to one index a day, or, for
+a quiet one, one a month (see **Store quiet data models by month** below). Each index
+holds its primary shards times one plus its replicas, and stays until retention
+deletes it. Stored by day, a data model kept 90 days holds 91 indices (today and the 90
+before it); stored by month, it holds 4 or 5. For example, one OpenSearch node receiving
+Windows and Sysmon events writes about 12 data models: by day that would be
+12 x 91 = 1,092 shards, more than the 1,000 one node allows, so about 12 weeks after
+install OpenSearch would refuse the day's new indices. By month it is about 60. The
+limit counts every open index, Signalith's own and OpenSearch's system indices too.
+See [Sizing and scaling out](scaling.md) for the numbers on more nodes and servers.
+
+**Store quiet data models by month** (`opensearch.monthly_indices`), in the same card,
+is on by default. A data model whose retention policy keeps it more than 30 days (or
+forever), with no size cap and no move to cold storage within 30 days, keeps a whole
+month of events in one index, `<prefix>-<datamodel>-YYYY.MM`, such as
+`signalith-network_resolution-2026.11`. That month's index takes events until it holds
+the rollover size per primary shard (40 GB unless set), or has many field names
+(1,600, about 550 more than Signalith's own); the rest of that month is then stored by
+day as before (an event sent again after that is stored again in its day's index, as
+with rollover parts). So a busy data model stays daily, and a quiet one uses about 30
+times fewer shards. Searches, detections, summaries, retention, cold storage and the archive
+read both kinds. A month is deleted, compacted or moved to cold storage once its last
+day is old enough, so it can stay up to a month longer than its days would one by one;
+turn the setting off, or give the category a size cap, where days must go exactly on
+time. Policies of 30 days or fewer always store by day: 31 days of every data model
+fit on one node. The setting applies after a restart, from the next month for data
+models already written this month. On servers that share an OpenSearch it starts once
+every server runs a version that reads monthly indices (cluster level 14, shown on the
+**Servers** page).
 
 Signalith warns before that happens: the OpenSearch card on the Servers page shows
 the shards in use against the limit, and warns when OpenSearch holds 80% of the
@@ -138,9 +157,10 @@ the server logs a warning naming `cluster.max_shards_per_node`, and answers
 senders that the events could not be stored for now, so agents, Fluent Bit and HEC
 senders send them again once there is room (syslog cannot be asked to send again).
 
-To make room, keep fewer days on the [Data retention](retention.md) page (the
-categories you need least first), send fewer data models, add an OpenSearch data
-node (the limit is per data node), or raise the limit. `cluster.max_shards_per_node`
+To make room, keep **Store quiet data models by month** on, keep fewer days on the
+[Data retention](retention.md) page (the categories you need least first), send fewer
+data models, add an OpenSearch data node (the limit is per data node), or raise the
+limit. `cluster.max_shards_per_node`
 is a soft limit meant to stop runaway index creation, and the indices of quiet data
 models are small; raise it on nodes with enough memory, as each shard costs some heap.
 Raise it in OpenSearch's Dev Tools or with curl:

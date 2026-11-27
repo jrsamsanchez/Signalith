@@ -5,7 +5,8 @@ that share one OpenSearch cost it, are measured with `signalith-loadgen`, a sepa
 program in the repository that plays many agents, syslog devices, people and attackers
 at once. It is built and tested with Signalith but not shipped in the packages or the
 image. The [lab runbook](https://github.com/jrsamsanchez/Signalith/blob/main/loadtest/README.md)
-says how to run it, on a laptop or in a lab.
+says how to run it, on a laptop or in a lab. What to add, and in what order, as an
+install grows is in [Sizing and scaling out](scaling.md).
 
 ## How it measures
 

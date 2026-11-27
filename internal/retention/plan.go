@@ -301,7 +301,9 @@ func startOfDay(t time.Time) time.Time {
 // function of the snapshot and settings, so previews and runs agree.
 //
 // The rules, in order:
-//   - Names that are not <prefix>-<category>-YYYY.MM.DD are skipped.
+//   - Names that are not <prefix>-<category>-YYYY.MM.DD are skipped. A
+//     month of a quiet category, <prefix>-<category>-YYYY.MM, is a day
+//     that ends on the month's last day: its age counts from then.
 //   - Today's and future-dated indices are always kept, as are restored
 //     indices until their keep-until day.
 //   - keep_days: days more than keep_days before today are deleted.
@@ -348,17 +350,19 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 			e.cold, e.hold, e.Snapshot = true, true, ix.Cold.Snapshot
 		}
 		e.Action = ActionKeep
-		monthly := isMonthly(cat)
+		records, events := isMonthly(cat), EventMonth(snap.Prefix, ix.Name)
+		monthly := records || events
 		if monthly {
-			// A month counts from its last day, and only keep_days removes
-			// it: size caps and the disk guard never touch it.
+			// A month counts from its last day. Only keep_days removes a
+			// month of records: size caps and the disk guard never touch
+			// it. A month of events is a day like any other once it ends.
 			e.age = int(today.Sub(monthEnd(day)).Hours() / 24)
-			e.hold = true
+			e.hold = records
 		}
 		switch {
 		case monthly && !ix.Unavailable && e.age <= 0 && !(ix.RestoredUntil != "" && ix.RestoredUntil >= todayKey):
 			e.age = 0
-			e.Reason = "This month's records"
+			e.Reason = map[bool]string{true: "This month's records", false: "This month's events"}[records]
 		case ix.Unavailable:
 			// Its size and events are unknown, and deleting it now would
 			// lose what is on the missing shard.
@@ -408,6 +412,7 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 			if !ok || isMonthly(cat) {
 				continue
 			}
+			last := lastDay(snap.Prefix, sn.Index, day)
 			if i := slices.IndexFunc(ents, func(e *entry) bool { return e.Index == sn.Index && !e.cold }); i >= 0 &&
 				ColdSnapshotName(ents[i].Index, ents[i].uuid) == sn.Name {
 				// Left by a move that stopped before the index was deleted.
@@ -417,7 +422,7 @@ func PlanIndices(snap Snapshot, s Settings) *Plan {
 			pol, src := s.For(cat)
 			e := &entry{Decision: Decision{Index: sn.Index, Category: cat, Day: day.Format(time.DateOnly), Source: src,
 				Snapshot: sn.Name, snapshotOnly: true, cold: true, hold: true}, dayT: day}
-			e.age = int(today.Sub(day).Hours() / 24)
+			e.age = int(today.Sub(last).Hours() / 24)
 			past := pol.KeepDays > 0 && e.age > pol.KeepDays
 			switch {
 			case past && !pol.Archive:

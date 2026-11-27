@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"maps"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jrsamsanchez/signalith/internal/datamodel"
@@ -147,6 +148,24 @@ type Policy struct {
 
 // CapBytes returns the size cap in bytes, 0 for none.
 func (p Policy) CapBytes() int64 { return int64(p.MaxSizeGB * GB) }
+
+// MonthlyMinKeepDays is the keep_days a category needs, beyond this, to be
+// stored by month (see ByMonth). A category kept a month or less holds at
+// most 31 days of shards stored by day, which one node takes for every
+// data model.
+const MonthlyMinKeepDays = 30
+
+// ByMonth reports whether a category with this policy may be stored in
+// monthly indices: it is kept forever or more than MonthlyMinKeepDays, has
+// no size cap, and moves to cold storage, if at all, after more than
+// MonthlyMinKeepDays. A month is deleted, moved or compacted only once its
+// last day is old enough, so a month stays up to a month past the days a
+// daily index would; a size cap or an early move to cold storage asks for
+// the precision of days.
+func (p Policy) ByMonth() bool {
+	return (p.KeepDays == 0 || p.KeepDays > MonthlyMinKeepDays) && p.MaxSizeGB <= 0 &&
+		(p.ColdAfterDays == 0 || p.ColdAfterDays > MonthlyMinKeepDays)
+}
 
 // Deletes reports whether the policy ever deletes anything.
 func (p Policy) Deletes() bool { return p.KeepDays > 0 || p.MaxSizeGB > 0 }
@@ -575,4 +594,41 @@ func (s Settings) apply(ch Change) (Settings, error) {
 		return s, &PolicyError{Problems: []string{"set one of category, default or guard"}}
 	}
 	return out, nil
+}
+
+// ByMonthCheck is how long ByMonthFunc reuses the settings it read.
+const ByMonthCheck = time.Minute
+
+// ByMonthFunc returns, for ingest, whether a data model's events may go
+// to monthly indices under the policy of its category (Policy.ByMonth),
+// as settings returns it. The settings are read again at most every
+// ByMonthCheck; a model without a category of its own is stored by day,
+// and so is every model while no settings could be read.
+func ByMonthFunc(settings func() (Settings, error)) func(model string) bool {
+	var mu sync.Mutex
+	var cached Settings
+	var have bool
+	var at time.Time
+	return func(model string) bool {
+		mu.Lock()
+		if at.IsZero() || time.Since(at) >= ByMonthCheck {
+			// Settings that could not be read keep what was read before;
+			// until some are read, every model is stored by day.
+			if s, err := settings(); err == nil {
+				cached, have = s, true
+			}
+			at = time.Now()
+		}
+		s, ok := cached, have
+		mu.Unlock()
+		if !ok {
+			return false
+		}
+		id := strings.ToLower(model)
+		if c, ok := CategoryByID(id); !ok || c.Kind != KindEvents {
+			return false
+		}
+		pol, _ := s.For(id)
+		return pol.ByMonth()
+	}
 }

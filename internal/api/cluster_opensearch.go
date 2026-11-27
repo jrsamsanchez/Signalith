@@ -171,9 +171,10 @@ func (s *Server) handleClusterOpenSearch(w http.ResponseWriter, r *http.Request)
 		Index string `json:"index"`
 		Pri   any    `json:"pri"`
 		Rep   any    `json:"rep"`
+		Size  any    `json:"pri.store.size"`
 	}
 	var held []indexCopies
-	path := "/_cat/indices/" + url.PathEscape(prefix+"-*") + "," + url.PathEscape(prefix+"_*") + "?format=json&h=index,pri,rep&expand_wildcards=open"
+	path := "/_cat/indices/" + url.PathEscape(prefix+"-*") + "," + url.PathEscape(prefix+"_*") + "?format=json&h=index,pri,rep,pri.store.size&bytes=b&expand_wildcards=open"
 	listed := oc.Do(ctx, http.MethodGet, path, nil, &indices) == nil
 	if listed {
 		for _, ix := range indices {
@@ -185,7 +186,11 @@ func (s *Server) handleClusterOpenSearch(w http.ResponseWriter, r *http.Request)
 			if !okPri || pri < 1 {
 				pri = 1
 			}
-			held = append(held, indexCopies{Index: ix.Index, Copies: pri * (1 + max(rep, 0))})
+			ic := indexCopies{Index: ix.Index, Copies: pri * (1 + max(rep, 0))}
+			if size, ok := number(ix.Size); ok {
+				ic.PerShard = int64(size) / int64(pri)
+			}
+			held = append(held, ic)
 		}
 		sort.Strings(out.NoReplicas)
 	}
@@ -197,7 +202,14 @@ func (s *Server) handleClusterOpenSearch(w http.ResponseWriter, r *http.Request)
 				p, _ := settings.For(category)
 				return p.KeepDays
 			}
-			p := projectShards(prefix, held, used, limit, keep, time.Now())
+			var byMonth func(string) bool
+			if s.MonthlyIndices != nil && s.MonthlyIndices() && s.conf().OpenSearch.MonthlyOn() {
+				byMonth = func(category string) bool {
+					p, _ := settings.For(category)
+					return p.ByMonth()
+				}
+			}
+			p := projectShards(prefix, held, used, limit, keep, byMonth, s.conf().OpenSearch.RolloverBytes(), time.Now())
 			out.ShardsPerDay, out.ShardsProjected, out.ShardsFullInDays = &p.PerDay, &p.Projected, p.FullInDays
 			out.keepDays = p.KeepDays
 		}
@@ -210,7 +222,9 @@ func (s *Server) handleClusterOpenSearch(w http.ResponseWriter, r *http.Request)
 			PriRep string `json:"prirep"`
 			Node   string `json:"node"`
 		}
-		today := url.PathEscape(prefix + "-*-" + time.Now().UTC().Format("2006.01.02") + "*")
+		// Today's indices, and this month's of the models stored by month.
+		now := time.Now().UTC()
+		today := url.PathEscape(prefix+"-*-"+now.Format("2006.01.02")+"*") + "," + url.PathEscape(prefix+"-*-"+now.Format("2006.01"))
 		if oc.Do(ctx, http.MethodGet, "/_cat/shards/"+today+"?format=json&h=index,shard,prirep,node", nil, &shards) == nil {
 			nodes := map[string]map[string]bool{}
 			for _, sh := range shards {
@@ -303,10 +317,12 @@ func shardWarning(c osCard) string {
 // forever filling the shard limit.
 const shardFullSoonDays = 90
 
-// indexCopies is one index and its shard copies, primaries and replicas.
+// indexCopies is one index and its shard copies, primaries and replicas,
+// and the bytes on each primary shard (0 when unknown).
 type indexCopies struct {
-	Index  string
-	Copies int
+	Index    string
+	Copies   int
+	PerShard int64
 }
 
 // shardProjection is what projectShards works out.
@@ -326,10 +342,22 @@ type shardProjection struct {
 // before every model has written, do not count low. Models kept forever
 // stay as they are now, and FullInDays says when, at their rate, the
 // cluster holds ingest.ShardRoomWarn of limit.
-func projectShards(prefix string, held []indexCopies, used, limit int, keep func(string) int, now time.Time) shardProjection {
+//
+// A model that byMonth says is stored by month (see
+// ingest.Rollover.IndexFor) adds one index a month instead: it holds the
+// months its keep_days span, and this one. It counts as stored by day
+// when its month's index is full, or a day of it would fill that index
+// within a month (monthFull bytes per primary shard), as the rest of such
+// a month goes to daily indices. byMonth nil stores every model by day.
+func projectShards(prefix string, held []indexCopies, used, limit int, keep func(string) int, byMonth func(string) bool, monthFull int64, now time.Time) shardProjection {
 	today := now.UTC().Truncate(24 * time.Hour)
 	yesterday := today.AddDate(0, 0, -1)
-	type days struct{ today, yesterday, held int }
+	thisMonth := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, time.UTC)
+	type days struct {
+		today, yesterday, held, month int
+		dayBytes                      int64
+		monthFull                     bool
+	}
 	byModel := map[string]*days{}
 	var models []string
 	for _, ix := range held {
@@ -337,7 +365,7 @@ func projectShards(prefix string, held []indexCopies, used, limit int, keep func
 		if !ok {
 			continue
 		}
-		// A monthly index (the audit records) adds one index a month,
+		// A monthly index of records (the audit) adds one index a month,
 		// not one a day: it stays in used as it is.
 		if c, _ := retention.CategoryByID(category); c.Kind != retention.KindEvents {
 			continue
@@ -350,26 +378,47 @@ func projectShards(prefix string, held []indexCopies, used, limit int, keep func
 		}
 		d.held += ix.Copies
 		switch {
+		case retention.EventMonth(prefix, ix.Index):
+			if day.Equal(thisMonth) {
+				d.month += ix.Copies
+				d.monthFull = d.monthFull || monthFull > 0 && ix.PerShard >= monthFull
+			}
 		case day.Equal(today):
 			d.today += ix.Copies
+			d.dayBytes = max(d.dayBytes, ix.PerShard)
 		case day.Equal(yesterday):
 			d.yesterday += ix.Copies
+			d.dayBytes = max(d.dayBytes, ix.PerShard)
 		}
 	}
 	sort.Strings(models)
 	var out shardProjection
 	out.Projected = used
-	forever := 0
+	forever := 0.0
 	for _, m := range models {
 		d := byModel[m]
 		perDay := max(d.today, d.yesterday)
+		monthly := byMonth != nil && byMonth(m) && !d.monthFull && (monthFull <= 0 || d.dayBytes*31 < monthFull)
+		k := keep(m)
+		if monthly {
+			perMonth := max(d.month, perDay)
+			if perMonth == 0 {
+				continue
+			}
+			if k <= 0 {
+				forever += float64(perMonth) / 30
+				continue
+			}
+			// A month is deleted once its last day is past keep_days.
+			out.Projected += perMonth*((k+27)/28+1) - d.held
+			continue
+		}
 		if perDay == 0 {
 			continue
 		}
 		out.PerDay += perDay
-		k := keep(m)
 		if k <= 0 {
-			forever += perDay
+			forever += float64(perDay)
 			continue
 		}
 		out.Projected += perDay*(k+1) - d.held
@@ -377,7 +426,7 @@ func projectShards(prefix string, held []indexCopies, used, limit int, keep func
 	}
 	out.Projected = max(out.Projected, 0)
 	if forever > 0 {
-		n := max(0, int((ingest.ShardRoomWarn*float64(limit)-float64(out.Projected))/float64(forever)))
+		n := max(0, int((ingest.ShardRoomWarn*float64(limit)-float64(out.Projected))/forever))
 		out.FullInDays = &n
 	}
 	return out
