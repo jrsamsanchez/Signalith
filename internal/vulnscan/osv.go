@@ -177,12 +177,19 @@ func (x *OSVIndex) Add(raw []byte) error {
 	if err := json.Unmarshal(raw, &r); err != nil {
 		return err
 	}
+	x.add(&r)
+	return nil
+}
+
+// add keeps what one parsed advisory gives the release. It does not
+// change r, so one record can be added to the index of each release.
+func (x *OSVIndex) add(r *osvRecord) {
 	if r.ID == "" || r.Withdrawn != "" {
-		return nil
+		return
 	}
-	adv := &osvAdvisory{ID: short(r.ID, 80), CVEs: recordCVEs(r)}
+	adv := &osvAdvisory{ID: short(r.ID, 80), CVEs: recordCVEs(*r)}
 	if len(adv.CVEs) == 0 {
-		return nil
+		return
 	}
 	kept := false
 	for _, a := range r.Affected {
@@ -217,7 +224,7 @@ func (x *OSVIndex) Add(raw []byte) error {
 		}
 		if !kept {
 			kept = true
-			fillAdvisory(adv, r)
+			fillAdvisory(adv, *r)
 		}
 		sev := distroSeverity(a.Specific.UbuntuPriority, a.Specific.Urgency, r.Summary)
 		if adv.CVSS == 0 {
@@ -231,7 +238,7 @@ func (x *OSVIndex) Add(raw []byte) error {
 		x.pkgs[a.Package.Name] = append(x.pkgs[a.Package.Name], osvAffected{adv: adv, severity: sev, ranges: ranges})
 	}
 	if !kept {
-		return nil
+		return
 	}
 	x.Advisories++
 	// An advisory about one CVE describes and scores it best, also for
@@ -241,7 +248,6 @@ func (x *OSVIndex) Add(raw []byte) error {
 			x.cves[adv.CVEs[0]] = adv
 		}
 	}
-	return nil
 }
 
 // recordCVEs are the CVEs an advisory is about: its own ID, or the ones
@@ -388,6 +394,17 @@ var maxOSVInflate int64 = 6 << 30
 // into an index for a release. Advisories larger than maxOSVRecord, or
 // that are not valid, are skipped.
 func ReadOSVZip(ctx context.Context, r io.ReaderAt, size int64, e Ecosystem) (*OSVIndex, error) {
+	xs, err := ReadOSVZipAll(ctx, r, size, []Ecosystem{e})
+	if err != nil {
+		return nil, err
+	}
+	return xs[0], nil
+}
+
+// ReadOSVZipAll reads one bulk download once for several releases that
+// share it, such as Red Hat Enterprise Linux 8 and 9, and returns an
+// index for each, in the order given.
+func ReadOSVZipAll(ctx context.Context, r io.ReaderAt, size int64, ecos []Ecosystem) ([]*OSVIndex, error) {
 	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return nil, fmt.Errorf("the advisories are not a zip file: %w", err)
@@ -395,7 +412,10 @@ func ReadOSVZip(ctx context.Context, r io.ReaderAt, size int64, e Ecosystem) (*O
 	if len(zr.File) > maxOSVFiles {
 		return nil, fmt.Errorf("the advisories hold more than %d files", maxOSVFiles)
 	}
-	x := NewOSVIndex(e)
+	xs := make([]*OSVIndex, len(ecos))
+	for i, e := range ecos {
+		xs[i] = NewOSVIndex(e)
+	}
 	read := 0
 	var inflated int64
 	for i, f := range zr.File {
@@ -417,14 +437,19 @@ func ReadOSVZip(ctx context.Context, r io.ReaderAt, size int64, e Ecosystem) (*O
 		if err != nil || len(b) > maxOSVRecord {
 			continue
 		}
-		if x.Add(b) == nil {
-			read++
+		var rec osvRecord
+		if json.Unmarshal(b, &rec) != nil {
+			continue
+		}
+		read++
+		for _, x := range xs {
+			x.add(&rec)
 		}
 	}
 	if read == 0 {
 		return nil, errors.New("the advisories hold no OSV records")
 	}
-	return x, nil
+	return xs, nil
 }
 
 // SourcePackage marks a CVE matched to an installed package.

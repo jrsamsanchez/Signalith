@@ -33,6 +33,8 @@ import (
 type Docs interface {
 	Do(ctx context.Context, method, path string, body any, out any) error
 	Get(ctx context.Context, index, id string) (json.RawMessage, store.Version, bool, error)
+	// MGet reads several documents in one request, in the order asked.
+	MGet(ctx context.Context, refs []store.Ref) ([]store.Doc, error)
 	Create(ctx context.Context, index, id string, body any, refresh bool) (store.Version, error)
 	PutIf(ctx context.Context, index, id string, body any, v store.Version, refresh bool) (store.Version, error)
 	Update(ctx context.Context, index, id string, fields map[string]any, refresh bool) (store.Version, error)

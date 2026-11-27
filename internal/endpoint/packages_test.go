@@ -6,10 +6,13 @@ package endpoint
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/jrsamsanchez/signalith/internal/store"
 )
 
 func TestPackagesQueryOnlyOnLinux(t *testing.T) {
@@ -135,4 +138,70 @@ func TestPackageListCaps(t *testing.T) {
 	if len(pl.Packages) != maxPackages || len(pl.Packages[0].Version) != maxPackageField {
 		t.Errorf("kept %d packages, version of %d bytes", len(pl.Packages), len(pl.Packages[0].Version))
 	}
+}
+
+// countingDocs counts single-document reads of package lists.
+type countingDocs struct {
+	*MemoryDocs
+	gets, mgets int
+}
+
+func (c *countingDocs) Get(ctx context.Context, index, id string) (json.RawMessage, store.Version, bool, error) {
+	if strings.HasPrefix(id, "pkg:") {
+		c.gets++
+	}
+	return c.MemoryDocs.Get(ctx, index, id)
+}
+
+func (c *countingDocs) MGet(ctx context.Context, refs []store.Ref) ([]store.Doc, error) {
+	c.mgets++
+	return c.MemoryDocs.MGet(ctx, refs)
+}
+
+func TestHostPackagesReadsInBatches(t *testing.T) {
+	ctx := context.Background()
+	d := &countingDocs{MemoryDocs: NewMemoryDocs()}
+	s := NewStore(d, "sig")
+	clock := time.Now().UTC()
+	s.Now = func() time.Time { return clock }
+	const hosts = packagesBatch*2 + 3
+	for i := range hosts {
+		n := &Node{ID: fmt.Sprintf("n%03d", i), HostIdentifier: fmt.Sprintf("uuid-%d", i), Hostname: fmt.Sprintf("web%03d", i), Platform: Linux, EnrolledAt: clock}
+		if err := s.Enroll(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+		// One host has sent no list yet.
+		if i == 7 {
+			continue
+		}
+		pl := &PackageList{OS: "debian", OSVersion: "12", At: clock, Packages: []Package{{Name: "bash", Version: fmt.Sprint(i), Type: "deb"}}}
+		if err := s.SavePackages(ctx, n, pl); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.gets = 0
+	got, err := s.HostPackages(ctx)
+	if err != nil || len(got) != hosts-1 {
+		t.Fatalf("HostPackages = %d lists, %v", len(got), err)
+	}
+	if d.gets != 0 || d.mgets != 3 {
+		t.Errorf("reads = %d gets, %d batches; want 0 gets and 3 batches", d.gets, d.mgets)
+	}
+	for _, hp := range got {
+		if hp.NodeID == "n007" {
+			t.Error("a host with no list was listed")
+		}
+		if want := "web" + strings.TrimPrefix(hp.NodeID, "n"); hp.Hostname != want || hp.Packages[0].Version != fmt.Sprint(mustAtoi(t, strings.TrimPrefix(hp.NodeID, "n"))) {
+			t.Errorf("list of %s = %+v", hp.NodeID, hp)
+		}
+	}
+}
+
+func mustAtoi(t *testing.T, s string) int {
+	t.Helper()
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return n
 }
