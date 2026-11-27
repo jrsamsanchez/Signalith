@@ -113,6 +113,8 @@ func (ua *sharedUsers) auditBuiltinChange(ch clusterauth.BuiltinChange) {
 		ua.log.Info("user enabled", append(args, "reason", "signalith passwd turned the built-in admin on again")...)
 	case clusterauth.BuiltinDisabled:
 		ua.log.Info("user disabled", append(args, "reason", "changed from a server's command line")...)
+	case clusterauth.BuiltinMFAReset:
+		ua.log.Info("two-step sign-in reset", append(args, "reason", "signalith passwd -reset-mfa reset the built-in admin's two-step sign-in")...)
 	}
 }
 
@@ -443,7 +445,7 @@ func sharedCachePath(c *config.Config) string { return shared.CachePath(c.StateD
 // seconds. It reports whether it did; when it did not, it says why if the
 // server was ever a member, and signalith passwd changes this server's
 // files as before.
-func passwdShared(path, stateDir, h string) (bool, error) {
+func passwdShared(path, stateDir, h string, resetMFA bool) (bool, error) {
 	if _, err := os.Stat(shared.CachePath(stateDir)); err != nil {
 		// Never a member of a cluster.
 		return false, nil
@@ -489,6 +491,26 @@ func passwdShared(path, stateDir, h string) (bool, error) {
 	} else if on {
 		x.audit("turned the built-in admin on again", "user", x.auth.BuiltinName())
 		fmt.Println(builtinOnAgain)
+	}
+	if resetMFA {
+		had := false
+		err := (&clusterauth.UsersBackend{Docs: x.auth}).ChangeBuiltinMFA(ctx, x.by, func(cur *users.MFA) (*users.MFA, bool, error) {
+			if cur == nil {
+				return nil, false, users.ErrNoChange
+			}
+			had = true
+			return nil, false, nil
+		})
+		switch {
+		case err != nil:
+			return true, fmt.Errorf("the password changed, but the built-in admin's two-step sign-in could not be reset: %w", err)
+		case had:
+			x.audit("reset the built-in admin's two-step sign-in for every server of the cluster", "user", x.auth.BuiltinName())
+			fmt.Println("The built-in admin's two-step sign-in is reset on every server. Sign in with the new password alone, " +
+				"then set up two-step sign-in again from the account menu.")
+		default:
+			fmt.Println("The built-in admin has no two-step sign-in to reset.")
+		}
 	}
 	return true, nil
 }

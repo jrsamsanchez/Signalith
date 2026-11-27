@@ -587,7 +587,7 @@ sign-in**), so you are not asked to in the middle of something.
 Shown when there are agent tokens: tokens made on **Add data** or with
 `signalith tokens`, or shared tokens from signalith.yaml (`ingest.tokens`),
 `SIGNALITH_INGEST_TOKEN` or `SIGNALITH_INGEST_TOKEN_FILE`. See
-[agent-tokens.md](agent-tokens.md).
+[Agent tokens](agent-tokens.md).
 
 **Looks at:** whether a shared token (one every agent uses) is still accepted, when an
 agent last sent with it, how long it is, and whether it is the public example token. A
@@ -822,6 +822,8 @@ server:
   15 minutes, sign-in pauses for 15 minutes. The API is limited the same way.
 - Sign-ins end after 24 hours by default (`auth.session_max_age`, 30 days at most),
   even with **Keep me signed in**.
+- From the release after 0.4.2, temporary passwords from an admin stop working after 24 hours by
+  default (`auth.temp_password_max_age`).
 - Passwords are stored only as bcrypt hashes.
 - Logs, pages and the API never show stored passwords or keys.
 - With HTTPS on, agents set up from **Add data** check the server's certificate before
@@ -847,7 +849,8 @@ These are built in too, and are not part of the report:
   shown as a marked `⟨U+202E⟩`. U+202E, for example, would otherwise make `invoice`,
   U+202E, `fdp.exe` look like `invoiceexe.pdf`. The stored events are unchanged; finding
   titles, which copy values from events and become the titles of new cases, are stored with
-  the marker.
+  the marker. Entity values in chat, mail and webhook alerts and the text of a case report
+  show the marker too; the report's signed data keeps the characters, written as `\u202e`.
 - **Logs**: values in log lines are cut to a sensible length, and the Windows service log
   (`C:\ProgramData\Signalith\signalith.log`) rotates at 10 MB, keeping 5 old files. The Docker
   quick start caps container logs the same way; under systemd, journald limits the log.

@@ -336,3 +336,26 @@ type emptySearcher struct{}
 func (emptySearcher) Search(context.Context, string, map[string]any) (map[string]any, error) {
 	return map[string]any{"hits": map[string]any{"total": map[string]any{"value": 0}, "hits": []any{}}}, nil
 }
+
+// TestLaterStageRegexesCompile: a later stage whose pattern uses PCRE
+// syntax Go's regexp lacks (a lookahead) does not convert, since the
+// engine would fail every run of the rule.
+func TestLaterStageRegexesCompile(t *testing.T) {
+	for _, tc := range []struct {
+		query string
+		bad   bool
+	}{
+		{`sourcetype=x | where match(process, "(?i)^/upload\\b")`, false},
+		{`sourcetype=x | where lower(a)="b" AND match(process, "(?i)/upload(?![\\w-])")`, true},
+		{`sourcetype=x | eval p=replace(process, "(?<=a)b", "")`, true},
+		{`sourcetype=x | eval n=mvfind(list, "x+")`, false},
+	} {
+		q, err := query.Parse(tc.query)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.query, err)
+		}
+		if err := laterRegexes(q); (err != nil) != tc.bad {
+			t.Errorf("%s: err %v, want bad=%v", tc.query, err, tc.bad)
+		}
+	}
+}

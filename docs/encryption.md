@@ -28,7 +28,7 @@ machine unless you allow it, and warns while certificate checks are off.
 Every password and API key Signalith keeps in its settings files is encrypted (files
 that hold a key on their own are not; see [below](#not-encrypted-by-the-master-key)).
 Per-agent tokens made on **Add data** are not kept anywhere: OpenSearch holds only a
-SHA-256 hash of each (see [agent-tokens.md](agent-tokens.md#how-tokens-work)).
+SHA-256 hash of each (see [Agent tokens](agent-tokens.md#how-tokens-work)).
 
 
 | File | Encrypted values | Written by |
@@ -37,8 +37,8 @@ SHA-256 hash of each (see [agent-tokens.md](agent-tokens.md#how-tokens-work)).
 | `settings.yaml` (lookups folder, or `SIGNALITH_SETTINGS_FILE`) | The OpenSearch password, the AI model's API key, and the other passwords and keys (such as Okta's private key) saved on the **Settings** page | The server, and `signalith settings reset` |
 | `directory.json` (lookups folder) | The service account password of directory sign-in set up on the **Users** page | The server |
 | `intel_feeds.yaml` (lookups folder) | Passwords and header values (API keys) of feeds added on the **Threat intel** page | The server |
-| `notifications.yaml` (lookups folder) | Webhook URLs, header values, signing secrets and mail passwords of channels set on the **Notifications** page (see [notifications.md](notifications.md#where-the-settings-live)) | The server |
-| `tickets.yaml` (lookups folder) | API tokens, passwords and client secrets of connections set on the **Ticketing** page (see [ticketing.md](ticketing.md#where-the-settings-live)) | The server |
+| `notifications.yaml` (lookups folder) | Webhook URLs, header values, signing secrets and mail passwords of channels set on the **Notifications** page (see [Notifications](notifications.md#where-the-settings-live)) | The server |
+| `tickets.yaml` (lookups folder) | API tokens, passwords and client secrets of connections set on the **Ticketing** page (see [Ticketing (Jira, ServiceNow)](ticketing.md#where-the-settings-live)) | The server |
 
 An encrypted value looks like this:
 
@@ -388,7 +388,7 @@ server keeps running. Enter them again:
   `signalith secrets set opensearch.password` (or `assistant.api_key`,
   `auth.ldap.bind_password`) replaces a value; for a shared agent token, remove the
   line and add one with `signalith secrets set ingest.tokens` (or, better, give the
-  agents their own tokens; see [agent-tokens.md](agent-tokens.md)). While the file holds
+  agents their own tokens; see [Agent tokens](agent-tokens.md)). While the file holds
   values encrypted with a key that is not found, `set` and `encrypt` stop rather
   than make a new key, since the key may only be elsewhere (such as in a variable
   the service has and your shell does not). When it really is lost, add `-new-key`

@@ -42,7 +42,7 @@ Any OTLP/HTTP sender works. Point it at:
 | Setting | Value |
 | --- | --- |
 | Logs endpoint | `https://<server>:7779/api/otlp/v1/logs` (or endpoint `https://<server>:7779/api/otlp`, to which the exporter adds `/v1/logs`), on the [agent port](sending-data.md#the-agent-port), not the web page's port |
-| Header | `Authorization: Bearer <agent token>`; make one on **Add data** under **Agent tokens**, or with `signalith tokens create` (see [agent-tokens.md](agent-tokens.md#create-a-token)). It must be made for OpenTelemetry (purpose `otel`) or for no purpose: a token made for Fluent Bit, osquery or the Signalith Agent is refused with `403` (see [Token purposes](agent-tokens.md#token-purposes)) |
+| Header | `Authorization: Bearer <agent token>`; make one on **Add data** under **Agent tokens**, or with `signalith tokens create` (see [Agent tokens](agent-tokens.md#create-a-token)). It must be made for OpenTelemetry (purpose `otel`) or for no purpose: a token made for Fluent Bit, osquery or the Signalith Agent is refused with `403` (see [Token purposes](agent-tokens.md#token-purposes)) |
 | Encoding | protobuf (`application/x-protobuf`, the Collector's default) or JSON (`application/json`) |
 | Compression | gzip (the Collector's default) or none |
 | CA | Signalith's CA certificate (`/api/tls/ca.pem`), unless the server has a certificate your systems trust |

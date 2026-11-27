@@ -1,12 +1,17 @@
 {"rule": "3f6b7b62-61aa-45db-96bd-9c31b36b653c", "cases": [
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000003)","TargetObject":"\\Control\\Terminal Server\\\\Shadow"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Windows NT\\Terminal Services\\ \\fAllowUnsolicited"}},
-  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Windows NT\\Terminal Services\\InitialProgram"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000002)","TargetObject":"\\Control\\Terminal Server\\ \\SecurityLayer"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\Terminal Server\\\\Shadow"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000003)"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Windows NT\\Terminal Services\\ \\fAllowUnsolicited"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","TargetObject":"\\Control\\Terminal Server\\\\fAllowUnsolicitedFullControl"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000003)","TargetObject":"\\Windows NT\\Terminal Services\\\\Shadow"}},
+  {"expect":true,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\services\\TermService\\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"","TargetObject":"\\Control\\Terminal Server\\ \\Windows NT\\Terminal Services\\InitialProgram \\fAllowUnsolicitedFullControl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"%windir%\\SysWOW64\\termsrv.dll","TargetObject":"\\Control\\Terminal Server\\\\services\\TermService\\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)","Image":"C:\\Windows\\WinSxS\\ \\containerworker.exe","TargetObject":"\\Control\\Terminal Server\\ \\Windows\\Containers\\Layers\\ \\fAllowUnsolicitedFullControl"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Control\\Terminal Server\\\\fAllowUnsolicitedFullControl"}},
   {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000001)"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000002)","TargetObject":"\\Windows NT\\Terminal Services\\InitialProgram \\SecurityLayer"}},
-  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{}}
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"","TargetObject":"\\Windows NT\\Terminal Services\\\\Control\\Terminal Server\\WinStations\\RDP-Tcp\\InitialProgram\\Shadow"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000002)","TargetObject":"\\Windows NT\\Terminal Services\\ \\SecurityLayer"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"C:\\Windows\\System32\\termsrv.dll","TargetObject":"\\Windows NT\\Terminal Services\\ \\services\\TermService\\Parameters\\ServiceDll"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000003)","Image":"C:\\Windows\\WinSxS\\ \\containerworker.exe","TargetObject":"\\Windows NT\\Terminal Services\\ \\Windows\\Containers\\Layers\\ \\Shadow"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"TargetObject":"\\Windows NT\\Terminal Services\\\\Shadow"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"DWORD (0x00000003)"}},
+  {"expect":false,"source":"synthesized","channel":"Microsoft-Windows-Sysmon/Operational","event_id":"13","data":{"Details":"(Empty)","TargetObject":"\\Control\\Terminal Server\\InitialProgram\\services\\TermService\\Parameters\\ServiceDll"}}
 ]}

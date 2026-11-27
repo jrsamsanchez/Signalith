@@ -279,6 +279,85 @@ func (s *Store) StartBuiltin(ctx context.Context) (bool, error) {
 	return on, nil
 }
 
+// SetFileBuiltinMFAResetAtStart has the built-in admin's two-step
+// sign-in in the users file at path removed when a server next starts,
+// with the new password signalith passwd -reset-mfa set: the way back in
+// when the built-in admin lost its authenticator app, passkeys and
+// recovery codes and no other admin can reset them. It waits for the
+// start, as the password does, so the old password alone never signs in
+// meanwhile. It reports whether the built-in admin has two-step sign-in
+// to remove.
+func SetFileBuiltinMFAResetAtStart(path string) (bool, error) {
+	f := newFileBackend(path)
+	f.wmu.Lock()
+	defer f.wmu.Unlock()
+	release, err := f.begin()
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.builtinMFA == nil {
+		return false, nil
+	}
+	if f.builtinMFAReset {
+		return true, nil
+	}
+	f.builtinMFAReset = true
+	if err := f.saveLocked(); err != nil {
+		f.builtinMFAReset = false
+		return false, err
+	}
+	return true, nil
+}
+
+// StartBuiltinMFA is called as a server starts: it removes the built-in
+// admin's two-step sign-in when signalith passwd -reset-mfa asked for
+// that (SetFileBuiltinMFAResetAtStart). It reports whether it did, for
+// the audit log.
+func (s *Store) StartBuiltinMFA(ctx context.Context) (bool, error) {
+	f, ok := s.b.(*fileBackend)
+	if !ok {
+		return false, nil
+	}
+	f.mu.RLock()
+	reset := f.builtinMFAReset
+	f.mu.RUnlock()
+	if !reset {
+		return false, nil
+	}
+	return f.resetBuiltinMFA()
+}
+
+// resetBuiltinMFA removes the built-in admin's two-step sign-in, as
+// signalith passwd -reset-mfa asked, and clears the request.
+func (f *fileBackend) resetBuiltinMFA() (bool, error) {
+	f.wmu.Lock()
+	defer f.wmu.Unlock()
+	release, err := f.begin()
+	if err != nil {
+		return false, err
+	}
+	defer release()
+	f.mu.Lock()
+	if !f.builtinMFAReset {
+		f.mu.Unlock()
+		return false, nil
+	}
+	prev := f.builtinMFA
+	had := prev != nil
+	f.builtinMFA, f.builtinMFAReset = nil, false
+	if err := f.saveLocked(); err != nil {
+		f.builtinMFA, f.builtinMFAReset = prev, true
+		f.mu.Unlock()
+		return false, err
+	}
+	f.mu.Unlock()
+	f.notify()
+	return had, nil
+}
+
 // ReadFileBuiltinDisabled reports whether the users file at path has the
 // built-in admin turned off, as a cluster's import carries it over.
 func ReadFileBuiltinDisabled(path string) (bool, error) {

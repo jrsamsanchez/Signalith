@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jrsamsanchez/signalith/internal/audit"
 	"github.com/jrsamsanchez/signalith/internal/detect"
 	"github.com/jrsamsanchez/signalith/internal/findings"
 )
@@ -190,5 +191,36 @@ func TestRiskScoreAndRuleSummary(t *testing.T) {
 	r = Rule{MinUrgency: "odd", Detections: []string{"a", "b", "c"}}
 	if got := r.Summary(Settings{}); !strings.HasPrefix(got, "Findings from a, b and c") {
 		t.Errorf("odd urgency summary = %q", got)
+	}
+}
+
+// Entity values come from events, so characters that hide or disguise
+// them reach chat, mail and webhooks as visible markers (RT-205).
+func TestEntityValuesShowHiddenCharacters(t *testing.T) {
+	now := time.Now()
+	f := &findings.Finding{ID: "f1", Title: "Sign-in", DetectionID: "d1", Severity: "high", Created: now,
+		Entities: map[string]any{"user": "admin\u202etxt.exe", "host": "web\u200b01"}}
+	a, _ := FindAuditAlert("builtin_signin")
+	am := AuditMessage(a, AuditRecord{ID: "abc", Event: audit.Event{Time: now, Message: "signed in", User: "adm\u2066in", Target: "x\u202ey"}}, "")
+	for name, m := range map[string]Message{"finding": NewMessage(f, ""), "audit": am} {
+		for out, body := range map[string]string{
+			"mail":    m.text("#soc"),
+			"slack":   render(t, m.slackBody(Channel{Type: TypeSlack, Name: "#soc"})),
+			"teams":   render(t, m.teamsCard(Channel{Type: TypeTeams, Name: "SOC"})),
+			"webhook": render(t, m.webhookBody(now)),
+		} {
+			if strings.ContainsAny(body, "\u202e\u200b\u2066") || !strings.Contains(body, "⟨U+") {
+				t.Errorf("%s %s does not show the hidden characters: %s", name, out, body)
+			}
+		}
+	}
+	if m := NewMessage(f, ""); m.Entities["user"] != "admin⟨U+202E⟩txt.exe" || m.Entities["host"] != "web⟨U+200B⟩01" {
+		t.Errorf("entities %v", m.Entities)
+	}
+	if am.Entities["user"] != "adm⟨U+2066⟩in" || am.AuditTarget != "x⟨U+202E⟩y" {
+		t.Errorf("audit %v %q", am.Entities, am.AuditTarget)
+	}
+	if s := shown(strings.Repeat("\u202e", maxEntity), maxEntity); len([]rune(s)) != maxEntity {
+		t.Errorf("a long value is %d characters", len([]rune(s)))
 	}
 }

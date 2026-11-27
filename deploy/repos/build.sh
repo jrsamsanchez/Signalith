@@ -45,6 +45,11 @@ for arch in amd64 arm64; do
   (cd "$apt" && apt-ftparchive --arch "$arch" packages pool/main) > "$dir/Packages"
   gzip -9nk "$dir/Packages"
 done
+# Valid-Until: apt refuses a copy of the repository older than 30 days, so
+# whoever could serve an old, signed copy cannot hold clients on an old
+# release. The Website workflow rebuilds the repositories every week.
+# apt-ftparchive does not write the field itself, so it goes in after Date.
+valid_until=$(LC_ALL=C date -u -d '+30 days' '+%a, %d %b %Y %H:%M:%S UTC')
 (cd "$apt/dists/stable" && apt-ftparchive \
   -o APT::FTPArchive::Release::Origin=Signalith \
   -o APT::FTPArchive::Release::Label=Signalith \
@@ -54,7 +59,9 @@ done
   -o APT::FTPArchive::Release::Components=main \
   -o APT::FTPArchive::Release::Description="Signalith packages" \
   release . > "$work/Release")
-mv "$work/Release" "$apt/dists/stable/Release"
+awk -v v="$valid_until" '{ print } /^Date: / { print "Valid-Until: " v }' "$work/Release" > "$work/Release.valid"
+[ "$(grep -c '^Valid-Until: ' "$work/Release.valid")" = 1 ] || { echo "the Release file has no single Valid-Until line"; exit 1; }
+mv "$work/Release.valid" "$apt/dists/stable/Release"
 sign --clearsign -o "$apt/dists/stable/InRelease" "$apt/dists/stable/Release"
 sign --armor --detach-sign -o "$apt/dists/stable/Release.gpg" "$apt/dists/stable/Release"
 gpg --batch --armor --export "$key" > "$apt/signalith.asc"

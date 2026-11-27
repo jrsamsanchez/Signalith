@@ -464,18 +464,18 @@ datamodel=Vulnerabilities category=vulnerability epss>=0.5 | table dest, cve, ep
 datamodel=Vulnerabilities category=open_port app=rdp | table dest, dest_ip, product_version
 ```
 
-The built-in **Vulnerabilities** dashboard ([dashboards.md](dashboards.md#vulnerabilities))
+The built-in **Vulnerabilities** dashboard ([Dashboards](dashboards.md#vulnerabilities))
 sums them up over the last 7 days.
 
 The Ask box understands questions such as "hosts with known exploited vulnerabilities",
 "likely exploited vulnerabilities" or "top CVEs".
 
-Five built-in detections use them (see [detections.md](detections.md)): a known exploited
+Five built-in detections use them (see [Detections](detections.md)): a known exploited
 CVE (high), a known exploited CVE on a critical or high priority asset (critical), a likely
 exploited CVE (medium), a critical CVE (CVSS 9.0 or more, medium), and Telnet open (low).
 Each fires once a week at most for the same host and CVE, and each adds risk to the host,
 so a host with exploitable vulnerabilities climbs the risk list. Risk on an asset you
-marked critical or high priority in the asset list ([detections.md](detections.md#risk)) counts double or one and
+marked critical or high priority in the asset list ([Detections](detections.md#risk)) counts double or one and
 a half times.
 
 Hosts the scans find are added to the asset list as `category=scanned`, so searches and
