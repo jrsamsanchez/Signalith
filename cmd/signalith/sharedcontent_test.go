@@ -146,7 +146,17 @@ func TestSharedContentAcrossServers(t *testing.T) {
 	if code != 200 {
 		t.Fatalf("add a feed on B: %d %v", code, out)
 	}
-	eventually(t, "A downloads the feed added on B", func() bool { return hits.Load() == 1 })
+	// On a timeout, say what each server saw: how many downloads there
+	// were, A's view of the feed, and both servers' logs.
+	deadline := time.Now().Add(20 * time.Second)
+	for hits.Load() != 1 {
+		if time.Now().After(deadline) {
+			_, view, _ := a.call("", "GET", "/api/intel/feeds", "")
+			t.Fatalf("timed out waiting: A downloads the feed added on B (%d downloads)\nA's feeds: %v\n--- A's log:\n%s\n--- B's log:\n%s",
+				hits.Load(), view, a.logs.String(), b.logs.String())
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
 	code, out, _ = b.call("", "POST", "/api/intel/feeds/blocklist/refresh", "")
 	id, _ = out["request_id"].(string)
 	if code != 202 || id == "" {
