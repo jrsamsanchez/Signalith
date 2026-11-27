@@ -119,7 +119,10 @@ some days of it. Retention treats a month as a day that ends on the month's last
 
 Where days must go exactly on time, set a size cap on the category, or turn the setting
 off (in the OpenSearch card of the Settings page); policies of 30 days or fewer are
-always stored by day.
+always stored by day. Both change only how new months are stored: months already
+stored by month stay whole, and lowering **Keep** later deletes each of them only once
+its last day is older than the new keep, which can be up to a month after its first
+day would be. To delete such data sooner, delete the month's index in OpenSearch.
 
 A day that OpenSearch cannot read, because a primary shard is missing (a red index,
 for example while its node is down), is left alone: it is not deleted, archived or
