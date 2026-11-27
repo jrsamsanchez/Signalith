@@ -428,7 +428,7 @@ jobs:
           fi
 
   # Measures statement coverage of the unit tests, writes the total to the
-  # job summary and fails below 80%.
+  # job summary and fails below 90%.
   coverage:
     runs-on: ubuntu-latest
     steps:
@@ -441,7 +441,7 @@ jobs:
         run: |
           total=$(go tool cover -func=coverage.out | awk '/^total:/ {sub("%", "", $3); print $3}')
           echo "Statement coverage: $total%" | tee -a "$GITHUB_STEP_SUMMARY"
-          awk -v t="$total" 'BEGIN { exit !(t >= 80) }' || { echo "Coverage is below 80%"; exit 1; }
+          awk -v t="$total" 'BEGIN { exit !(t >= 90) }' || { echo "Coverage is below 90%"; exit 1; }
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: coverage
