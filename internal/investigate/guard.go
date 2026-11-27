@@ -325,7 +325,8 @@ func guardRange(field, v string, counted map[string]bool) error {
 // (lengths, trimming, joined strings, orderings of text) can test a
 // guess:
 //
-//   - field = literal, field != literal (and == ), field = field;
+//   - field = literal, field != literal (and == ), but not field = field
+//     (see the Compare case in guardExpr);
 //   - _time < literal and the like, and a count column made earlier by
 //     stats or top < number and the like (see guardRange);
 //   - field LIKE "pattern", like(field, "pattern"), in(field, literals),
@@ -357,6 +358,12 @@ func (m *Masker) guardEval(x query.EvalExpr, counted map[string]bool) error {
 		case "=", "==", "!=":
 			if !plainOperand(x.L) || !plainOperand(x.R) {
 				break
+			}
+			_, lf := x.L.(*query.Field)
+			if _, rf := x.R.(*query.Field); lf && rf {
+				// As for where src = user: the other field may hold masked
+				// values under any name.
+				return fmt.Errorf("where %s: comparing two fields is not allowed while values are masked; compare a field with a value", x.String())
 			}
 			if err := m.guardEval(x.L, counted); err != nil {
 				return err
@@ -604,12 +611,33 @@ func (m *Masker) revealQuery(q *query.Query) {
 			}
 		case *query.Text:
 			e.Value = m.real(e.Value)
+		case *query.Cond:
+			m.revealEval(e.X)
 		}
 	}
 	walk(q.Search)
 	for _, c := range q.Commands {
 		if w, ok := c.(*query.Where); ok {
 			walk(w.Expr)
+		}
+	}
+}
+
+// revealEval puts the real values back into the strings of a where
+// expression, such as in(host, "masked-host-1") or
+// cidrmatch("masked-src-1", dest), which guardEval let through.
+func (m *Masker) revealEval(x query.EvalExpr) {
+	switch x := x.(type) {
+	case *query.Str:
+		x.Value = m.real(x.Value)
+	case *query.Unary:
+		m.revealEval(x.X)
+	case *query.Binary:
+		m.revealEval(x.L)
+		m.revealEval(x.R)
+	case *query.Call:
+		for _, a := range x.Args {
+			m.revealEval(a)
 		}
 	}
 }

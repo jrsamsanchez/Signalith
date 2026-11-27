@@ -2,7 +2,8 @@ name: Website
 # Publishes site/ (the project website) to GitHub Pages at https://signalith.io,
 # with the documentation (mkdocs.yml, docs/) built into it at /docs/, and the
 # signed apt and dnf repositories (deploy/repos) at /apt/ and /rpm/, rebuilt
-# from the newest releases' packages, including after each Release run.
+# from the newest releases' packages, including after each Release run and
+# every week.
 # Pages must be set to deploy from GitHub Actions (Settings > Pages > Build and
 # deployment > Source), with signalith.io as its custom domain there; with
 # Actions deployments the custom domain is that setting, not a CNAME file.
@@ -16,6 +17,9 @@ on:
   workflow_run:
     workflows: [Release]
     types: [completed]
+  # Weekly, so the apt repository's Valid-Until (30 days) never lapses.
+  schedule:
+    - cron: '41 5 * * 1'
   workflow_dispatch:
 
 permissions:

@@ -387,7 +387,7 @@ snapshots. It is not given to Signalith until you want scheduled snapshots (see
 
 ## OpenSearch's own audit log
 
-Signalith keeps its own audit log of what people do (see [audit.md](audit.md)). OpenSearch
+Signalith keeps its own audit log of what people do (see [Audit](audit.md)). OpenSearch
 keeps one too, of who tried to reach it: failed sign-ins, requests refused for missing
 permissions, TLS and certificate errors, and every change to its security settings.
 Successful requests are left out, since they are Signalith's own searches and writes.

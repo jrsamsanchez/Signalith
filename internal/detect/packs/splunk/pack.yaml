@@ -3,8 +3,8 @@ name: splunk
 title: Splunk Security Content
 description: Windows detections for process, file and registry events, macOS detections for the program starts osquery reports, web detections for web requests, network detections over connections and DNS lookups, AWS detections for CloudTrail records, Entra ID detections for its sign-in and audit logs, Microsoft 365 detections for its audit records, Okta detections for its System Log, Kubernetes detections for its audit log and GitHub detections for its audit log, from Splunk's Threat Research Team (security_content), converted to Signalith detections. TTP rules raise findings; anomaly rules only add risk, as in Splunk's risk-based alerting. Each rule shipped here agrees with Splunk's reading of its search on its test events, checked in CI.
 source: https://github.com/splunk/security_content
-version: 4c1652e36f137c83d2279f455a4911ee5bd76305
-date: "2026-11-09"
+version: 21509485465aaed2cfa4604e3d2ab5ee52975f0a
+date: "2026-11-23"
 license: Apache-2.0
 license_url: https://www.apache.org/licenses/LICENSE-2.0
 notice: The detections in this pack, and the lookup tables they read (lookups/), are from Splunk security_content, Copyright Splunk Inc., licensed under the Apache License 2.0. They are shipped unchanged; Signalith converts the detections when it starts. Findings from them name the rule's author.
@@ -426,10 +426,6 @@ rules:
     rule_id: e97a5ffe-90bf-11eb-928a-acde48001122
     file: bits_job_persistence.yml
     path: detections/endpoint/bits_job_persistence.yml
-  - id: splunk-bitsadmin-download-file
-    rule_id: 80630ff4-8e4c-11eb-aab5-acde48001122
-    file: bitsadmin_download_file.yml
-    path: detections/endpoint/bitsadmin_download_file.yml
   - id: splunk-certutil-exe-certificate-extraction
     rule_id: 337a46be-600f-11eb-ae93-0242ac130002
     file: certutil_exe_certificate_extraction.yml
@@ -1722,10 +1718,6 @@ rules:
     rule_id: c0d810f4-230c-44ea-b703-989da02ff145
     file: linux_mysql_privilege_escalation.yml
     path: detections/endpoint/linux_mysql_privilege_escalation.yml
-  - id: splunk-linux-ngrok-reverse-proxy-usage
-    rule_id: bc84d574-708c-467d-b78a-4c1e20171f97
-    file: linux_ngrok_reverse_proxy_usage.yml
-    path: detections/endpoint/linux_ngrok_reverse_proxy_usage.yml
   - id: splunk-linux-node-privilege-escalation
     rule_id: 2e58a4ff-398f-42f4-8fd0-e01ebfe2a8ce
     file: linux_node_privilege_escalation.yml
@@ -2466,10 +2458,6 @@ rules:
     rule_id: 4a3f2a7d-6402-4e64-a76a-869588ec3b57
     file: powershell_script_block_with_url_chain.yml
     path: detections/endpoint/powershell_script_block_with_url_chain.yml
-  - id: splunk-powershell-start-bitstransfer
-    rule_id: 39e2605a-90d8-11eb-899e-acde48001122
-    file: powershell_start_bitstransfer.yml
-    path: detections/endpoint/powershell_start_bitstransfer.yml
   - id: splunk-powershell-start-or-stop-service
     rule_id: 04207f8a-e08d-4ee6-be26-1e0c4488b04a
     file: powershell_start_or_stop_service.yml
@@ -3266,6 +3254,14 @@ rules:
     rule_id: 313e4f5c-add3-4b4d-8348-6a009ce5fe40
     file: windows_cloud_sensitive_file_read_access_by_uncommon_process.yml
     path: detections/endpoint/windows_cloud_sensitive_file_read_access_by_uncommon_process.yml
+  - id: splunk-windows-cmd-command-line-with-encoded-character-sequences
+    rule_id: 155020ba-3fd8-4109-a83d-091aeb966dba
+    file: windows_cmd_command_line_with_encoded_character_sequences.yml
+    path: detections/endpoint/windows_cmd_command_line_with_encoded_character_sequences.yml
+  - id: splunk-windows-cmd-evasive-patterns-through-native-commands
+    rule_id: e4202c26-f5d1-4c72-91f7-e551338be9a4
+    file: windows_cmd_evasive_patterns_through_native_commands.yml
+    path: detections/endpoint/windows_cmd_evasive_patterns_through_native_commands.yml
   - id: splunk-windows-cmdline-tool-execution-from-non-shell-process
     rule_id: 2afa393f-b88d-41b7-9793-623c93a2dfde
     file: windows_cmdline_tool_execution_from_non_shell_process.yml
@@ -3278,6 +3274,10 @@ rules:
     rule_id: b7bd83c0-92b5-4fc7-b286-23eccfa2c561
     file: windows_com_hijacking_inprocserver32_modification.yml
     path: detections/endpoint/windows_com_hijacking_inprocserver32_modification.yml
+  - id: splunk-windows-command-line-obfuscation-via-superscript-characte
+    rule_id: 62b43310-8a83-4ff1-bcff-efb45ae8cc0d
+    file: windows_command_line_obfuscation_via_superscript_characters.yml
+    path: detections/endpoint/windows_command_line_obfuscation_via_superscript_characters.yml
   - id: splunk-windows-command-obfuscation-with-environment-variable-sub
     rule_id: 08a9ddcc-5b02-4055-abc5-945ba399f596
     file: windows_command_obfuscation_with_environment_variable_substrings.yml
@@ -3474,10 +3474,6 @@ rules:
     rule_id: 63a449ae-9f04-11ec-945e-acde48001122
     file: windows_disable_windows_group_policy_features_through_registry.yml
     path: detections/endpoint/windows_disable_windows_group_policy_features_through_registry.yml
-  - id: splunk-windows-disableantispyware-registry
-    rule_id: 23150a40-9301-4195-b802-5bb4f43067fb
-    file: windows_disableantispyware_registry.yml
-    path: detections/endpoint/windows_disableantispyware_registry.yml
   - id: splunk-windows-diskshadow-proxy-execution
     rule_id: 58adae9e-8ea3-11ec-90f6-acde48001122
     file: windows_diskshadow_proxy_execution.yml
@@ -4230,6 +4226,10 @@ rules:
     rule_id: e66a167f-6506-4e5b-8e4d-1b04940c70be
     file: windows_mustang_panda_usb_tool_execution.yml
     path: detections/endpoint/windows_mustang_panda_usb_tool_execution.yml
+  - id: splunk-windows-native-messaging-host-spawns-user-writable-proces
+    rule_id: 8a42c414-eea0-419c-85b4-23ed03bb260d
+    file: windows_native_messaging_host_spawns_user_writable_process.yml
+    path: detections/endpoint/windows_native_messaging_host_spawns_user_writable_process.yml
   - id: splunk-windows-netspy-network-scanner-execution
     rule_id: f3ee1ff4-38ab-451e-8dfc-659dea57045f
     file: windows_netspy_network_scanner_execution.yml
@@ -4262,14 +4262,14 @@ rules:
     rule_id: cde00c31-042a-4307-bf70-25e471da56e9
     file: windows_new_service_security_descriptor_set_via_sc_exe.yml
     path: detections/endpoint/windows_new_service_security_descriptor_set_via_sc_exe.yml
-  - id: splunk-windows-ngrok-reverse-proxy-usage
-    rule_id: e2549f2c-0aef-408a-b0c1-e0f270623436
-    file: windows_ngrok_reverse_proxy_usage.yml
-    path: detections/endpoint/windows_ngrok_reverse_proxy_usage.yml
   - id: splunk-windows-njrat-fileless-storage-via-registry
     rule_id: a5fffbbd-271f-4980-94ed-4fbf17f0af1c
     file: windows_njrat_fileless_storage_via_registry.yml
     path: detections/endpoint/windows_njrat_fileless_storage_via_registry.yml
+  - id: splunk-windows-non-browser-process-access-browser-cache-dir
+    rule_id: 44037eba-9673-41ef-9fc6-3bec3de43d1f
+    file: windows_non_browser_process_access_browser_cache_dir.yml
+    path: detections/endpoint/windows_non_browser_process_access_browser_cache_dir.yml
   - id: splunk-windows-non-discord-app-access-discord-leveldb
     rule_id: 1166360c-d495-45ac-87a6-8948aac1fa07
     file: windows_non_discord_app_access_discord_leveldb.yml

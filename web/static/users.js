@@ -270,6 +270,7 @@
     if (u.disabled) return ['off', 'Disabled', 'Cannot sign in until an admin enables them.'];
     if (u.refused) return ['off', 'No access', `Refused by the directory: ${u.refused}. Access comes back if a later sign-in is accepted.`];
     if (u.pending) return ['temp', 'Not signed in yet', 'Added by provisioning (SCIM). Their role comes from their identity provider groups when they first sign in.'];
+    if (u.temp_password_expired) return ['off', 'Temporary password expired', 'Cannot sign in with it any more. Reset their password to give them a new one.'];
     if (u.must_change_password) return ['temp', 'Temporary password', 'Must choose a new password at their next sign-in.'];
     return ['ok', 'Active', ''];
   }

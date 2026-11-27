@@ -84,9 +84,9 @@ the job if not.
   the Linux servers, with a daily definitions update on every host, detections
   inside the attack stories, a trojan outbreak, failing updates and an EICAR
   test, plus one Trend Micro Apex One detection sent over syslog (standard size
-  only). They fill the Malware dashboard; see [antivirus.md](antivirus.md).
+  only). They fill the Malware dashboard; see [Antivirus](antivirus.md).
 - **Network sensor events:** the sensor `nsm-01` runs Zeek and Suricata (see
-  [network-sensor.md](network-sensor.md)). Its lines go through the same parsers as
+  [Network sensor (Zeek, Suricata)](network-sensor.md)). Its lines go through the same parsers as
   a real sensor's: every day, workstations browse sites over TLS, check for
   updates over plain HTTP, use the file server and the domain controllers, and look
   up a few names that do not exist, and Suricata raises a few low and medium alerts
@@ -231,7 +231,7 @@ load adds, but not what the earlier load left.
 ## Several servers
 
 When several Signalith servers share one OpenSearch (see
-[servers.md](servers.md)), they share one set of sample data:
+[Servers](servers.md)), they share one set of sample data:
 
 - **Upgrade every server first.** The server that runs the background jobs
   must run a version that knows about sample data: an older one's scheduled

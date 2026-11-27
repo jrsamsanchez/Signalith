@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"html"
 	"strings"
 	"testing"
 	"time"
@@ -243,4 +244,69 @@ func forge(t *testing.T, payload []byte, edit func(*Report)) []byte {
 func sha(b []byte) string {
 	sum := sha256.Sum256(b)
 	return hex.EncodeToString(sum[:])
+}
+
+// Characters that hide or disguise text show on the page as markers and
+// as \u escapes in its data, so the report reads as the case holds it;
+// the values, the hash and the signature stay those of the case.
+func TestReportShowsHiddenCharacters(t *testing.T) {
+	now := time.Now().UTC()
+	c := &cases.Case{ID: "CASE-2", Title: "invoice‮fdp.exe", Description: "adm​in", Severity: "high", Status: "open",
+		Entities: []cases.Entity{{Field: "user", Value: "ad⁦min\U000E0041"}}, Created: now, Updated: now}
+	if _, err := c.AddEntry(cases.Entry{Kind: cases.KindNote, Text: "note ‮ here"}, "ana", now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.AddEntry(cases.Entry{Kind: cases.KindEvent, Event: map[string]any{"user": "x‮y"}}, "ana", now); err != nil {
+		t.Fatal(err)
+	}
+	f := &findings.Finding{ID: "f1", Title: "Sign-in by ‮nimda", DetectionID: "d1", Status: "open", Created: now}
+	r, err := New(c, []*findings.Finding{f}, nil, "ana", "", "", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	priv, _, keys := keyring(t)
+	s, err := r.Sign(priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	js, page := files(t, s)
+	for _, hidden := range []string{"‮", "​", "⁦", "\U000E0041"} {
+		if bytes.Contains(page, []byte(hidden)) || bytes.Contains(s.Payload, []byte(hidden)) {
+			t.Errorf("the report holds %q as it is", hidden)
+		}
+	}
+	for _, want := range []string{"invoice⟨U+202E⟩fdp.exe", "adm⟨U+200B⟩in", "ad⟨U+2066⟩min⟨U+E0041⟩", "note ⟨U+202E⟩ here", "x⟨U+202E⟩y", "Sign-in by ⟨U+202E⟩nimda"} {
+		if !strings.Contains(html.UnescapeString(string(page)), want) {
+			t.Errorf("the page does not show %q", want)
+		}
+	}
+	for name, b := range map[string][]byte{"json": js, "page": page} {
+		res, err := Verify(b, keys, true)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if res.Report.Case.Title != c.Title || res.Report.Case.Entities[0].Value != c.Entities[0].Value {
+			t.Errorf("%s: the values changed: %q %q", name, res.Report.Case.Title, res.Report.Case.Entities[0].Value)
+		}
+	}
+	// A page made before the markers, with the characters as they are,
+	// still verifies.
+	old, err := s.html(rawTmpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(old, page) || !bytes.Contains(old, []byte("invoice‮fdp.exe")) {
+		t.Fatal("the old page is not the one made before the markers")
+	}
+	if _, err := Verify(old, keys, true); err != nil {
+		t.Errorf("old page: %v", err)
+	}
+	// A marker typed into the page by hand is an edit.
+	edited := bytes.Replace(page, []byte("adm⟨U&#43;200B⟩in"), []byte("admin"), 1)
+	if bytes.Equal(edited, page) {
+		t.Fatal("the page has no marker to edit")
+	}
+	if _, err := Verify(edited, keys, true); !errors.Is(err, ErrChanged) {
+		t.Errorf("edited page: %v", err)
+	}
 }

@@ -19,6 +19,11 @@ variable "admin_ip" {
   description = "The only address SSH (and, while public is false, the web page) is open to. Best given explicitly; empty: this computer's public IPv4 address, looked up when you run terraform (shown by the ssh_open_to output)."
   type        = string
   default     = ""
+
+  validation {
+    condition     = var.admin_ip == "" || can(regex("^(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(\\.(25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}$", var.admin_ip))
+    error_message = "admin_ip must be one IPv4 address, such as 203.0.113.7, without /32."
+  }
 }
 
 variable "server_type" {
