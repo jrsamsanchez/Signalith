@@ -10,9 +10,9 @@ whether it applies at once or after a restart, which the page does for you.
 lead to the other pages that set Signalith up: **Users** (with directory
 sign-in), **Notifications**, **Data retention**, **Security**, **Servers**,
 **Scanners** (which server scans which network; see
-[vulnerabilities.md](vulnerabilities.md#scanning-each-network-zone-from-inside-it)),
+[Scanning each network zone from inside it](vulnerabilities.md#scanning-each-network-zone-from-inside-it)),
 **Network sensors** (each sensor's health, what to fix, and the rule tuning they fetch; see
-[network-sensor.md](network-sensor.md#settings-network-sensors)) and **Health**. Agent tokens are on **Add data**, threat intel feeds on **Threat
+[Settings > Network sensors](network-sensor.md#settings-network-sensors)) and **Health**. Agent tokens are on **Add data**, threat intel feeds on **Threat
 intel**; the Settings page links to them too.
 
 Only admins see the page (**Settings** in the sidebar, or type "settings" in the
@@ -226,7 +226,7 @@ replaced by the new file, and the file it pointed to is left as it was, with
 whatever it held; `signalith secrets` and the server's log say so. The
 OpenSearch password and the AI model's API key saved on the page are kept in it
 encrypted with Signalith's master key (`enc:v1:...`, see
-[encryption.md](encryption.md)); one kept as plain text, as earlier versions did,
+[Encryption](encryption.md)); one kept as plain text, as earlier versions did,
 still works and is encrypted when the server next starts. When `signalith settings
 reset` runs as root, the new file keeps the owner the old one had (or takes its
 folder's), so the service can still read it.
@@ -475,12 +475,12 @@ change off the page.
 | `retention.days` | The data retention page. |
 | `auth.admin_user`, `auth.admin_password_hash` | `signalith.yaml` and `signalith passwd` only: the built-in admin is the break-glass account, so no page can lock everyone out. On servers that share their settings, `signalith cluster apply` renames it (see [apply](cluster-cli.md#apply)). |
 | `auth.ldap` | The Users page sets up directory sign-in. |
-| `auth.oidc`, `auth.saml`, `auth.scim` | The **Single sign-on** tab of Settings; see [sso.md](sso.md). They are saved like the settings on this page (`PUT /api/settings`) and shared by every server the same way. |
-| `metrics` | The **Metrics** tab of Settings, for the Prometheus scrape endpoint; see [metrics.md](metrics.md). Saved like the settings on this page (`PUT /api/settings`), and changing them asks for your password or code again. |
+| `auth.oidc`, `auth.saml`, `auth.scim` | The **Single sign-on** tab of Settings; see [Single sign-on](sso.md). They are saved like the settings on this page (`PUT /api/settings`) and shared by every server the same way. |
+| `metrics` | The **Metrics** tab of Settings, for the Prometheus scrape endpoint; see [Metrics (Prometheus)](metrics.md). Saved like the settings on this page (`PUT /api/settings`), and changing them asks for your password or code again. |
 | `auth.users_file`, `intel.feeds_file`, `notify.file`, `ticketing.file`, `playbooks.file`, `detections.dir`, `dashboards.dir`, `lookups.dir` | `signalith.yaml`: pages save into these files and folders, and the lookups folder holds the Settings page's own file. The page shows where they are. |
-| `ingest.tokens` | Shared agent tokens from older setups and the Docker quick start: `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN` (`SIGNALITH_INGEST_TOKEN_FILE` in Docker). New agents get their own token on **Add data**, under **Agent tokens**, where shared tokens can also be retired; see [agent-tokens.md](agent-tokens.md). The page shows how many tokens are active and how many shared tokens are still accepted. |
+| `ingest.tokens` | Shared agent tokens from older setups and the Docker quick start: `signalith.yaml` (`ingest.tokens`) or `SIGNALITH_INGEST_TOKEN` (`SIGNALITH_INGEST_TOKEN_FILE` in Docker). New agents get their own token on **Add data**, under **Agent tokens**, where shared tokens can also be retired; see [Agent tokens](agent-tokens.md). The page shows how many tokens are active and how many shared tokens are still accepted. |
 | `intel.feeds` | The Threat intel page. |
-| `demo.enabled`, `demo.admin_networks` | `signalith.yaml`, or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS`, only: demo mode turns off password sign-in, event intake and everything that reaches other systems, so no page may turn it off. See [demo.md](demo.md). |
+| `demo.enabled`, `demo.admin_networks` | `signalith.yaml`, or `SIGNALITH_DEMO` and `SIGNALITH_DEMO_ADMIN_NETWORKS`, only: demo mode turns off password sign-in, event intake and everything that reaches other systems, so no page may turn it off. See [Public demo](demo.md). |
 
 ## Settings on several servers
 

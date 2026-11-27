@@ -343,7 +343,7 @@ By hand:
    user and password, and `opensearch.index_prefix`.
 3. Agent tokens made on **Add data** are kept in OpenSearch, so the new server
    accepts them as soon as it starts, and a token revoked on one server is refused by
-   all of them within seconds (see [agent-tokens.md](agent-tokens.md)). Shared tokens
+   all of them within seconds (see [Agent tokens](agent-tokens.md)). Shared tokens
    from older setups (`ingest.tokens`) are in each server's own configuration: give the
    new server the same ones, so agents that still use them can send to either server. Each server has its own master key, so passwords and tokens stored
    encrypted (`enc:` values) cannot be copied as they are: set them on the new
@@ -514,7 +514,7 @@ Each change is written to the log as an audit record.
 
 Every server that serves HTTPS with its own certificate (**HTTPS** set to Automatic)
 gets it from a certificate authority (CA), which agents, syslog devices and browsers
-trust (see [https.md](https.md#trust-the-certificate)). On a server of its own that CA
+trust (see [HTTPS](https.md#trust-the-certificate)). On a server of its own that CA
 is in `tls/ca.pem` and `tls/ca.key` in its state folder. Once every server of the
 cluster runs a version that shares one, the servers share **one** CA, so one CA
 file works for every server, and an agent set up for one server also sends to the
@@ -560,7 +560,7 @@ server that holds it:
   cluster, then the oldest.
 
 **Keep this one** asks the server that holds it to share it (`signalith cluster tls
-choose` does the same from a command line; see [cluster-cli.md](cluster-cli.md#tls)).
+choose` does the same from a command line; see [`signalith cluster`](cluster-cli.md#tls)).
 Only that server can, only while it runs (a CA whose servers are all offline is marked
 so, and can't be kept until one is started), and only while its CA is still the one you
 chose. The request is signed with the cluster key, so only a server of the cluster can
@@ -635,7 +635,7 @@ still hold it, or when its 10 years are nearly up. It takes three steps, like a 
 of a server's own CA on its Security page, but for every server at once. Each step is on
 the **Certificate authority** card of the Servers page, and in
 `signalith cluster tls rotate-ca prepare|switch|retire|abort` (see
-[cluster-cli.md](cluster-cli.md#tls)). The card and `signalith cluster tls` show which
+[`signalith cluster`](cluster-cli.md#tls)). The card and `signalith cluster tls` show which
 step the cluster is at, with its date, and what each step waits for.
 
 1. **Prepare** (**Replace it**). The server that runs the background jobs makes a new CA
@@ -709,7 +709,7 @@ Keep an offline copy of the CA, as a key you keep apart from everything else:
 
 After a `reset-key`, give the key back with
 `signalith cluster tls import <folder>/tls/ca.key` (see
-[cluster-cli.md](cluster-cli.md#tls)). Every server renews from it again within
+[`signalith cluster`](cluster-cli.md#tls)). Every server renews from it again within
 seconds. A founder's old `tls/ca.key`, from a backup made before the cluster kept it,
 works too. With no copy of the key at all, replace the CA instead: the steps above
 don't need the old key, and every agent then needs the new CA file.
@@ -761,7 +761,7 @@ trusts, the admin one included. Signalith only ever signs `signalith-server-<nam
 certificates, but keep the cluster key as safe as OpenSearch's admin certificate.
 
 `signalith cluster opensearch-ca` prints the CA and each server's sign-in (see
-[cluster-cli.md](cluster-cli.md#opensearch-ca)). From a script, as an admin:
+[`signalith cluster`](cluster-cli.md#opensearch-ca)). From a script, as an admin:
 `GET /api/cluster/opensearch-identity` answers what the card shows: `ca` (the
 fingerprint, who handed it over and when, and how many certificates are `revoked`;
 `null` when the cluster keeps none) and `servers`, each with its `identity` (`cn` or

@@ -3,8 +3,8 @@ name: sigmahq
 title: SigmaHQ community rules
 description: Windows rules for Sysmon, Security and System events (processes, network connections, files, registry, DNS, DLL loads, process access, logons, scheduled tasks and services installed), Linux rules for Sysmon for Linux and the Linux audit log, macOS rules for the program starts osquery reports, network rules for Zeek's logs and for DNS, web proxy and firewall data, and antivirus rules for any antivirus product's alerts, from the SigmaHQ project, converted to Signalith detections. Each rule shipped here fires on its test events and stays quiet on its exclusions, checked in CI.
 source: https://github.com/SigmaHQ/sigma
-version: 53b90df66c5b6d1b9be6ba9289c56fe49dd74a73
-date: "2026-11-09"
+version: 54a6f29bef21f9e9142fdec969c495a8f7cba900
+date: "2026-11-23"
 license: DRL-1.1
 license_url: https://github.com/SigmaHQ/Detection-Rule-License
 notice: The rules in this pack are by the SigmaHQ authors named in each rule and are licensed under the Detection Rule License (DRL) 1.1. Findings from them name the rule's author.
@@ -5933,10 +5933,6 @@ rules:
     rule_id: 5e95028c-5229-4214-afae-d653d573d0ec
     file: proc_creation_win_reg_disable_sec_services.yml
     path: rules/windows/process_creation/proc_creation_win_reg_disable_sec_services.yml
-  - id: sigma-proc-reg-dumping-sensitive-hives
-    rule_id: fd877b94-9bb5-4191-bb25-d79cbd93c167
-    file: proc_creation_win_reg_dumping_sensitive_hives.yml
-    path: rules/windows/process_creation/proc_creation_win_reg_dumping_sensitive_hives.yml
   - id: sigma-proc-reg-enable-windows-recall
     rule_id: 817f252c-5143-4dae-b418-48c3e9f63728
     file: proc_creation_win_reg_enable_windows_recall.yml
