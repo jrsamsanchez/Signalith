@@ -29,6 +29,10 @@ twelve need about 60, and all 18 of Signalith's data models about 90:
 | 12 data models (Windows and Sysmon) | 1,092: over the limit | about 60 |
 | 18 data models (everything) | 1,638: over the limit | about 90 |
 
+A month stored as one index is deleted once its last day is older than its retention,
+so shortening a category's **Keep** later can leave data already stored by month up to
+a month past the new setting (see [Months stored as one index](retention.md#months-stored-as-one-index)).
+
 A busy data model, one whose month would hold more than the rollover size (40 GB per
 primary shard unless set), is stored by day once its month's index is full, as before;
 it adds 91 shards kept 90 days. Each tenant in [multi-tenant mode](multi-tenant.md) has
