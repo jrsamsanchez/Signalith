@@ -26,9 +26,8 @@ Every run goes the same way:
    finding's activity, and kept in the audit log with who ran it, why, on what, and
    what came back.
 
-Signalith does not run actions by itself. Playbooks, which will run actions
-automatically, are planned; they will call the same code and be recorded the same
-way, as `playbook <name>`.
+Signalith does not run actions by itself. [Playbooks](playbooks.md) can run them as
+steps; they call the same code and are recorded the same way, as `playbook <name>`.
 
 ## Who can do what
 

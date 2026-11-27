@@ -99,7 +99,7 @@ Usage:
   signalith init      [-c file] [flags]   write a starter config file
   signalith serve     [-c file]           run the server
   signalith validate  [-c file]           check the config file
-  signalith passwd    [-c file] [-local]  set the admin password
+  signalith passwd    [-c file] [-local] [-reset-mfa]  set the admin password
   signalith settings  list|reset [-c file] [-file f] [key...]   show or undo changes made on the Settings page
   signalith initial-password [-c file]    print the first admin password the Docker quick start or a package made
   signalith query     [-c file] [-explain] "<query>"   run a query from the shell
@@ -675,7 +675,12 @@ func cmdPasswd(args []string) error {
 	path := configFlag(fs)
 	local := fs.Bool("local", false, "keep the new password on this server only, in its state folder: on a member of a cluster that shares its users, "+
 		"it works only while the shared settings cannot be used")
+	resetMFA := fs.Bool("reset-mfa", false, "also remove the built-in admin's two-step sign-in (authenticator app, passkeys and recovery codes), "+
+		"for when they are lost and no other admin can reset it; it is set up again after signing in")
 	fs.Parse(args)
+	if *resetMFA && *local {
+		return errors.New("-reset-mfa changes the built-in admin of every server, so it cannot be used with -local")
+	}
 	if _, err := os.Stat(*path); err != nil {
 		return fmt.Errorf("config file %s: %w", *path, err)
 	}
@@ -735,7 +740,7 @@ func cmdPasswd(args []string) error {
 	}
 	// A member of a cluster that shares its users changes the built-in
 	// admin of every server, at once.
-	if done, err := passwdShared(*path, stateDir, h); done || err != nil {
+	if done, err := passwdShared(*path, stateDir, h, *resetMFA); done || err != nil {
 		if err == nil {
 			firstPasswordReplaced(os.Stdout, *path, stateDir)
 		}
@@ -757,6 +762,9 @@ func cmdPasswd(args []string) error {
 			fmt.Println("Restart the server to apply it. With the Docker quick start, from the Signalith folder: docker compose -f deploy/docker/docker-compose.yml restart signalith")
 		}
 		builtinOnInFile(*path)
+		if *resetMFA {
+			mfaResetInFile(*path)
+		}
 		if member {
 			fmt.Println("This server is a member of a cluster: the password is used only while it keeps its users in its own files. " +
 				"While it shares the users of the cluster, the cluster's password applies and this file is not used, not even while OpenSearch is unavailable " +
@@ -772,6 +780,9 @@ func cmdPasswd(args []string) error {
 	}
 	fmt.Println("Password updated. Restart the server to apply it.")
 	builtinOnInFile(*path)
+	if *resetMFA {
+		mfaResetInFile(*path)
+	}
 	if member {
 		fmt.Println("This server is a member of a cluster: auth.admin_password_hash in signalith.yaml changed, so the next time this server starts " +
 			"with OpenSearch available and sharing the users of the cluster, it becomes the password of every server.")
@@ -804,6 +815,36 @@ func builtinOnInFile(path string) {
 		fmt.Println(builtinOnAtRestart)
 	}
 }
+
+// mfaResetInFile has the built-in admin's two-step sign-in in the users
+// file of the config at path removed when the server next starts, with
+// the new password (signalith passwd -reset-mfa).
+func mfaResetInFile(path string) {
+	c, err := config.Load(path)
+	if err != nil {
+		// The error is not printed: it may quote values of the file.
+		fmt.Printf("Warning: the built-in admin's two-step sign-in was not reset: %s could not be read. Run signalith validate to see why.\n", path)
+		return
+	}
+	if _, err := os.Stat(c.UsersFile()); err != nil {
+		fmt.Println("The built-in admin has no two-step sign-in to reset.")
+		return
+	}
+	had, err := users.SetFileBuiltinMFAResetAtStart(c.UsersFile())
+	switch {
+	case err != nil:
+		fmt.Printf("Warning: the built-in admin's two-step sign-in was not reset in %s: %v\n", c.UsersFile(), err)
+	case had:
+		fmt.Println(mfaResetAtRestart)
+	default:
+		fmt.Println("The built-in admin has no two-step sign-in to reset.")
+	}
+}
+
+// mfaResetAtRestart tells that the built-in admin's two-step sign-in goes
+// when the server restarts with the new password.
+const mfaResetAtRestart = "The built-in admin's two-step sign-in is removed when the server restarts with the new password. " +
+	"Sign in with the password alone, then set up two-step sign-in again from the account menu."
 
 // builtinOnAtRestart tells that the built-in admin comes back on with the
 // new password.
@@ -1201,8 +1242,14 @@ func serve(ctx context.Context, path string, log *slog.Logger) error {
 	// The node outlives ctx: stopping gives the job lease up first, which
 	// needs it.
 	node.Start(context.WithoutCancel(ctx))
-	r.shared.Start(ctx)
-	return r.run(ctx, c)
+	sctx, stopShared := context.WithCancel(ctx)
+	r.shared.Start(sctx)
+	err = r.run(ctx, c)
+	// Wait for the shared settings' loop and the writer of cache.enc, which
+	// saves what changed last, before the process may exit.
+	stopShared()
+	r.shared.Wait()
+	return err
 }
 
 // instance is every component built from one config: what a restart from
@@ -1335,6 +1382,8 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 	// the feeds and retention policies come from it or from this server's
 	// files depends on what it finds.
 	sharedOn, settingsOn := false, false
+	// follow starts following the settings once the server is complete.
+	var follow func()
 	if r.node != nil {
 		sharedOn = useShared(r.shared, r.sharedContent, c, cl)
 		// The settings of the Settings page come from the shared settings
@@ -2241,8 +2290,13 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 				// while this start runs: what applies at once is applied,
 				// and the rest waits for a restart. The settings set aside
 				// with signalith settings reset -local are refused there.
-				in.jobs.Go(func() { r.followSettings(ctx, srv, ret, c) })
-				in.jobs.Go(func() { r.settleSetAside(ctx, c) })
+				// They start once srv is complete (below): applying a
+				// setting reads fields set further down, such as
+				// TenantRuntime.
+				follow = func() {
+					in.jobs.Go(func() { r.followSettings(ctx, srv, ret, c) })
+					in.jobs.Go(func() { r.settleSetAside(ctx, c) })
+				}
 			}
 		}
 		in.node = r.node
@@ -2277,6 +2331,9 @@ func (r *runner) start(parent context.Context, c *config.Config) (*instance, err
 		in.jobs.Go(tr.startAll)
 	}
 	r.srv.Store(srv)
+	if follow != nil {
+		follow()
+	}
 	if c.Server.AgentAddr() != "" && !c.DemoOn() {
 		in.agentHandler = srv.AgentHandler()
 		in.agentPlain = srv.AgentPlainHandler(in.agentHandler)
@@ -2582,6 +2639,12 @@ func (r *runner) openUsers(c *config.Config) (*users.Store, *users.Directory, er
 	} else if on {
 		r.log.Info("user enabled", "audit", true, "by", "signalith passwd", "user", c.Auth.AdminUser, "source", users.SourceBuiltin,
 			"reason", "a new password was set on the server")
+	}
+	if reset, err := r.people.StartBuiltinMFA(context.Background()); err != nil {
+		r.log.Warn("could not reset the built-in admin's two-step sign-in as signalith passwd -reset-mfa asked", "user", c.Auth.AdminUser, "err", err)
+	} else if reset {
+		r.log.Info("two-step sign-in reset", "audit", true, "by", "signalith passwd", "user", c.Auth.AdminUser, "source", users.SourceBuiltin,
+			"reason", "signalith passwd -reset-mfa set a new password on the server")
 	}
 	fromFile, err := c.LDAP()
 	if err != nil {

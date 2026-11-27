@@ -351,6 +351,25 @@ func TestGuardMore(t *testing.T) {
 	if s := q.String(); strings.Contains(s, "masked") {
 		t.Errorf("revealed = %s", s)
 	}
+	// Stand-ins the guard lets through in a where expression are
+	// revealed there too, or the search would look for the stand-in.
+	for src, want := range map[string]string{
+		`* | where in(host, "masked-user-1", "bob") OR isnull(x)`: `in(host, "alice", "bob")`,
+		`* | where like(host, "masked-user-1") OR isnull(x)`:      `like(host, "alice")`,
+		`* | where NOT in(host, "masked-user-1") OR isnull(x)`:    `in(host, "alice")`,
+	} {
+		q, err := query.Parse(src)
+		if err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		if err := guardQuery(q, m); err != nil {
+			t.Fatalf("%s: %v", src, err)
+		}
+		m.revealQuery(q)
+		if s := q.String(); strings.Contains(s, "masked") || !strings.Contains(s, want) {
+			t.Errorf("%s revealed = %s", src, s)
+		}
+	}
 	if !asciiEqualFold("ABC", "abc") || asciiEqualFold("ab", "abc") {
 		t.Error("asciiEqualFold")
 	}
