@@ -18,8 +18,8 @@ Three things run out on a single machine, usually in this order:
 
 Shards used to be a fourth: OpenSearch refuses new indices once a node holds 1,000
 shards (`cluster.max_shards_per_node`), and every data model added an index a day.
-Twelve data models kept 90 days needed 1,092 shards, more than one node allows. Now a
-quiet data model kept more than 30 days stores a month in one index (see
+Twelve data models kept 90 days needed 1,092 shards, more than one node allows. From
+the release after 0.4.2, a quiet data model kept more than 30 days stores a month in one index (see
 [Months stored as one index](retention.md#months-stored-as-one-index)), so the same
 twelve need about 60, and all 18 of Signalith's data models about 90:
 

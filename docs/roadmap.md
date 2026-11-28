@@ -23,8 +23,9 @@ Ideas and requests are welcome as
 
 **The next release**
 :   Finished and waiting for the next release: temporary passwords that stop working after
-    24 hours, and `signalith passwd -reset-mfa` for a built-in admin who lost their
-    two-step sign-in.
+    24 hours, `signalith passwd -reset-mfa` for a built-in admin who lost their
+    two-step sign-in, and quiet data models stored by month so a single OpenSearch node
+    stays under its shard limit.
 
 **Correct answers**
 :   Fixes for the remaining findings of an internal review, and searches checked against
