@@ -130,7 +130,7 @@ limit counts every open index, Signalith's own and OpenSearch's system indices t
 See [Sizing and scaling out](scaling.md) for the numbers on more nodes and servers.
 
 **Store quiet data models by month** (`opensearch.monthly_indices`), in the same card,
-is on by default. A data model whose retention policy keeps it more than 30 days (or
+is on by default from the release after 0.4.2. A data model whose retention policy keeps it more than 30 days (or
 forever), with no size cap and no move to cold storage within 30 days, keeps a whole
 month of events in one index, `<prefix>-<datamodel>-YYYY.MM`, such as
 `signalith-network_resolution-2026.11`. That month's index takes events until it holds

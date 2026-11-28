@@ -102,6 +102,9 @@ under Shards. Compacted days still count.
 
 ### Months stored as one index
 
+!!! note "Arriving with the next release"
+    Storing quiet data models by month is on `main` and comes with the release after 0.4.2.
+
 With **Store quiet data models by month** on (the default, `opensearch.monthly_indices`),
 a category whose policy keeps it more than 30 days or forever, with no size cap and no
 move to cold storage within 30 days, keeps its events of a month in one index,
